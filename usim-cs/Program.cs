@@ -160,6 +160,11 @@ public class Program
                     Environment.Exit(0);
                     break;
                     
+                case "--test-sdl2":
+                    SDL2VerificationTest.RunTest();
+                    Environment.Exit(0);
+                    break;
+                    
                 default:
                     Console.Error.WriteLine($"Unknown option: {args[i]}");
                     return false;
@@ -190,6 +195,7 @@ public class Program
         Console.WriteLine("  --test, --test-all      Run all tests");
         Console.WriteLine("  --test-microcode        Run microcode tests only");
         Console.WriteLine("  --test-config           Run configuration tests only");
+        Console.WriteLine("  --test-sdl2             Test SDL2-CS .NET 8.0 integration");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
