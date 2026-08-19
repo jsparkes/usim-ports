@@ -31,6 +31,7 @@ public class Program
     /// <summary>
     /// Main entry point
     /// </summary>
+    [System.STAThread]
     public static int Main(string[] args)
     {
         Console.WriteLine("USIM - MIT CADR Simulator (C# Port)");
@@ -159,9 +160,11 @@ public class Program
                     UCodeTests.RunBenchmark();
                     Environment.Exit(0);
                     break;
-                    
-                case "--test-sdl2":
-                    SDL2VerificationTest.RunTest();
+
+                case "--debug-microcode":
+                case "--debug-ucode":
+                    var debugger = new MicrocodeDebugger();
+                    debugger.StartDebugSession();
                     Environment.Exit(0);
                     break;
                     
@@ -195,10 +198,12 @@ public class Program
         Console.WriteLine("  --test, --test-all      Run all tests");
         Console.WriteLine("  --test-microcode        Run microcode tests only");
         Console.WriteLine("  --test-config           Run configuration tests only");
-        Console.WriteLine("  --test-sdl2             Test SDL2-CS .NET 8.0 integration");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
+        Console.WriteLine();
+        Console.WriteLine("Debugging:");
+        Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
     }
     
     private static MachineControl? _machine;
@@ -278,18 +283,18 @@ public class Program
         }
         
         Console.WriteLine("Starting CADR simulation...");
-        
-        // Initialize SDL2 backend unless headless
+
+        // Initialize WPF display backend unless headless
         if (!UsimState.Headless)
         {
-            Console.WriteLine("Initializing SDL2 display backend...");
-            _machine.InitializeSDL2(allowResize: false, scale: 1.0);
-            
-            if (_machine.SDL2Backend != null)
+            Console.WriteLine("Initializing WPF display backend...");
+            _machine.InitializeDisplay(allowResize: false, scale: 1.0);
+
+            if (_machine.DisplayBackend != null)
             {
-                _machine.SDL2Backend.SetWindowTitle(UsimState.WindowTitle);
+                _machine.DisplayBackend.SetWindowTitle(UsimState.WindowTitle);
             }
-            
+
             // Draw test pattern to show display is working
             _machine.Display.DrawTestPattern();
             _machine.Display.Update();
@@ -309,13 +314,13 @@ public class Program
         }
         
         Console.WriteLine("\nSimulation started.");
-        
-        if (_machine.SDL2Backend != null)
+
+        if (_machine.DisplayBackend != null)
         {
-            Console.WriteLine("SDL2 window opened. Close window or press Ctrl+C to exit.");
+            Console.WriteLine("WPF window opened. Close window or press Ctrl+C to exit.");
             Console.WriteLine("Type commands in terminal for interactive debugging.\n");
-            
-            // Start background thread for console input if we have SDL2
+
+            // Start background thread for console input if we have a display
             bool consoleRunning = true;
             var consoleThread = new System.Threading.Thread(() =>
             {
@@ -323,14 +328,14 @@ public class Program
                 {
                     Console.Write("usim> ");
                     string? input = Console.ReadLine();
-                    
+
                     if (input == null || input.Trim().ToLowerInvariant() is "quit" or "q" or "exit")
                     {
                         consoleRunning = false;
                         _machine.Shutdown();
                         break;
                     }
-                    
+
                     string command = input.Trim();
                     if (!string.IsNullOrEmpty(command))
                     {
@@ -340,10 +345,10 @@ public class Program
             });
             consoleThread.IsBackground = true;
             consoleThread.Start();
-            
-            // Run main loop with SDL2
+
+            // Run main loop with display
             _machine.Run();
-            
+
             consoleRunning = false;
         }
         else
@@ -376,17 +381,17 @@ public class Program
     private static void Shutdown()
     {
         Console.WriteLine("\nShutting down USIM...");
-        
+
         if (_machine != null)
         {
             _machine.Shutdown();
-            
-            // Dispose SDL2 backend if initialized
-            _machine.SDL2Backend?.Dispose();
+
+            // Dispose display backend if initialized
+            _machine.DisplayBackend?.Dispose();
         }
-        
+
         TraceLog.Instance.Close();
-        
+
         Console.WriteLine("Shutdown complete.");
     }
     

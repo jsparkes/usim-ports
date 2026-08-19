@@ -51,8 +51,8 @@ public class MachineControl
     public IOBus IOBus { get; private set; }
     public UCode UCode { get; private set; }
     
-    // SDL2 backend (optional)
-    public SDL2Backend? SDL2Backend { get; private set; }
+    // Display backend (optional)
+    public WpfBackend? DisplayBackend { get; private set; }
     
     // Timing
     public DateTime StartTime { get; private set; }
@@ -81,25 +81,25 @@ public class MachineControl
     }
     
     /// <summary>
-    /// Initialize SDL2 backend for video/input
+    /// Initialize WPF backend for video/input
     /// </summary>
-    public void InitializeSDL2(bool allowResize = false, double scale = 1.0)
+    public void InitializeDisplay(bool allowResize = false, double scale = 1.0)
     {
-        if (SDL2Backend != null)
+        if (DisplayBackend != null)
         {
-            TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Warning, "SDL2 backend already initialized");
+            TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Warning, "Display backend already initialized");
             return;
         }
-        
-        SDL2Backend = new SDL2Backend(Display, Keyboard, Mouse)
+
+        DisplayBackend = new WpfBackend(Display, Keyboard, Mouse, onTick: () => { })
         {
             AllowResize = allowResize,
             Scale = scale,
             UseLinearFiltering = true
         };
-        
-        SDL2Backend.Initialize();
-        TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Info, "SDL2 backend initialized");
+
+        DisplayBackend.Initialize();
+        TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Info, "Display backend initialized");
     }
     
     /// <summary>
@@ -198,6 +198,7 @@ public class MachineControl
     {
         _stopRequested = true;
         PowerOff();
+        DisplayBackend?.RequestExit();
     }
     
     /// <summary>
@@ -281,7 +282,7 @@ public class MachineControl
     }
     
     /// <summary>
-    /// Main run loop - execute machine cycles and process events
+    /// Main run loop - pumps the WPF message loop (or a plain poll loop if headless)
     /// </summary>
     public void Run()
     {
@@ -290,33 +291,22 @@ public class MachineControl
             Console.WriteLine("Machine is not running. Call PowerOn() first.");
             return;
         }
-        
+
         Console.WriteLine("Entering main run loop...");
-        
-        while (State == PowerState.Running && !_stopRequested)
+
+        if (DisplayBackend != null)
         {
-            // Process SDL2 events if backend is initialized
-            if (SDL2Backend != null)
-            {
-                SDL2Backend.ProcessEvents();
-                
-                // Exit if window closed
-                if (!SDL2Backend.IsRunning)
-                {
-                    _stopRequested = true;
-                    break;
-                }
-            }
-            
-            // Execute microcode cycles
-            // In a real implementation, this would execute many cycles per frame
-            // For now, just update display
-            Display.Update();
-            
-            // Small delay to limit CPU usage
-            System.Threading.Thread.Sleep(16); // ~60 FPS
+            DisplayBackend.RunMessageLoop(); // blocks until the window closes
         }
-        
+        else
+        {
+            while (State == PowerState.Running && !_stopRequested)
+            {
+                Display.Update();
+                System.Threading.Thread.Sleep(16);
+            }
+        }
+
         Console.WriteLine("Exiting main run loop");
     }
     
