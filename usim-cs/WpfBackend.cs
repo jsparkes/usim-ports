@@ -52,6 +52,9 @@ public class WpfBackend : IDisposable
     /// </summary>
     public void Initialize()
     {
+        if (_window != null)
+            return;
+
         TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Info, "Initializing WPF backend");
 
         _application = Application.Current ?? new Application();
@@ -75,14 +78,23 @@ public class WpfBackend : IDisposable
             Child = _image
         };
 
+        viewbox.Width = Display.WIDTH * Scale;
+        viewbox.Height = Display.HEIGHT * Scale;
+
         _window = new Window
         {
             Title = _windowTitle,
             Content = viewbox,
-            Width = Display.WIDTH * Scale,
-            Height = Display.HEIGHT * Scale,
+            SizeToContent = SizeToContent.WidthAndHeight,
             ResizeMode = AllowResize ? ResizeMode.CanResize : ResizeMode.CanMinimize,
             Cursor = Cursors.None
+        };
+
+        _window.Loaded += (_, _) =>
+        {
+            _window.SizeToContent = SizeToContent.Manual;
+            viewbox.Width = double.NaN;
+            viewbox.Height = double.NaN;
         };
 
         _window.KeyDown += (_, e) => HandleKeyEvent(e, keyDown: true);
@@ -216,6 +228,12 @@ public class WpfBackend : IDisposable
     public void Dispose()
     {
         TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Info, "Shutting down WPF backend");
+
+        if (_window != null && !_window.Dispatcher.CheckAccess())
+        {
+            _window.Dispatcher.Invoke(() => Dispose());
+            return;
+        }
 
         _timer?.Stop();
         _window?.Close();

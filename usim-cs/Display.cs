@@ -52,7 +52,7 @@ public class Display
     public Display()
     {
         _videoMemory = new uint[VIDEO_MEMORY_SIZE];
-        FrameBuffer = new byte[WIDTH * HEIGHT * 4]; // ARGB format for SDL2
+        FrameBuffer = new byte[WIDTH * HEIGHT * 4]; // B,G,R,A format for WPF's WriteableBitmap (Pbgra32)
         LastFrameTime = DateTime.Now;
         Initialize();
     }
