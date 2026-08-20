@@ -19,6 +19,7 @@ public static class WpfBackendTests
 
         if (TestKeyTranslation()) passed++; else failed++;
         if (TestModifierState()) passed++; else failed++;
+        if (TestBeepWavBuilder()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -67,6 +68,32 @@ public static class WpfBackendTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Modifier State tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestBeepWavBuilder()
+    {
+        Console.WriteLine("Test: Beep WAV Builder");
+        try
+        {
+            // half-wavelength 500us -> 1000 Hz; 100ms duration -> 4410 samples
+            byte[] wav = BeepWavBuilder.BuildWav(halfWavelengthMicros: 500, durationMicros: 100_000);
+
+            int expectedSamples = (int)(BeepWavBuilder.SampleRate * 0.1);
+            int expectedLength = 44 + expectedSamples * 2;
+
+            Assert(wav.Length == expectedLength, $"WAV length is {expectedLength} bytes");
+            Assert(Encoding.ASCII.GetString(wav, 0, 4) == "RIFF", "RIFF header");
+            Assert(Encoding.ASCII.GetString(wav, 8, 4) == "WAVE", "WAVE header");
+            Assert(Encoding.ASCII.GetString(wav, 36, 4) == "data", "data chunk header");
+
+            Console.WriteLine("  Beep WAV Builder tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Beep WAV Builder tests failed: {ex.Message}\n");
             return false;
         }
     }
