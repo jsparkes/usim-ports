@@ -145,7 +145,12 @@ public class Program
                     ConfigTests.RunAllTests();
                     Environment.Exit(0);
                     break;
-                    
+
+                case "--test-wpf":
+                    WpfBackendTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--demo-execution":
                     UCodeTests.DemoInstructionExecution();
                     Environment.Exit(0);
@@ -191,6 +196,7 @@ public class Program
         Console.WriteLine("  --test, --test-all      Run all tests");
         Console.WriteLine("  --test-microcode        Run microcode tests only");
         Console.WriteLine("  --test-config           Run configuration tests only");
+        Console.WriteLine("  --test-wpf              Run WPF backend tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
@@ -401,7 +407,12 @@ public class Program
         Console.WriteLine("Running Configuration Tests...\n");
         ConfigTests.RunAllTests();
         Console.WriteLine();
-        
+
+        // Run WPF backend tests
+        Console.WriteLine("Running WPF Backend Tests...\n");
+        WpfBackendTests.RunAllTests();
+        Console.WriteLine();
+
         Console.WriteLine("=== All Tests Complete ===");
     }
 }
