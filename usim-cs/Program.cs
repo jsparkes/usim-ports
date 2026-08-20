@@ -166,6 +166,13 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--debug-microcode":
+                case "--debug-ucode":
+                    var debugger = new MicrocodeDebugger();
+                    debugger.StartDebugSession();
+                    Environment.Exit(0);
+                    break;
+
                 default:
                     Console.Error.WriteLine($"Unknown option: {args[i]}");
                     return false;
@@ -200,6 +207,9 @@ public class Program
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
+        Console.WriteLine();
+        Console.WriteLine("Debugging:");
+        Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
     }
     
     private static MachineControl? _machine;
@@ -290,20 +300,25 @@ public class Program
             {
                 _machine.DisplayBackend.SetWindowTitle(UsimState.WindowTitle);
             }
-
-            // Draw test pattern to show display is working
-            _machine.Display.DrawTestPattern();
-            _machine.Display.Update();
         }
         else
         {
             Console.WriteLine("Running in headless mode (no display)");
         }
-        
+
         // Power on the machine
         var bootMode = UsimState.WarmBootFlag ? BootMode.Warm : BootMode.Cold;
         _machine.PowerOn(bootMode);
-        
+
+        // Draw test pattern to show display is working (must run after
+        // PowerOn(), since PowerOn -> InitializeComponents() -> Display.Initialize()
+        // clears video memory and would otherwise erase this)
+        if (!UsimState.Headless)
+        {
+            _machine.Display.DrawTestPattern();
+            _machine.Display.Update();
+        }
+
         if (UsimState.AutoBoot)
         {
             Console.WriteLine("Auto-boot enabled");

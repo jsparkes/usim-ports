@@ -85,14 +85,16 @@ public class WpfBackend : IDisposable
         {
             Title = _windowTitle,
             Content = viewbox,
+            Background = Brushes.Black,
             SizeToContent = SizeToContent.WidthAndHeight,
             ResizeMode = AllowResize ? ResizeMode.CanResize : ResizeMode.CanMinimize,
             Cursor = Cursors.None
         };
 
-        _window.Loaded += (_, _) =>
+        var window = _window;
+        window.Loaded += (_, _) =>
         {
-            _window.SizeToContent = SizeToContent.Manual;
+            window.SizeToContent = SizeToContent.Manual;
             viewbox.Width = double.NaN;
             viewbox.Height = double.NaN;
         };
@@ -130,13 +132,14 @@ public class WpfBackend : IDisposable
     /// </summary>
     public void RequestExit()
     {
-        if (_window == null)
+        var window = _window;
+        if (window == null)
             return;
 
-        if (_window.Dispatcher.CheckAccess())
-            _window.Close();
+        if (window.Dispatcher.CheckAccess())
+            window.Close();
         else
-            _window.Dispatcher.BeginInvoke(new Action(() => _window.Close()));
+            window.Dispatcher.BeginInvoke(new Action(() => window.Close()));
     }
 
     private void Tick()

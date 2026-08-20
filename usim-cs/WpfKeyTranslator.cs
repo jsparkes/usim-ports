@@ -103,7 +103,8 @@ public static class WpfKeyTranslator
 
             case Key.OemOpenBrackets: return shift ? 0x007B : 0x005B;
             case Key.OemCloseBrackets: return shift ? 0x007D : 0x005D;
-            case Key.OemBackslash: return shift ? 0x007C : 0x005C;
+            case Key.OemPipe: return shift ? 0x007C : 0x005C;      // US \| key (VK_OEM_5)
+            case Key.OemBackslash: return shift ? 0x007C : 0x005C; // ISO 102-key extra (VK_OEM_102)
             case Key.OemSemicolon: return shift ? 0x003A : 0x003B;
             case Key.OemQuotes: return shift ? 0x0022 : 0x0027;
             case Key.OemComma: return shift ? 0x003C : 0x002C;

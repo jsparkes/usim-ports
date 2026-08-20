@@ -42,6 +42,10 @@ public static class WpfBackendTests
             Assert(WpfKeyTranslator.TranslateKey(Key.D1, shift: true) == 0x0021, "1 (shift) -> '!'");
             Assert(WpfKeyTranslator.TranslateKey(Key.Space, shift: false) == 0x0020, "Space -> 0x20");
             Assert(WpfKeyTranslator.TranslateKey(Key.Scroll, shift: false) == 0, "Unmapped key -> XK_VoidSymbol");
+            Assert(WpfKeyTranslator.TranslateKey(Key.OemPipe, shift: false) == 0x005C, "OemPipe (no shift) -> '\\'");
+            Assert(WpfKeyTranslator.TranslateKey(Key.OemPipe, shift: true) == 0x007C, "OemPipe (shift) -> '|'");
+            Assert(WpfKeyTranslator.TranslateKey(Key.OemComma, shift: false) == 0x002C, "OemComma (no shift) -> ','");
+            Assert(WpfKeyTranslator.TranslateKey(Key.OemComma, shift: true) == 0x003C, "OemComma (shift) -> '<'");
 
             Console.WriteLine("  Key Translation tests passed\n");
             return true;
@@ -63,6 +67,7 @@ public static class WpfBackendTests
             Assert(WpfKeyTranslator.GetModifierState(ModifierKeys.Control, capsLock: false) == (1 << 2), "Control bit");
             Assert(WpfKeyTranslator.GetModifierState(ModifierKeys.Alt, capsLock: false) == (1 << 3), "Alt bit");
             Assert(WpfKeyTranslator.GetModifierState(ModifierKeys.Windows, capsLock: false) == (1 << 6), "Windows bit");
+            Assert(WpfKeyTranslator.GetModifierState(ModifierKeys.Shift | ModifierKeys.Control, capsLock: false) == ((1 << 0) | (1 << 2)), "Shift+Control combined bits");
 
             Console.WriteLine("  Modifier State tests passed\n");
             return true;
