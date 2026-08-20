@@ -35,8 +35,8 @@ public class Mouse
     private MouseButtons _lastButtons;
     
     // Display bounds
-    public int MaxX { get; set; } = 1024;
-    public int MaxY { get; set; } = 768;
+    public int MaxX { get; set; } = Display.WIDTH;
+    public int MaxY { get; set; } = Display.HEIGHT;
     
     // Raw hardware registers (CADR mouse interface)
     public ushort MouseX { get; private set; }

@@ -139,7 +139,7 @@ public class Display
     /// <summary>
     /// Render in black and white mode
     /// Each bit represents one pixel
-    /// SDL2 expects ARGB8888 format
+    /// WPF's WriteableBitmap expects Pbgra32 (B,G,R,A byte order)
     /// </summary>
     private void RenderBlackAndWhite()
     {
@@ -160,11 +160,11 @@ public class Display
                 {
                     bool pixelOn = ((word >> (31 - bit)) & 1) != 0;
                     byte value = pixelOn ? (byte)255 : (byte)0;
-                    
-                    FrameBuffer[bufferIndex++] = 255;   // A
-                    FrameBuffer[bufferIndex++] = value; // R
-                    FrameBuffer[bufferIndex++] = value; // G
+
                     FrameBuffer[bufferIndex++] = value; // B
+                    FrameBuffer[bufferIndex++] = value; // G
+                    FrameBuffer[bufferIndex++] = value; // R
+                    FrameBuffer[bufferIndex++] = 255;   // A
                 }
             }
         }
@@ -173,7 +173,7 @@ public class Display
     /// <summary>
     /// Render in color mode
     /// Color mode uses multiple bits per pixel
-    /// SDL2 expects ARGB8888 format
+    /// WPF's WriteableBitmap expects Pbgra32 (B,G,R,A byte order)
     /// </summary>
     private void RenderColor()
     {
@@ -196,14 +196,14 @@ public class Display
                 {
                     int shift = (7 - pixel) * 4;
                     byte colorIndex = (byte)((word >> shift) & 0x0F);
-                    
+
                     // Simple color palette
                     (byte r, byte g, byte b) = GetColor(colorIndex);
-                    
-                    FrameBuffer[bufferIndex++] = 255; // A
-                    FrameBuffer[bufferIndex++] = r;
-                    FrameBuffer[bufferIndex++] = g;
+
                     FrameBuffer[bufferIndex++] = b;
+                    FrameBuffer[bufferIndex++] = g;
+                    FrameBuffer[bufferIndex++] = r;
+                    FrameBuffer[bufferIndex++] = 255; // A
                 }
             }
         }

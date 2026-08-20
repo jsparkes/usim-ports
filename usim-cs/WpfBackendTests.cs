@@ -20,6 +20,8 @@ public static class WpfBackendTests
         if (TestKeyTranslation()) passed++; else failed++;
         if (TestModifierState()) passed++; else failed++;
         if (TestBeepWavBuilder()) passed++; else failed++;
+        if (TestDisplayByteOrder()) passed++; else failed++;
+        if (TestMouseDefaults()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -94,6 +96,54 @@ public static class WpfBackendTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Beep WAV Builder tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestDisplayByteOrder()
+    {
+        Console.WriteLine("Test: Display Frame Buffer Byte Order");
+        try
+        {
+            var display = new Display { Mode = DisplayMode.Color };
+            // Pixel (0,0) = color index 1 (Blue: R=0, G=0, B=170) in the
+            // top 4 bits of the first video memory word.
+            display.WriteVideoMemory(display.VideoMemoryBase, 0x10000000u);
+            display.Update();
+
+            byte b = display.FrameBuffer[0];
+            byte g = display.FrameBuffer[1];
+            byte r = display.FrameBuffer[2];
+            byte a = display.FrameBuffer[3];
+
+            Assert(b == 170 && g == 0 && r == 0 && a == 255,
+                $"Frame buffer is B,G,R,A order (got B={b},G={g},R={r},A={a})");
+
+            Console.WriteLine("  Display Frame Buffer Byte Order tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Display Frame Buffer Byte Order tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMouseDefaults()
+    {
+        Console.WriteLine("Test: Mouse Default Bounds");
+        try
+        {
+            var mouse = new Mouse();
+            Assert(mouse.MaxX == Display.WIDTH, "MaxX defaults to Display.WIDTH");
+            Assert(mouse.MaxY == Display.HEIGHT, "MaxY defaults to Display.HEIGHT");
+
+            Console.WriteLine("  Mouse Default Bounds tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Mouse Default Bounds tests failed: {ex.Message}\n");
             return false;
         }
     }
