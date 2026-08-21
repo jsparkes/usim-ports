@@ -39,14 +39,14 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 - [ ] Pipeline simulation
 - [ ] Memory management unit
 
-#### Device Emulation (90%)
+#### Device Emulation (95%)
 - [x] Keyboard (CADR keycodes, modifiers, buffer)
 - [x] Mouse (3-button, position, hardware registers)
 - [x] Display (768x896, B&W and color, frame buffer)
 - [x] Disk controller (8 units, CHS addressing)
 - [x] Disk units (file-backed storage)
 - [x] I/O bus (device registration, routing)
-- [ ] SDL integration (window creation, rendering)
+- [x] WPF integration (window creation, rendering, input, beep audio)
 - [ ] Tape controller
 - [ ] Tape drives
 
@@ -114,13 +114,6 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 - ALU operations partially implemented
 - Memory management unit needs completion
 
-#### SDL Integration (20%)
-- SDL2-CS package referenced
-- Display frame buffer ready
-- Need window creation code
-- Need event loop integration
-- Need actual rendering
-
 ### ❌ Not Started
 
 #### Advanced Features
@@ -150,7 +143,8 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 - DiskController.cs - Disk I/O (100% done)
 - Keyboard.cs - Input handling (100% done)
 - Mouse.cs - Input handling (100% done)
-- Display.cs - Video output (90% done - needs SDL)
+- Display.cs - Video output (90% done)
+- WpfBackend.cs - Graphics/input/audio backend (100% done)
 - IOBus.cs - Device bus (100% done)
 - MachineControl.cs - Lifecycle management (100% done)
 - ConfigParser.cs - Configuration (100% done)
@@ -215,11 +209,11 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 3. Implement memory management unit
 4. Add microcode execution tests
 
-### Phase 2: SDL Integration (Priority: HIGH)
-1. Create SDL window
-2. Implement keyboard/mouse event handlers
-3. Render display frame buffer
-4. Add display refresh timer
+### Phase 2: WPF Integration (Complete)
+1. ✅ Create WPF window
+2. ✅ Implement keyboard/mouse event handlers
+3. ✅ Render display frame buffer
+4. ✅ Add display refresh timer (DispatcherTimer)
 
 ### Phase 3: Network Transmission (Priority: MEDIUM)
 1. Implement UDP backend for Chaos
@@ -264,21 +258,20 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 
 ### Build Status
 - ✅ Windows build successful
-- ✅ Linux build successful (expected)
-- ✅ macOS build successful (expected)
-- ✅ No build warnings
+- ✅ No build warnings (beyond pre-existing unused-field warnings)
 - ✅ Release builds ready
 
 ### Dependencies
 - .NET 8.0 SDK
-- SDL2-CS (3.0.0.2)
+- WPF (Microsoft.WindowsDesktop.App) — Windows-only
 - System.CommandLine (2.0.0-beta4)
 
 ### Deployment
 - ❌ No installer yet
 - ❌ No packages published
 - ✅ Manual deployment works
-- ✅ Cross-platform ready
+- ⚠️ Windows-only (WPF backend; the SDL2-based backend that supported
+  Linux/macOS was replaced)
 
 ## Conclusion
 
@@ -292,9 +285,8 @@ The C# conversion has achieved a comprehensive framework with all major subsyste
 
 The remaining work focuses on:
 1. **Microcode interpreter**: Complete instruction set implementation
-2. **SDL integration**: Actual window and rendering
-3. **Network transmission**: Backend for Chaos packets
+2. **Network transmission**: Backend for Chaos packets
 
 Overall completion: **~75%** (by functionality), **~85%** (by framework)
 
-The conversion demonstrates successful translation of complex C code to modern C#, maintaining the architecture while leveraging .NET features for improved safety, maintainability, and cross-platform support.
+The conversion demonstrates successful translation of complex C code to modern C#, maintaining the architecture while leveraging .NET features for improved safety and maintainability. The graphics/input/audio backend was later converted from SDL2 to WPF, making the emulator Windows-only.

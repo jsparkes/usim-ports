@@ -29,7 +29,7 @@ This C# port includes several major components that are **complete and productio
 - Structured configuration objects
 - Full type support (string, int, bool, double, hex, enum, arrays, paths)
 
-### ? **SDL2 Graphics Backend** (600+ lines)
+### ? **WPF Graphics Backend**
 - Hardware-accelerated rendering
 - Keyboard and mouse input
 - Audio beep support
@@ -128,7 +128,7 @@ if (!manager.Validate())
 | Microcode Engine | 1,100 | 8 | ? Complete |
 | Bit Operations | 350 | 50+ | ? Complete |
 | Configuration | 750 | 8 | ? Complete |
-| SDL2 Backend | 600 | - | ? Fixed |
+| WPF Backend | - | - | ? Complete |
 | Tests | 850 | 66+ | ? All Pass |
 | Documentation | 3,000 | - | ? Complete |
 | **Total** | **6,650** | **66+** | **? Ready** |
@@ -149,7 +149,7 @@ if (!manager.Validate())
 ### Core Engine
 - `usim-cs/UCode.cs` - Microcode execution engine
 - `usim-cs/MiscUtils.cs` - Bit manipulation utilities
-- `usim-cs/SDL2Backend.cs` - Graphics/input backend
+- `usim-cs/WpfBackend.cs` - Graphics/input backend
 
 ### Configuration
 - `usim-cs/ConfigParser.cs` - INI parser
@@ -250,7 +250,7 @@ usim-cs/
 ??? ConfigManager.cs      # Config management (400 lines)
 ??? UCodeTests.cs         # Microcode tests (550 lines)
 ??? ConfigTests.cs        # Config tests (300 lines)
-??? SDL2Backend.cs        # Graphics backend (600 lines)
+??? WpfBackend.cs         # Graphics backend
 ```
 
 ---

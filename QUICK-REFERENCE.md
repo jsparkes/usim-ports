@@ -276,9 +276,6 @@ usim> trace all off
 
 ### Build Errors
 
-**Problem:** `The type or namespace name 'SDL2' could not be found`
-**Solution:** Run `dotnet restore` to download packages
-
 **Problem:** `error CS0227: Unsafe code may only appear if compiling with /unsafe`
 **Solution:** Ensure `<AllowUnsafeBlocks>true</AllowUnsafeBlocks>` in .csproj file
 

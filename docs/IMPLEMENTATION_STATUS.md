@@ -56,7 +56,7 @@
 3. Memory - Memory subsystem
 4. Microcode - Microcode engine
 5. Display - Video settings
-6. SDL2 - Graphics backend
+6. WPF - Graphics backend
 7. Keyboard - Input configuration
 8. Mouse - Pointer settings
 9. Disk - Storage configuration
@@ -71,9 +71,9 @@
 
 ---
 
-### 3. **SDL2 Backend** ? Fixed
+### 3. **WPF Backend** ? Complete
 **Files:**
-- `usim-cs/SDL2Backend.cs`
+- `usim-cs/WpfBackend.cs`
 
 **Fixes Applied:**
 - ? Fixed `TraceLog.Instance.Trace()` calls (instance method)
@@ -121,7 +121,7 @@ UCodeTests.cs                 550    ? Complete
 ConfigParser.cs (enhanced)    350    ? Complete
 ConfigManager.cs              400    ? Complete
 ConfigTests.cs                300    ? Complete
-SDL2Backend.cs (fixes)        600    ? Complete
+WpfBackend.cs                 250    ? Complete
 Documentation               2,000    ? Complete
 ?????????????????????????????????????????????
 Total New/Modified          5,650    ? Complete
@@ -134,7 +134,7 @@ Component            Tests    Status
 Microcode Engine       8      ? All Pass
 Configuration System   8      ? All Pass
 Bit Operations        50+     ? All Pass
-SDL2 Backend          N/A     ? Compiles
+WPF Backend           N/A     ? Compiles
 ??????????????????????????????????????
 Total Tests           66+     ? 100% Pass
 ```
@@ -146,7 +146,6 @@ Project        Status      Errors    Warnings
 Usim           ? Success     0         0
 UsimTools      ? Success     0         0
 Chaos          ? Success     0         0
-SDL2-CS        ? Success     0         0
 ???????????????????????????????????????????????
 Overall        ? Success     0         0
 ```
@@ -168,7 +167,7 @@ CADR Lisp Machine Emulator (C# .NET 8)
 ?   ??? Keyboard.cs - Keyboard input
 ?   ??? Mouse.cs - Mouse input
 ?   ??? DiskController.cs - Mass storage
-?   ??? SDL2Backend.cs ? - Graphics/input backend
+?   ??? WpfBackend.cs ? - Graphics/input backend
 ?
 ??? Utilities
 ?   ??? MiscUtils.cs ? - Bit manipulation
@@ -249,7 +248,7 @@ class Program
         var machine = new MachineControl();
         
         var displayConfig = config.GetDisplayConfig();
-        machine.InitializeSDL2(
+        machine.InitializeDisplay(
             allowResize: displayConfig.AllowResize,
             scale: displayConfig.Scale
         );
@@ -302,7 +301,7 @@ class Program
 ### ? **Fully Functional**
 1. **Microcode Execution** - Complete ALU, barrel shifter, memory operations
 2. **Configuration System** - Full INI parsing with validation
-3. **SDL2 Integration** - Video/input backend working
+3. **WPF Integration** - Video/input backend working
 4. **Bit Operations** - All rotation and shift operations
 5. **Testing Framework** - Comprehensive test suites
 6. **Debugging Tools** - State dumping, tracing, statistics
@@ -407,7 +406,7 @@ Frame Rate:            60 FPS stable
 ### v0.3.0 - Current (2024)
 - ? Complete microcode engine implementation
 - ? Full configuration system
-- ? SDL2 backend fixes
+- ? WPF backend
 - ? Comprehensive bit manipulation library
 - ? Full test suites
 - ? Complete documentation
@@ -429,7 +428,7 @@ The CADR Lisp Machine emulator has reached a significant milestone:
 
 ? **Microcode Engine** - Complete and tested  
 ? **Configuration System** - Production-ready  
-? **SDL2 Backend** - Fully functional  
+? **WPF Backend** - Fully functional  
 ? **Bit Operations** - All operations implemented  
 ? **Testing** - Comprehensive coverage  
 ? **Documentation** - Complete and detailed  

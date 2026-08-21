@@ -137,10 +137,10 @@ dotnet run --project usim-cs -- --config usim.ini --headless
    - Used sparingly and only where necessary
    - Wrapped in safe APIs
 
-5. **SDL Integration**
-   - Using SDL2-CS wrapper for SDL functionality
+5. **WPF Integration**
+   - Native WPF window, rendering, and input handling
    - Display, keyboard, and mouse support
-   - Audio support through SDL
+   - Audio support through System.Media.SoundPlayer
 
 ### Limitations of Current Conversion
 

@@ -121,21 +121,6 @@ public class ConfigManager
     }
     
     /// <summary>
-    /// Get SDL2 configuration
-    /// </summary>
-    public SDL2Config GetSDL2Config()
-    {
-        return new SDL2Config
-        {
-            Enabled = _config.GetBool("SDL2", "enable_sdl2", true),
-            VideoDriver = _config.GetString("SDL2", "video_driver", "auto"),
-            Renderer = _config.GetString("SDL2", "renderer", "auto"),
-            VSync = _config.GetBool("SDL2", "vsync", true),
-            Fullscreen = _config.GetBool("SDL2", "fullscreen", false)
-        };
-    }
-    
-    /// <summary>
     /// Get memory configuration
     /// </summary>
     public MemoryConfig GetMemoryConfig()
@@ -311,15 +296,6 @@ public class DisplayConfig
     public bool AllowResize { get; set; }
     public bool ColorTv { get; set; }
     public int FrameRate { get; set; }
-}
-
-public class SDL2Config
-{
-    public bool Enabled { get; set; }
-    public string VideoDriver { get; set; } = "";
-    public string Renderer { get; set; } = "";
-    public bool VSync { get; set; }
-    public bool Fullscreen { get; set; }
 }
 
 public class MemoryConfig
