@@ -21,7 +21,7 @@ namespace Usim;
 public class UCode
 {
     #region Constants
-    
+
     // Memory sizes
     public const int PROM_SIZE = 512;
     public const int IMEM_SIZE = 16 * 1024;
@@ -30,127 +30,107 @@ public class UCode
     public const int DMEM_SIZE = 2048;
     public const int PDL_SIZE = 1024;
     public const int SPC_SIZE = 32;
-    
-    // Field positions in microcode instruction (48-bit)
-    public const int ALU_OP_POS = 43;
-    public const int ALU_OP_SIZE = 5;
-    public const int M_SOURCE_POS = 37;
-    public const int M_SOURCE_SIZE = 5;
-    public const int A_SOURCE_POS = 26;
-    public const int A_SOURCE_SIZE = 10;
-    public const int DEST_POS = 19;
-    public const int DEST_SIZE = 5;
-    public const int JUMP_COND_POS = 14;
-    public const int JUMP_COND_SIZE = 5;
-    public const int NEXT_PC_POS = 0;
-    public const int NEXT_PC_SIZE = 14;
-    
+
     #endregion
     
     // Machine cycles counter
-    public static ulong MachineCycles { get; set; }
-    
-    // Program counter
-    public uint Pc { get; set; }
-    
+    public ulong MachineCycles { get; set; }
+
     // Interrupt status
-    public static int InterruptStatusReg { get; private set; }
-    public static bool InterruptPendingFlag { get; set; }
-    
+    public int InterruptStatusReg { get; private set; }
+    public bool InterruptPendingFlag { get; set; }
+
     // Microcode memory
-    public static bool PromEnabledFlag { get; set; }
-    public static ulong[] Prom { get; } = new ulong[512];
-    public static ulong[] IMem { get; } = new ulong[16 * 1024];
-    
+    public bool PromEnabledFlag { get; set; }
+    public ulong[] Prom { get; } = new ulong[PROM_SIZE];
+    public ulong[] IMem { get; } = new ulong[IMEM_SIZE];
+
     // A, M, and D memories
-    public static uint[] AMem { get; } = new uint[1024];
-    public static uint[] MMem { get; } = new uint[32];
-    public static uint[] DMem { get; } = new uint[2048];
-    
+    public uint[] AMem { get; } = new uint[AMEM_SIZE];
+    public uint[] MMem { get; } = new uint[MMEM_SIZE];
+    public uint[] DMem { get; } = new uint[DMEM_SIZE];
+
     // Push-down list (stack)
-    public static uint[] Pdl { get; } = new uint[1024];
-    
+    public uint[] Pdl { get; } = new uint[PDL_SIZE];
+
     // Stack pointer cache
-    public static uint[] Spc { get; } = new uint[32];
-    public static uint SpcPtr { get; set; }
-    
-    // Registers
-    public static uint PdlPointer { get; set; }
-    public static uint PdlIndex { get; set; }
-    public static uint VmaReg { get; set; }
-    public static uint MdReg { get; set; }
-    public static uint Lc { get; set; }
-    public static uint OaRegHigh { get; set; }
-    public static uint OaRegLow { get; set; }
-    
+    public uint[] Spc { get; } = new uint[SPC_SIZE];
+    public uint SpcPtr { get; set; }
+
+    // Named registers
+    public uint DispatchConstant { get; set; }
+    public uint PdlPointer { get; set; }
+    public uint PdlIndex { get; set; }
+    public uint VmaReg { get; set; }
+    public uint MdReg { get; set; }
+    public uint Lc { get; set; }
+    public uint OaRegHigh { get; set; }
+    public uint OaRegLow { get; set; }
+    public uint Opc { get; set; }
+    public uint Q { get; set; }
+    public uint OldQ { get; set; }
+    public uint InterruptControl { get; set; }
+
     // Pipeline registers
-    public static ulong P0 { get; set; }
-    public static uint P0Pc { get; set; }
-    public static bool P0IMem { get; set; }
-    
-    public static ulong P1 { get; set; }
-    public static uint P1Pc { get; set; }
-    public static bool P1IMem { get; set; }
-    
-    public static ulong Iwr { get; set; }
-    
-    public static uint Npc { get; set; }
-    public static uint Opc { get; set; }
-    
-    public static int MData { get; set; }
-    public static int AData { get; set; }
-    
-    public static ulong DebugIr { get; set; }
-    
-    public static uint Out { get; set; }
-    public static uint Q { get; set; }
-    
-    public static bool Inhibit { get; set; }
-    
-    public static bool UExecHasRunOnce { get; set; }
-    
-    // Processor status flags
-    public static bool CarryFlag { get; set; }
-    public static bool OverflowFlag { get; set; }
-    public static bool NegativeFlag { get; set; }
-    public static bool ZeroFlag { get; set; }
-    
+    public ulong P0 { get; set; }
+    public uint P0Pc { get; set; }
+    public bool P0Imem { get; set; }
+
+    public ulong P1 { get; set; }
+    public uint P1Pc { get; set; }
+    public bool P1Imem { get; set; }
+
+    public ulong Iwr { get; set; }
+
+    public uint Npc { get; set; }
+
+    // Latched operands for the current cycle
+    public uint AAddr { get; set; }
+    public int AData { get; set; }
+    public uint MAddr { get; set; }
+    public int MData { get; set; }
+
+    public uint Out { get; set; }
+
+    public bool Inhibit { get; set; }
+    public bool UExecHasRunOnce { get; set; }
+
+    // Decoded common fields for the current cycle
+    public uint Op { get; set; }
+    public bool Popj { get; set; }
+
+    // Pending delayed memory read
+    public uint NewMd { get; set; }
+    public uint NewMdDelay { get; set; }
+
+    // ALU result/carry for the current cycle (real hardware has no
+    // persistent flags register — these replace the old Carry/Overflow/
+    // Negative/Zero flags, which were an invented artifact)
+    public uint AluCarry { get; set; }
+    public uint AluOut { get; set; }
+
+    // OA-register pending-merge flags
+    public bool Oal { get; set; }
+    public bool Oah { get; set; }
+
     /// <summary>
-    /// Update processor flags based on ALU result
+    /// Read len bits of P0 starting at bit pos (mirrors uexec.c's ir()).
     /// </summary>
-    public static void UpdateFlags(uint result, uint m, uint a, AluOp op)
+    private ulong Ir(int pos, int len)
     {
-        // Zero flag
-        ZeroFlag = (result == 0);
-        
-        // Negative flag (sign bit)
-        NegativeFlag = ((result & 0x80000000) != 0);
-        
-        // Carry and overflow depend on operation
-        if (op >= AluOp.Add && op <= AluOp.M_Plus_1)
-        {
-            // For arithmetic operations, compute carry and overflow
-            ulong longResult = (ulong)m + (ulong)a;
-            CarryFlag = (longResult > 0xFFFFFFFF);
-            
-            // Overflow: operands same sign, result different sign
-            bool mSign = (m & 0x80000000) != 0;
-            bool aSign = (a & 0x80000000) != 0;
-            bool rSign = (result & 0x80000000) != 0;
-            OverflowFlag = (mSign == aSign) && (mSign != rSign);
-        }
+        return (P0 >> pos) & ((1UL << len) - 1);
     }
-    
+
     /// <summary>
     /// Initialize the microcode system
     /// </summary>
-    public static void Init()
+    public void Init()
     {
         MachineCycles = 0;
         InterruptStatusReg = 0;
         InterruptPendingFlag = false;
         PromEnabledFlag = false;
-        
+
         Array.Clear(Prom);
         Array.Clear(IMem);
         Array.Clear(AMem);
@@ -158,7 +138,9 @@ public class UCode
         Array.Clear(DMem);
         Array.Clear(Pdl);
         Array.Clear(Spc);
-        
+
+        SpcPtr = 0;
+        DispatchConstant = 0;
         PdlPointer = 0;
         PdlIndex = 0;
         VmaReg = 0;
@@ -166,106 +148,41 @@ public class UCode
         Lc = 0;
         OaRegHigh = 0;
         OaRegLow = 0;
-        
+        Opc = 0;
+        Q = 0;
+        OldQ = 0;
+        InterruptControl = 0;
+
         P0 = 0;
         P0Pc = 0;
-        P0IMem = false;
-        
+        P0Imem = false;
+
         P1 = 0;
         P1Pc = 0;
-        P1IMem = false;
-        
+        P1Imem = false;
+
         Iwr = 0;
         Npc = 0;
-        Opc = 0;
-        
-        MData = 0;
+
+        AAddr = 0;
         AData = 0;
-        DebugIr = 0;
-        
+        MAddr = 0;
+        MData = 0;
+
         Out = 0;
-        Q = 0;
         Inhibit = false;
         UExecHasRunOnce = false;
-        
-        CarryFlag = false;
-        OverflowFlag = false;
-        NegativeFlag = false;
-        ZeroFlag = false;
+
+        Op = 0;
+        Popj = false;
+        NewMd = 0;
+        NewMdDelay = 0;
+        AluCarry = 0;
+        AluOut = 0;
+        Oal = false;
+        Oah = false;
     }
-    
-    /// <summary>
-    /// Load PROM from file
-    /// </summary>
-    public static void LoadPromFromFile(string filename)
-    {
-        using var stream = File.OpenRead(filename);
-        for (int i = 0; i < Prom.Length; i++)
-        {
-            if (stream.Position >= stream.Length)
-                break;
-                
-            // Read 64-bit microcode instruction
-            byte[] buffer = new byte[8];
-            stream.Read(buffer, 0, 8);
-            
-            Prom[i] = BitConverter.ToUInt64(buffer, 0);
-        }
-        
-        PromEnabledFlag = true;
-    }
-    
-    /// <summary>
-    /// Set interrupt status register
-    /// </summary>
-    public static void SetInterruptStatusReg(int newValue)
-    {
-        InterruptStatusReg = newValue;
-        InterruptPendingFlag = (newValue != 0);
-    }
-    
-    /// <summary>
-    /// Assert Unibus interrupt
-    /// </summary>
-    public static void AssertUnibusInterrupt(int level)
-    {
-        InterruptStatusReg |= (1 << level);
-        InterruptPendingFlag = true;
-    }
-    
-    /// <summary>
-    /// Deassert Unibus interrupt
-    /// </summary>
-    public static void DeassertUnibusInterrupt()
-    {
-        InterruptStatusReg = 0;
-        InterruptPendingFlag = false;
-    }
-    
-    /// <summary>
-    /// Assert Xbus interrupt
-    /// </summary>
-    public static void AssertXbusInterrupt()
-    {
-        InterruptPendingFlag = true;
-    }
-    
-    /// <summary>
-    /// Deassert Xbus interrupt
-    /// </summary>
-    public static void DeassertXbusInterrupt()
-    {
-        InterruptPendingFlag = false;
-    }
-    
-    /// <summary>
-    /// Shift OPC stack
-    /// </summary>
-    public static void ShiftOpcs(uint input)
-    {
-        Opc = input;
-    }
-    
+
     /// <summary>
     /// Execute one microcode step
     /// </summary>
@@ -481,143 +398,6 @@ public class UCode
     }
     
     #region ALU Operations
-    
-    /// <summary>
-    /// ALU operation codes
-    /// </summary>
-    public enum AluOp
-    {
-        SetZ = 0,      // Set zero
-        And = 1,       // Logical AND
-        AndCA = 2,     // AND with complement of A
-        SetM = 3,      // Set M
-        AndCM = 4,     // AND with complement of M
-        SetA = 5,      // Set A
-        Xor = 6,       // Exclusive OR
-        Or = 7,        // Logical OR
-        AndCMAndCA = 8,// AND with complement of M and A
-        Eqv = 9,       // Equivalence
-        SetCA = 10,    // Set complement of A
-        OrCA = 11,     // OR with complement of A
-        SetCM = 12,    // Set complement of M
-        OrCM = 13,     // OR with complement of M
-        OrCA_OrCM = 14,// OR of complements
-        SetO = 15,     // Set ones
-        Add = 16,      // Add
-        Sub = 17,      // Subtract
-        SubCM = 18,    // Subtract complement of M
-        AddCA = 19,    // Add complement of A
-        SubM = 20,     // Subtract M
-        SubM1 = 21,    // Subtract M and 1
-        AddCM = 22,    // Add complement of M
-        AddCM1 = 23,   // Add complement of M and 1
-        M_Plus_A = 24, // M + A
-        M_Or_A = 25,   // M OR A
-        M_And_A = 26,  // M AND A
-        M_Xor_A = 27,  // M XOR A
-        M_Minus_1 = 28,// M - 1
-        M_Plus_1 = 29, // M + 1
-        Undefined30 = 30,
-        Undefined31 = 31
-    }
-    
-    /// <summary>
-    /// Execute ALU operation
-    /// </summary>
-    public static uint ExecuteAlu(AluOp op, uint m, uint a, bool carry)
-    {
-        uint result;
-        
-        switch (op)
-        {
-            case AluOp.SetZ: result = 0; break;
-            case AluOp.And: result = m & a; break;
-            case AluOp.AndCA: result = m & ~a; break;
-            case AluOp.SetM: result = m; break;
-            case AluOp.AndCM: result = ~m & a; break;
-            case AluOp.SetA: result = a; break;
-            case AluOp.Xor: result = m ^ a; break;
-            case AluOp.Or: result = m | a; break;
-            case AluOp.AndCMAndCA: result = ~m & ~a; break;
-            case AluOp.Eqv: result = ~(m ^ a); break;
-            case AluOp.SetCA: result = ~a; break;
-            case AluOp.OrCA: result = m | ~a; break;
-            case AluOp.SetCM: result = ~m; break;
-            case AluOp.OrCM: result = ~m | a; break;
-            case AluOp.OrCA_OrCM: result = ~m | ~a; break;
-            case AluOp.SetO: result = 0xFFFFFFFF; break;
-            
-            // Arithmetic operations
-            case AluOp.Add:
-                result = m + a + (carry ? 1u : 0u);
-                break;
-            case AluOp.Sub:
-                result = m - a - (carry ? 0u : 1u);
-                break;
-            case AluOp.SubCM:
-                result = ~m - a - (carry ? 0u : 1u);
-                break;
-            case AluOp.AddCA:
-                result = m + ~a + (carry ? 1u : 0u);
-                break;
-            case AluOp.SubM:
-                result = a - m - (carry ? 0u : 1u);
-                break;
-            case AluOp.SubM1:
-                result = a - m - 1;
-                break;
-            case AluOp.AddCM:
-                result = ~m + a + (carry ? 1u : 0u);
-                break;
-            case AluOp.AddCM1:
-                result = ~m + a + 1;
-                break;
-            case AluOp.M_Plus_A:
-                result = m + a;
-                break;
-            case AluOp.M_Or_A:
-                result = m | a;
-                break;
-            case AluOp.M_And_A:
-                result = m & a;
-                break;
-            case AluOp.M_Xor_A:
-                result = m ^ a;
-                break;
-            case AluOp.M_Minus_1:
-                result = m - 1;
-                break;
-            case AluOp.M_Plus_1:
-                result = m + 1;
-                break;
-            
-            default:
-                result = 0;
-                break;
-        }
-        
-        return result;
-    }
-    
-    /// <summary>
-    /// Barrel shifter operation
-    /// </summary>
-    public static uint BarrelShift(uint input, int operation, int count)
-    {
-        count &= 0x1F; // Limit to 0-31
-        
-        return operation switch
-        {
-            0 => input, // No shift
-            1 => MiscUtils.Lsl32(input, count), // Logical shift left
-            2 => MiscUtils.Lsr32(input, count), // Logical shift right
-            3 => MiscUtils.Asr32(input, count), // Arithmetic shift right
-            4 => MiscUtils.Rol32(input, count), // Rotate left
-            5 => MiscUtils.Ror32(input, count), // Rotate right
-            _ => input
-        };
-    }
-    
     #endregion
     
     #region Instruction Decode
