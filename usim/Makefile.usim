@@ -1,0 +1,145 @@
+VERSION = 0.9-ams
+
+SHELL := /bin/sh
+
+# disable suffix rules
+SUFFIXES:
+
+# disable implicit rule
+%.o: %.c
+
+ifeq ($(USIM_BACKEND), x11)
+
+USIM_CFLAGS		= -I/usr/X11R6/include -I/opt/local/include -DWITH_X11=1
+USIM_LDFLAGS	= -lX11 -L/usr/X11R6/lib -L/opt/local/lib
+USIM_KEYBOARD	= kbd.c cadet.c knight.c lmch.c
+USIM_MOUSE		= mouse.c
+USIM_TV			= x11.c
+
+else ifeq ($(USIM_BACKEND), sdl2)
+
+USIM_CFLAGS		= $(shell sdl2-config --cflags) -DWITH_SDL2=1 -I/usr/X11R6/include
+USIM_LDFLAGS	= $(shell sdl2-config --libs) -lm
+USIM_KEYBOARD	= kbd.c cadet.c knight.c lmch.c
+USIM_MOUSE		= mouse.c
+USIM_TV			= sdl2.c
+
+else ifeq ($(USIM_BACKEND), sdl3)
+
+SDL3_NOT_INSTALLED	= $(shell pkg-config --exists sdl3; echo $$?)
+
+# this is to prevent build warning
+ifeq ($(SDL3_NOT_INSTALLED),1)
+USIM_CFLAGS		= -ISDL/include
+USIM_LDFLAGS	= -LSDL/ -Wl,-rpath,$(PWD)/SDL -lSDL3
+else
+USIM_CFLAGS		= $(shell pkg-config sdl3 --cflags)
+USIM_LDFLAGS	= $(shell pkg-config sdl3 --libs)
+endif
+
+USIM_CFLAGS		+= -DWITH_SDL3=1
+USIM_LDFLAGS	+= -lm
+
+USIM_KEYBOARD	= sdl3-audio.c sdl3-keyboard.c
+USIM_MOUSE		= sdl3-mouse.c
+USIM_TV			= sdl3-video.c
+
+endif
+
+# dependencies and object files for different backends are in separate dirs
+# so there is no need to clean when switching backends
+DEPDIR := .deps-usim/$(USIM_BACKEND)/$(USIM_BUILD_TYPE)
+OBJDIR := .objs-usim/$(USIM_BACKEND)/$(USIM_BUILD_TYPE)
+
+CFLAGS = -std=gnu99 -Wall -Wextra -I. -O3 -ggdb3
+DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.d
+
+ifeq ($(USIM_BUILD_TYPE), release)
+CFLAGS += -DNDEBUG=1
+endif
+
+USIM_CFLAGS += -DVERSION=\"$(VERSION)\" -DUSIM_BACKEND=\"$(USIM_BACKEND)\" -DUSIM_BUILD_TYPE=\"$(USIM_BUILD_TYPE)\"
+
+CHAOSDIR ?= $(PWD)/../chaos
+CHAOS_CFLAGS = -I$(CHAOSDIR) -I$(CHAOSDIR)/h -I$(CHAOSDIR)/chsocket -I$(CHAOSDIR)/libhosts -DSELECT=1
+
+.DEFAULT_GOAL = usim
+.PHONY: no_default_goal clean usim
+
+$(DEPDIR): ; mkdir -p $@
+$(OBJDIR): ; mkdir -p $@
+
+# implicit rule to compile usim objects
+$(OBJDIR)/%.o: %.c $(DEPDIR)/%.d | $(OBJDIR) $(DEPDIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(CHAOS_CFLAGS) $(USIM_CFLAGS) -c -o $@ $<
+
+# explicit rules to compile required chaos objects
+$(OBJDIR)/chaos.libhosts.a: | $(OBJDIR)
+	$(MAKE) -C $(CHAOSDIR)/libhosts libhosts.a
+	cp $(CHAOSDIR)/libhosts/libhosts.a $@
+$(OBJDIR)/chaos.glob.o: $(CHAOSDIR)/cmd/glob.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -c -o $@ $<
+$(OBJDIR)/chaos.FILE.o: $(CHAOSDIR)/cmd/FILE.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -w -I. -DFILEUTMP=\"$(FILEUTMP)\" -DMAP_ROOT_DIRECTORY -c -o $@ $<
+$(OBJDIR)/chaos.MINI.o: $(CHAOSDIR)/cmd/MINI.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -w -I. -DSELECT=1 -c -o $@ $<
+$(OBJDIR)/chaos.chopen.o: $(CHAOSDIR)/cmd/chopen.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -w -I$(CHAOSDIR)/chunix -I. -DSELECT -c -o $@ $<
+$(OBJDIR)/chaos.chdopen.o: $(CHAOSDIR)/chsocket/chdopen.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -w -I$(CHAOSDIR)/chunix -USELECT -c -o $@ $<
+$(OBJDIR)/chaos.challoc.o: $(CHAOSDIR)/chunix/challoc.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -Wno-unused-parameter -c -o $@ $<
+$(OBJDIR)/chaos.chutil.o: $(CHAOSDIR)/chncp/chutil.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(CHAOS_CFLAGS) -w -I$(CHAOSDIR)/chunix -I. -DSELECT -c -o $@ $<
+
+CHAOS_OBJS := $(OBJDIR)/chaos.glob.o $(OBJDIR)/chaos.FILE.o $(OBJDIR)/chaos.MINI.o \
+			  $(OBJDIR)/chaos.chopen.o $(OBJDIR)/chaos.chdopen.o \
+			  $(OBJDIR)/chaos.challoc.o $(OBJDIR)/chaos.chutil.o \
+			  $(OBJDIR)/chaos.libhosts.a
+
+SRCS := usim.c ucfg.c ini.c trace.c dump.c \
+		ucode.c uexec.c uvmem.c udiss.c usym.c \
+		misc.c m32.c idle.c \
+		machine-control.c \
+		bus-adaptor.c \
+		bus-interface.c diagnostic-interface.c unibus-mapping.c \
+		lashup-debugger.c \
+		iob.c $(USIM_KEYBOARD) $(USIM_MOUSE) \
+		uch11.c uch11-chaosd.c uch11-local.c uch11-udp.c \
+		tape-controller.c tape-drive.c \
+		main-memory.c \
+		disk-controller.c disk-unit.c \
+		tv.c colortv.c $(USIM_TV)
+
+OBJS := $(SRCS:%.c=$(OBJDIR)/%.o) $(CHAOS_OBJS)
+DEPS := $(SRCS:%.c=$(DEPDIR)/%.d) 
+
+# this is the error condition
+usim:
+	$(info USIM_BACKEND    = $(USIM_BACKEND))
+	$(info USIM_BUILD_TYPE = $(USIM_BUILD_TYPE))
+	$(error "USIM_BACKEND=x11/sdl2/sdl3 and USIM_BUILD_TYPE=debug/release must be set.")
+
+ifdef USIM_BACKEND
+ifdef USIM_BUILD_TYPE
+
+usim: $(OBJS)
+	$(info USIM_BACKEND    = $(USIM_BACKEND))
+	$(info USIM_BUILD_TYPE = $(USIM_BUILD_TYPE))
+	$(info CFLAGS          = $(CFLAGS) $(USIM_CFLAGS) $(CHAOS_CFLAGS))
+	$(info LDFLAGS         = $(LDFLAGS) $(USIM_LDFLAGS))
+	$(CC) $(CFLAGS) $(USIM_CFLAGS) $(CHAOS_CFLAGS) -o usim $^ $(LDFLAGS) $(USIM_LDFLAGS)
+
+endif
+endif
+
+clean:
+	rm -rf usim
+	rm -rf usim.dSYM
+	rm -rf .objs-usim
+	rm -rf .deps-usim
+
+# dependency files has no dependency
+$(DEPS):
+
+include $(wildcard $(DEPS))

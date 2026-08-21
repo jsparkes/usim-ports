@@ -1,0 +1,61 @@
+LMDF format description
+
+The dump file is a sequence of 32 bit words.  It starts with one word
+of magic ("LDMF"), followed by a word of the current version (0x0001
+at the moment).  It then consists of a sequence of segments.  Each
+segment starts with a one-word tag (four ASCII letters), then a
+one-word length, then <length> words of data.
+
+At the moment, the following segments are dumped:
+
+  - LVMS: Lisp Machine Version (78, 98 or 99)
+  - PDLI: the PDL index
+  - PDLP: the PDL pointer
+  - LCLV: the last value of LC
+  - LCHL: the list of recent LC values
+  - L1MP: the L1 map (one word per entry)
+  - L2MP: the L2 map (one word per entry)
+  - PDLM: the PDL memory
+  - PMEM: the physical memory
+
+Any program reading or writing dump files should just ignore any
+unknown segments.
+
+LMDF Format (version 1); roughly
+
+  4c4d 4446 0100 0000	LMDF....	; 32-bit magic  + 32-bit version
+  5044 4c49 0100 0000	PDLI....	; 32-bit string + 32-bit length
+  0301 0000 		     	....		; data...
+  5044 4c50 0100 0000	PDLP....	
+  0701 0000               	....
+  ...
+  454f 465f 0000 0000        EOF_
+
+Possible segments:
+
+  AMEM - A memory
+  DMEM - D memory
+  IMEM - I memory
+  L1MP - L1 map
+  L2MP - L2 map
+  LCHL - LC backtrace
+  LCLV - Location Counter (LC) last value (1 word)
+  MCPC - the microcode pc (1 word)
+  MMEM - M memory
+  PCHL - the microcode pc backtrace
+  PDHL - the PDL history list (4 words per entry)
+         - first word contains read/write/push/pop (high 8 bits), access type (index/pointer) (less-high 8 bits) and microcode pc (low 16 bits)
+	 - then comes one word for the actual index, one word for the value that is read or written, one word for the LC.
+	 Caveat: the LC and (maybe?) microcode PC values are *not* guaranteed to be correct, especially LC can be the next value, if LC is incremented before the microcode instruction is executed... take them as guidelines, not absolute truth!
+  PDLI - PDL index (1 word)
+  PDLM - PDL memory
+  PDLP - PDL pointer (1 word)
+  PMEM - physical memory
+  RMD_ - the M register
+  RVMA - the VMA register
+  RQ__ - the Q register
+  ROAL - the OA-REG-LOW register
+  ROAH - the OA-REG-HIGH register
+  ROPC - the OPC register
+  USTK - the microcode stack
+  USTP - the microcode stack pointer (1 word)

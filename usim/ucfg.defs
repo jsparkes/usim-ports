@@ -1,0 +1,80 @@
+/* -*- C -*-
+ *
+ * The syntax of the X macro is as follows:
+ * 	X(section, name, default)
+ */
+
+X(usim, state_filename, "")
+X(usim, screenshot_filename, "")
+X(usim, sys_directory, NULL)
+X(usim, fs_root_directory, "..")
+X(usim, monitor, "other")
+X(usim, geometry, "-1 -1 -1")
+X(usim, always_on_top, "false")
+X(usim, kbd, "cadet")
+X(usim, grab_keyboard, "true")
+X(usim, headless, "false")
+X(usim, scale, "1")
+X(usim, scale_filter, "linear")
+X(usim, allow_resize, "false")
+X(usim, beep_amplitude, "0.8")
+X(usim, use_ascii_beep, "false")
+X(usim, special_key, "")
+
+X(ucode, prommcr_filename, "../sys/ubin/promh.mcr")
+X(ucode, promsym_filename, "../sys/ubin/promh.sym")
+X(ucode, mcrsym_filename, "../sys/ubin/ucadr.sym")
+
+X(chaos, backend, "local")
+X(chaos, hosts, "hosts.text")
+X(chaos, myname, "LOCAL-CADR")
+X(chaos, servername, "LOCAL-BRIDGE")
+// for UDP
+X(chaos, bridgeip, "10.0.0.1")
+X(chaos, bridgechaos, "3040")
+X(chaos, bridgeport, "42042")
+X(chaos, bridgeport_local, "42042")
+X(chaos, udp_local_hybrid, "false")
+
+X(memory, size, "2048")
+
+X(disk, disk0_filename, "disk.img")
+X(disk, disk1_filename, NULL)
+X(disk, disk2_filename, NULL)
+X(disk, disk3_filename, NULL)
+X(disk, disk4_filename, NULL)
+X(disk, disk5_filename, NULL)
+X(disk, disk6_filename, NULL)
+X(disk, disk7_filename, NULL)
+
+X(disk, disk0, "disk.img")
+X(disk, disk1, NULL)
+X(disk, disk2, NULL)
+X(disk, disk3, NULL)
+X(disk, disk4, NULL)
+X(disk, disk5, NULL)
+X(disk, disk6, NULL)
+X(disk, disk7, NULL)
+
+X(tape, tape0, NULL)
+X(tape, tape1, NULL)
+X(tape, tape2, NULL)
+X(tape, tape3, NULL)
+X(tape, tape4, NULL)
+X(tape, tape5, NULL)
+X(tape, tape6, NULL)
+X(tape, tape7, NULL)
+
+X(trace, level, "notice")
+X(trace, facilities, "usim")
+
+X(idle, cycles, "655350")
+X(idle, quantum, "65535")
+X(idle, timeout, "1000")
+
+/*
+ * The following sections are handled specially:
+ *
+ *   kbd
+ *   kbd.modifiers
+ */

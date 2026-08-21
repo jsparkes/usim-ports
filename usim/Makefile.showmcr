@@ -1,0 +1,39 @@
+SHELL := /bin/sh
+
+# disable suffix rules
+SUFFIXES:
+# disable implicit rule
+%.o: %.c
+
+OBJDIR := .objs-showmcr
+DEPDIR := .deps-showmcr
+
+.DEFAULT_GOAL := all
+.PHONY: all clean
+
+all: showmcr
+
+clean:
+	rm -rf showmcr $(DEPDIR) $(OBJDIR) showmcr.dSYM
+
+CFLAGS = -std=gnu99 -Wall -Wextra -I. -Ofast -ggdb3
+DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.d
+
+$(OBJDIR): ; mkdir -p $@
+$(DEPDIR): ; mkdir -p $@
+
+# implicit rule to compile objects
+$(OBJDIR)/%.o: %.c $(DEPDIR)/%.d | $(OBJDIR) $(DEPDIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
+
+SRCS := showmcr.c udiss.c misc.c usym.c
+OBJS := $(SRCS:%.c=$(OBJDIR)/%.o)
+DEPS := $(SRCS:%.c=$(DEPDIR)/%.d) 
+
+showmcr: $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# dependency files has no dependency
+$(DEPS):
+
+include $(wildcard $(DEPS))

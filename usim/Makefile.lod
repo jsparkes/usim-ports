@@ -1,0 +1,39 @@
+SHELL := /bin/sh
+
+# disable suffix rules
+SUFFIXES:
+# disable implicit rule
+%.o: %.c
+
+OBJDIR := .objs-lod
+DEPDIR := .deps-lod
+
+.DEFAULT_GOAL := all
+.PHONY: all clean
+
+all: lod
+
+clean:
+	rm -rf lod $(DEPDIR) $(OBJDIR) lod.dSYM
+
+CFLAGS = -std=gnu99 -Wall -Wextra -I. -O3 -ggdb3
+DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.d
+
+$(OBJDIR): ; mkdir -p $@
+$(DEPDIR): ; mkdir -p $@
+
+# implicit rule to compile objects
+$(OBJDIR)/%.o: %.c $(DEPDIR)/%.d | $(OBJDIR) $(DEPDIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
+
+SRCS := lod.c misc.c unfasl.c usym.c
+OBJS := $(SRCS:%.c=$(OBJDIR)/%.o)
+DEPS := $(SRCS:%.c=$(DEPDIR)/%.d) 
+
+lod: $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# dependency files has no dependency
+$(DEPS):
+
+include $(wildcard $(DEPS))

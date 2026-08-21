@@ -1,0 +1,39 @@
+SHELL := /bin/sh
+
+# disable suffix rules
+SUFFIXES:
+# disable implicit rule
+%.o: %.c
+
+OBJDIR := .objs-diskmaker
+DEPDIR := .deps-diskmaker
+
+.DEFAULT_GOAL := all
+.PHONY: all clean
+
+all: diskmaker
+
+clean:
+	rm -rf diskmaker $(DEPDIR) $(OBJDIR) diskmaker.dSYM
+
+CFLAGS = -std=gnu99 -Wall -Wextra -I. -O3 -ggdb3
+DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.d
+
+$(OBJDIR): ; mkdir -p $@
+$(DEPDIR): ; mkdir -p $@
+
+# implicit rule to compile objects
+$(OBJDIR)/%.o: %.c $(DEPDIR)/%.d | $(OBJDIR) $(DEPDIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
+
+SRCS := diskmaker.c
+OBJS := $(SRCS:%.c=$(OBJDIR)/%.o)
+DEPS := $(SRCS:%.c=$(DEPDIR)/%.d) 
+
+diskmaker: $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# dependency files has no dependency
+$(DEPS):
+
+include $(wildcard $(DEPS))

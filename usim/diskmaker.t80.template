@@ -1,0 +1,16 @@
+# this template is the same as T-80 PACK-TYPE in sys: io; dledit.lisp
+cylinders	    815
+heads           5
+blockspertrack	17
+drive	Trident T-80
+pack
+comment	 	
+mcr MCR1
+lod LOD1
+partitions:
+MCR1	-	0224
+MCR2	-	0224
+PAGE	-	c340
+LOD1	-	c200
+LOD2	-	c200
+FILE	-   c29

@@ -1,0 +1,119 @@
+/* sdl3_keyboard_scancode.defs --- new keyboard (cadet) keys and scancodes
+ *
+ * X(name, scancode)
+ * name: cadet key name, that is defined as cadet_scancode_X in the code
+ * scancode: physical 7-bit scancode, so no changes with shift etc.
+ * The value of cadet_scancode_<name> is <scancode> in the code.
+ *
+ * This file contains all cadet keys and their scancodes.
+ * No need to modify this file for any purpose.
+ *
+ * cadet keyboard: https://webwit.nl/input/misc/spacecadet/1.jpg
+ */
+
+// cadet keyboard row 0
+X(macro,			0100)
+X(terminal,		0040)
+X(quote,			0120)
+X(over_strike,	0160)
+X(clear_input,	0110)
+X(clear_screen,	0050)
+X(hold_output,	0030)
+X(stop_output,	0170)
+X(abort,			0067)
+X(break,			0167)
+X(resume,			0047)
+X(call,				0100)
+
+// cadet keyboard row 1
+X(roman_i,		0101)
+X(roman_ii,		0001)
+X(system,			0141)
+X(colon,			0021)
+X(1,					0121)
+X(2,					0061)
+X(3,					0161)
+X(4,					0011)
+X(5,					0111)
+X(6,					0051)
+X(7,					0151)
+X(8,					0031)
+X(9,					0071)
+X(0,					0171)
+X(minus,			0131)
+X(equal,			0126)
+X(brace_left,		0166)
+X(brace_right,	0146)
+X(status,			0046)
+X(hand_up,		0106)
+X(hand_down,	0176)
+
+// cadet keyboard row 2
+X(roman_iii,	0102)
+X(roman_iv,		0002)
+X(network,		0042)
+X(tab,				0022)
+X(q,					0122)
+X(w,					0062)
+X(e,					0162)
+X(r,					0012)
+X(t,					0112)
+X(y,					0052)
+X(u,					0152)
+X(i,					0032)
+X(o,					0072)
+X(p,					0172)
+X(paran_left,		0132)
+X(paran_right,	0137)
+X(grave,			0077)
+X(backslash,	0037)
+X(delete,			0157)
+X(hand_left,	0117)
+X(hand_right,	0017)
+
+// cadet keyboard row 3
+X(mode_lock,	0003)
+X(alt_mode,		0143)
+X(rubout,			0023)
+X(a,					0123)
+X(s,					0063)
+X(d,					0163)
+X(f,					0013)
+X(g,					0113)
+X(h,					0053)
+X(j,					0153)
+X(k,					0033)
+X(l,					0073)
+X(semicolon,	0173)
+X(apostrophe,	0133)
+X(return,			0136)
+X(line,				0036)
+X(end,				0156)
+X(help,				0116)
+
+// cadet keyboard row 4
+X(caps_lock,	0125)
+X(top,				0104)
+X(greek,			0044)
+X(shift,			0024)
+X(z,					0124)
+X(x,					0064)
+X(c,					0164)
+X(v,					0014)
+X(b,					0114)
+X(n,					0054)
+X(m,					0154)
+X(comma,			0034)
+X(period,			0074)
+X(slash,			0174)
+X(repeat,			0000)
+// shift, greek, top has same scancode on both sides
+X(alt_lock,		0015)
+
+// cadet keyboard row 5
+X(hyper,			0145)
+X(super,			0005)
+X(meta,				0045)
+X(ctrl,				0020)
+X(space,			0134)
+// ctrl, meta, super, hyper has same scancode on both sides

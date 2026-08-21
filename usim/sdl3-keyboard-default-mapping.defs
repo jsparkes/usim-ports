@@ -1,0 +1,166 @@
+/* sdl3_keyboard_default_mapping.defs --- SDL_Keycode to cadet key name default mapping 
+ *
+ * X(sdl, cadet)
+ * SDLK_<sdl> is mapped to cadet_scancode_<cadet> in the code.
+ * e.g. X(A, A)
+ *
+ * SDLK codes are here: https://wiki.libsdl.org/SDL3/SDL_Keycode
+ */
+
+// these keys have no default mapping
+// they have to be mapped in usim.ini to be used
+
+// macro
+// quote
+// over_strike
+// hold_output
+// stop_output
+// call
+
+// roman_i
+// roman_ii
+// colon
+// brace_left
+// brace_right
+
+// roman_iii
+// roman_iv
+
+// mode_lock
+// line
+
+// top
+// greek
+// repeat
+// alt_lock
+
+// hyper
+
+// en-US keyboard left section
+
+// en-US keyboard row 0, function keys
+X(Escape,	alt_mode)
+X(F1,	system)
+X(F2,	network)
+X(F3,	status)
+X(F4,	terminal)
+X(F5,	help)
+X(F6,	clear_input)
+X(F7,	clear_screen)
+X(F8,	null)
+X(F9,	null)
+X(F10, null)
+X(F11, null)
+X(F12, null)
+
+// en-US keyboard row 1
+X(`, grave)
+X(1, 1)
+X(2, 2)
+X(3, 3)
+X(4, 4)
+X(5, 5)
+X(6, 6)
+X(7, 7)
+X(8, 8)
+X(9, 9)
+X(0, 0)
+X(-, minus)
+X(=, equal)
+X(Backspace, rubout)
+
+// en-US keyboard row 2
+X(Tab, tab)
+X(Q, q)
+X(W, w)
+X(E, e)
+X(R, r)
+X(T, t)
+X(Y, y)
+X(U, u)
+X(I, i)
+X(O, o)
+X(P, p)
+X([, brace_left)
+X(],	brace_right)
+X(\\, backslash)
+
+// en-US keyboard row 3
+X(CapsLock,	caps_lock)
+X(A, a)
+X(S, s)
+X(D, d)
+X(F, f)
+X(G, g)
+X(H, h)
+X(J, j)
+X(K, k)
+X(L, l)
+X(;, semicolon)
+// hex code because of macro expansion error
+X(\x27, apostrophe)
+X(Return, return)
+
+// en-US keyboard row 4
+X(Left Shift,	shift)
+X(Z, z)
+X(X, x)
+X(C, c)
+X(V, v)
+X(B, b)
+X(N, n)
+X(M, m)
+// hex code because of macro expansion error
+X(\x2c, comma)
+X(., period)
+X(/, slash)
+X(Right Shift, shift)
+
+// en-US keyboard row 5
+X(Left Ctrl, ctrl)
+X(Left GUI,	super)
+X(Left Alt,	meta)
+X(Space, space)
+X(Right Alt,	meta)
+X(Right GUI,	super)
+X(Menu,	null)
+X(Right Ctrl, ctrl)
+
+// en-US keyboard middle section
+
+X(PrintScreen, null)
+X(ScrollLock,	null)
+X(Pause, null)
+
+X(Insert,	null)
+X(Delete,	null)
+X(Home,	break)
+X(End, end)
+X(PageUp,	abort)
+X(PageDown,	resume)
+
+X(Up, hand_up)
+X(Down, hand_down)
+X(Left, hand_left)
+X(Right, hand_right)
+
+// en-US  keyboard numpad
+
+X(Numlock,	null)
+X(Keypad /,	null)
+X(Keypad *,	null)
+X(Keypad -,	null)
+X(Keypad +,	null)
+X(KeyPad Enter,	null)
+
+X(Keypad 1, null)
+X(Keypad 2,	null)
+X(Keypad 3,	null)
+X(Keypad 4,	null)
+X(Keypad 5,	null)
+X(Keypad 6,	null)
+X(Keypad 7,	null)
+X(Keypad 8,	null)
+X(Keypad 9,	null)
+X(Keypad 0,	null)
+X(Keypad ., null)

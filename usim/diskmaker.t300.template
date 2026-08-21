@@ -1,0 +1,28 @@
+# this template is the same as T-300 PACK-TYPE in sys: io; dledit.lisp
+cylinders	    815
+heads	        19
+blockspertrack	17
+drive	        Trident T-300
+pack
+comment
+mcr MCR1
+lod LOD1
+partitions:
+MCR1	-	0224
+MCR2	-	0224
+MCR3	-	0224
+MCR4	-	0224
+MCR5	-	0224
+MCR6	-	0224
+MCR7	-	0224
+MCR8	-	0224
+PAGE	-	c202
+LOD1	-	c75
+LOD2	-	c75
+LOD3	-	c75
+LOD4	-	c75
+LOD5	-	c75
+LOD6	-	c75
+LOD7	-	c75
+LOD8	-	c75
+FILE	-   c9
