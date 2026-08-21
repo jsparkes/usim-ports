@@ -1,0 +1,36 @@
+This directory contains two things:
+
+1. A library of functions for manipulating host tables, which are included
+   in programs that need it by specifying "-lhosts" when compiling.
+
+2. Routines to generate a run-time loadable host table that also includes
+   who the host we are running on is.
+
+The hosttab.h file should be put into /usr/include and included in programs
+using the library. This is done in "make install".
+
+The hosts.global file should contain the currently distributed global
+host table. "hosts.local" contains things to add to the host table for
+hosts not in the global table but accessible from this host.
+Normally, if you are not on the ARPA net, hosts.global is empty.
+
+Look in hosts.sample for thr format of these files.
+
+The file "whoami" contains the name of this host on one line, as found as the
+primary name in the host table.  This name is the root of various host
+dependencies so it should be done right.  The chaosnet code in the
+kernel gets initialized at boot time with this name by the chinit program.
+
+To summarize: to win you must make hosts.local hosts.global and whoami,
+then run "make install" as super user.
+
+--------
+8/19/85
+New host tables can be found on mit-mc as the file
+
+sysnet;hstmit
+
+login as anonymous with any passwd
+
+That table only includes mit hosts which is fine since all others must
+be accessed with ip-tcp and not chaos.

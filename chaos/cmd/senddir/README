@@ -1,0 +1,18 @@
+This directory is for files that were ftp'd over from MIT-EDDIE
+to serve for a better send server on September 6, 1984.
+It was taken with the understanding that send would probably be
+further developed at EDDIE.  If that be the case, then these
+may be out of date.
+
+The file libhosts.a should go into /usr/lib/libhosts.a
+It is necessary to make a symbolic link from /usr/include/time.h
+to /usr/include/sys/time.h as it was done on EDDIE.
+The compiled files reply and send should go into /usr/local/bin.
+A compiled newsends should go into /usr/local/bin too except
+that the protection has to be set at "rwsr-xr-x" which you do
+with a chmod 6755 newsends.  The directory  /usr/spool/sends should
+have a protection of 777.  (This definitely works, other protections
+may work, you can experiment.)
+
+Type "make" when you are in this source directory to have everything
+properly compiled.

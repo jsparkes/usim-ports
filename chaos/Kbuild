@@ -1,0 +1,12 @@
+LINUX_DIR ?= /usr/src/linux
+
+ccflags-y := -I$(src)/h -I$(src) -I$(src)/chlinux
+ccflags-y += -DLINUX_KERNEL=1 -DNCHETHER=2
+ccflags-y += -Wno-error=implicit-function-declaration -Wno-error=strict-prototypes -Wno-error=implicit-int
+
+obj-m := chlinux.o
+chlinux-objs = \
+	chlinux/chaos.o chlinux/challoc.o chlinux/chtime.o chunix/chconf.o \
+	chlinux/chether.o chncp/chstream.o \
+	chncp/chclock.o chncp/chrcv.o chncp/chsend.o \
+	chncp/chuser.o chncp/chutil.o \

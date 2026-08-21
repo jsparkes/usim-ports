@@ -1,0 +1,336 @@
+Notes
+
+* Status
+
+Embedded -- works.
+Socket -- works.
+OpenBSD kernel driver -- not implemented
+Linux kernel driver -- implemented for Linux 2.0.18, 2.2.18 and
+	possibly 2.4.2 -- untested if these ever worked.  There is
+	also a completely untested version for Linux 4.11.3.
+
+* Bugs
+
+* History
+
+Files marked with an asterix (*) are currently used.  Files marked
+with (+) have been added, but not used by anything.  Files marked with
+(-) have been removed.
+
+chaos/h/chaos.h -- (*) ---!!! restored; check origin.
+
+chaos/chncp/*
+	This directory contains sources for the part of the kernel
+	code that is independent of the operating system it is run on
+	(largely).
+
+	  chclock.c (*) -- ---!!! restored; check origin.
+	  chncp.h (*) -- ---!!! restored; check origin.
+	  chrcv.c (*) -- ---!!! restored; check origin.
+	  chsend.c (*) -- ---!!! restored; check origin.
+	  chstream.c (*) -- ---!!! restored; check origin -- based on copy from August 12, 1982.
+	  chuser.c (*) -- ---!!! restored; check origin.
+	  chutil.c (*) -- ---!!! restored; check origin.
+
+    Hardware drivers:
+
+	  chch11.c (+) -- based on copy from May 25, 1987.
+	  ch11.h (+) -- based on copy from August 29, 1986.
+
+	  chil.c (+) -- based on copy from May 25, 1987.
+	  chil.h (+) -- based on copy from August 29, 1986.
+	  address-res.h (+) -- based on copy from August 29, 1986.
+
+	  chdr11c.c (+) -- based on copy from May 25, 1987.
+	  dr11c.h (+) -- based on copy from August 29, 1986.
+
+	  if_chip.c (+) -- based on copy from May 25, 1987.
+
+chaos/chunix/*
+	This directory contains the UNIX interface to the network,
+	which implements the network software as a UNIX device driver.
+
+	  challoc.c (*) -- based on copy from May 26, 1987.
+	  challoc.h (*) -- based on copy from August 29, 1986.
+	  chconf.c (*) -- ---!!! restored; check origin.
+	  chconf.h (*) -- ---!!! restored; based on copy from May 25tn 1987.
+	  chsys.h (*) -- ---!!! restored; check origin.
+	  chtime.c (*) -- ---!!! restored; check origin.
+	  chtty.c (*) -- based on copy from May 25, 1987.
+
+    Main driver:
+
+	  chaos.c (*) -- ---!!! restored; check origin.
+
+    Hardware drivers:
+
+	  chenet.h (+) -- based on copy from September 29, 1986.
+	  chether.c (+) -- based on copy from May 26, 1987.
+
+chaos/chlinux/* -- written by Brad Parker; around 1997
+
+chaos/chsocket/* -- written by Brad Parker.
+
+chaos/cmd/*
+
+	This directory contains all sources for user programs.
+
+	  chopen.c (*) -- ---!!! restored; based on copy from September 6, 1984.
+	    int chopen(int address, char *contact, int mode, int async, char *data, int dlength, int rwsize);
+	    int chlisten(char *contact, int mode, int async, int rwsize);
+	    int chreject(int fd, char *string);
+
+	  11LOAD.c (+) -- based on copy from August 29, 1985.
+	  FILE.c (*) -- ---!!! based on copy from March 8, 1988.
+	  FILE.h (*) -- ---!!! restored; based on copy from January 12, 1984.
+	  LD.c (+) -- based on copy from January 12, 1984.
+	  LGP.c (+) -- based on copy from February 28, 1985.
+	  MAIL.c (+) -- based on copy from 5, 1987.
+	  MINI.c (*) -- written by RJS, August, 2010.
+	  Makefile (*) -- ---!!! restored; based on copy from September 24, 1989.
+	  NAME.c (+) -- based on copy from January 12, 1984.
+	  NETLOAD.c (+) -- based on copy from January 12, 1984.
+	  RAMTEK.c (+) -- based on copy from January 12, 1984.
+	  RTAPE.c (+) -- based on copy from January 12, 1984.
+	  RTAPE.h (+) -- based on copy from January 12, 1984.
+	  SEND.c (+) -- based on copy from October 12, 1986.
+	  SINK.c (+) -- based on copy from January 12, 1984.
+	  SMTP.c (+) -- based on copy from August 18, 1987.
+	  SPICE.c (+) -- based on copy from January 12, 1984.
+	  SUPDUP.c (+) -- based on copy from November 2, 1987.
+	  TELNET.c (+) -- based on copy from March 31, 1988.
+	  TTYLINK.c (+) -- based on copy from January 12, 1985.
+	  UU.c (+) -- based on copy from November 1, 1985.
+	  cftp.c (+) -- based on copy from May 31, 1984.
+	  chaccept.c (+) -- based on copy from February 27, 1985.
+	  chaosmail.c (+) -- based on copy from November 7, 1985.
+	  chconnect.c (+) -- based on copy from October 12, 1986.
+	  checkalias.c (+) -- based on copy from January 12, 1984.
+	  chfinger.c (+) -- based on copy from November 7, 1988.
+	  chmail.c (+) -- based on copy from January 12, 1984.
+	  chmailer.c (+) -- based on copy from January 12, 1984.
+	  chmkdev.c (+) -- based on copy from January 12, 1984.
+	  chosend.c (+) -- based on copy from January 12, 1984.
+	  chrut.c (+) -- based on copy from August 18, 1988.
+	  chsend.c (+) -- based on copy from October 31, 1985.
+	  chserver.c (+) -- based on copy from November 22, 1985.
+	  chstat.c (+) -- based on copy from January 12, 1984.
+	  chtape.c (+) -- based on copy from January 12, 1984.
+	  chttyserv.c (+) -- based on copy from June 27, 1986.
+	  chup.c (+) -- based on copy from January 12, 1984.
+	  ex.c (+) -- based on copy from March 12, 1985.
+	  glob.c (*) -- ---!!! based on copy from BSD x.y ---!!!
+	  gtest.c (+) -- based on copy from January 12, 1984.
+	  host_addr.c (+) -- based on copy from August 28, 1985.
+	  newsends.c (+) -- based on copy from October 30, 1985.
+	  oconn.c (+) -- based on copy from October 31, 1985.
+	  prtable.c (+) -- based on copy from June 10, 1987.
+	  record.c (+) -- based on copy from January 12, 1984.
+	  record.h (+) -- based on copy from January 12, 1984.
+	  reply.c (+) -- based on copy from October 30, 1985.
+	  sendsys.c (+) -- based on copy from February 25, 1986.
+	  sendsys.h (+) -- based on copy from October 30, 1985.
+	  sendtxt.c (+) -- based on copy from October 30, 1985.
+	  webster.c (+) -- based on copy from June 16, 1988.
+	  what.c (+) -- based on copy from October 30, 1985.
+
+chaos/cmd/TCP/*
+
+	  Makefile (+) -- based on copy from January 16, 1986.
+	  TCP.c (+) -- based on copy from November 28, 1986.
+	  netsubrs.c (+) -- based on copy from January 16, 1986.
+
+chaos/cmd/senddir/*
+
+	N.B. SEND.c and send.c can cause a file name conflict on dumb
+	  systems that are case-insensetive.
+
+	  Makefile (+) -- based on copy from November 6, 1984.
+	  README (+) -- based on copy from November 9, 1984.
+	  SEND.c (+) -- based on copy from November 6, 1984.
+	  chopen.c (+) -- based on copy from November 6, 1984.
+	  newsends.c (+) -- based on copy from November 6, 1984.
+	  reply.c (+) -- based on copy from November 6, 1984.
+	  send.c (+) -- based on copy from November 6, 1984.
+	  sendsys.c (+) -- based on copy from September 10, 1984.
+	  sendsys.h (+) -- based on copy from November 7, 1984.
+	  sendtxt.c (+) -- based on copy from November 6, 1984.
+	  what.c (+) -- based on copy from September 10, 1984.
+
+libhosts/*
+
+	Makefile -- based on copy from June 24, 1987.
+	Makefile.old (-) -- based on copy from June 23, 1987.
+	README -- based on copy from August 20, 1985.
+	changes (-) -- based on copy from May 29, 1987.
+	chaosnames.c (*) -- based on copy from January 7, 1984.
+	hostlib.c (*) -- based on copy from February 1, 1985.
+	hosts.global (-) -- based on copy from May 30, 1987.
+	hosts.local -- based on copy from May 30, 1987.
+	hosts.sample (*) -- based on copy from August 12, 1982.
+	hosts2.c (*) -- based on copy from January 2, 1986.
+	hosttab.h (*) -- based on copy from January 7, 1984.
+	makeout (-) -- based on copy from June 24, 1987.
+	readhosts.c (*) -- based on copy from January 7, 1984.
+	update.make (-) -- based on copy from June 30, 1987.
+	whoami (-) -- based on copy from May 30, 1987.
+
+In files that expose a shared API, e.g., chunix/challoc.c and
+chunix/chaos.c we could do:
+
+#if BSD41
+Original code inlined
+#elif SOCKET
+#include "challoc-socket.c"
+#else
+#include "challoc-embed.c"
+#endif
+
+Suggested options:
+
+	BSD41
+	LINUX / LINUX41200
+	OPENBSD
+	SOCKET
+	EMBED
+
+But it probobly makes more sense to split up chunix/ into:
+
+  chsocket/challoc.c
+  chlinux/challoc.c
+  chunix/challoc.c
+  chlocal/challoc.c
+
+etc, than using #if hackery.  Then having a CHBKEND variable that can
+be changed, which is used in $(CHBKEND)/challoc.c in the Makefile to
+specify the source files to be used.
+
+Chaosnet for Unix -- (Suggested New) Directory Layout
+
+include/chaos/*.h
+	These are the header files needed by the kernel and user
+	programs that deal with the Chaos network.
+
+libhosts/* and libhosts/hosttab.h
+	These files create a library of host table manipulation
+	routines and actually build and install new host tables.  The
+	source file from which the actual host table is built also
+	resides here.  This also inclueds the the header file for the
+	host table library.  See the README file in this directory.
+
+cmd/*
+	This directory contains all sources for user programs, and the
+	make file to compile and install them all.  It also contains
+	this file.
+
+chncp/*
+	This directory contains sources for the part of the kernel
+	code that is independent of the operating system it is run on
+	(largely).
+
+chunix/*
+	This directory contains the UNIX interface to the network,
+	which implements the network software as a UNIX device driver.
+
+chlinux/*
+	This direcory contains the Linux interface to the network,
+	which implements the network software as a Linux kernel
+	module.
+
+chsocket/*
+	This directory contains a socket interface to the network,
+	which implements the network software as a daemon.
+
+chembed/*
+	This directory contains a embeddeable interface to the
+	network.
+
+OpenBSD kernel driver
+
+	Copy source tree to /sys/netchaos.  Modify required
+	autoconf(9) files.  The cmd/ commands then uses ioctl(2) to
+	communicate (wrapped around a agnostic chopen.c)
+
+Linux kernel driver
+
+	Point out kernel in Kbuild, and run `make' in chlinux/
+	directory.  The cmd/ commands then uses ioctl(2) to
+	communicate (wrapped around a agnostic chopen.c)
+
+Socket driver
+
+	Run make in cmd/, and start `chaosd'.  The cmd/ commands then
+	write/read from a socket (wrapped around a agnostic chopen.c)
+
+Embedded
+
+	Compile libchembed.a (doesn't exist yet); then link whatever
+	program against it.
+
+Notes on linage
+
+Original in this context means that the files haven't been modified by
+someone other than the original authors.
+
+chaos-19820812
+	Original and complete tape; from DLW.
+
+v8
+	Contains kernel code (chncp/chunix), but no no user-space
+	code.  While the tree is dated 1985, but the code under
+	usr/sys/{chncp,chunix} is rather from between 1982 and 1984.
+
+	E.g., chstream.c was modified such that it would accept an
+	errorp argument between 1982 and 1984.  This change does not
+	exist in the above V8 code.  It also does not contain RCS
+	headers.  Plus, the directory structure for the headers is the
+	old split-style (e.g, chaos.h does not contain the literal
+	content of constants.h but instead does an #include).
+
+chaos-19870606
+	Incomplete dump of kernel code (chncp/chunix), no user-space
+	code.
+
+	I think this tree should rather be dated 1990-07-17,
+	originally based on a tree from 1987 (1987-06-09).  The 1994
+	timestamps are a rouse.  When CFIELDS in 1994 setup
+	/afs/dev.mit.edu/source/src77/bsd-4.3/vax/sys/attic/chncp he
+	started numbering from 1.1 (when he re-ci:ed the files).
+
+	The original location of this was once
+	/source/bsd-4.3/vax/sys, where PROBE also did a re-ci of some
+	files (1990-07-17), including some minor fixes for compiler
+	issues.
+
+	As to why I claim that this is specifically based on something
+	from 1987, is simply that RC did actual changes then
+	(1987-06-12).  The initial copy of all the files is though
+	from 1984.  Which is I guess when Symbolics forked the
+	Chaosnet for Unix code, which is around there I think.
+
+chaos-19970521
+	Contains many original files (~1989) as backup files, or
+	unmodified.  Also contains a kernel driver for Linux 2.0.18.
+	Brad probobly started working on this in 1996?
+
+chaos-19991124-0
+	Contains RCS files but these are only one revision and not
+	original.  Probobly a dump of the CVSROOT.  The Linux driver
+	is for 2.0.18 as above.
+
+chaos-19991124-1
+	Same as chaos-19991124 but a working copy.
+
+chaos-20000703
+	Continuation of above? Seems to be exactly same, but with RCS
+	IDs updates by me.
+
+chaos-20010506
+	Continuation of above.  Minor changes to keep up with Linux
+	breakage.  The Linux driver is for 2.2.18 (or 2.4.2?).
+
+chaos-20180318
+	Contains the start of a semi-cleaned up version of Chaosnet
+	for Unix that might work with three different back ends
+	(kernel for OpenBSD and Linux, Unix socket, embedded) and has
+	the Linux driver updated for 4.11.3.

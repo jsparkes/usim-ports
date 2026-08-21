@@ -1,0 +1,70 @@
+; The network table is in the format of one line entries looking like:
+
+; NET <name>,<network #>
+
+; sorted alphabetically by network name.  All fields should be
+; in upper case.  The fields are:
+
+; <name>	official name of this network
+
+; <network #>	A single network number, in DECIMAL.
+
+; The host table is in the format of one line entries looking like:
+
+; HOST <name>,<addresses>,<status>,<system>,<machine>,[<nicknames>]
+
+; sorted alphabetically by host name.  All fields should be
+; in upper case.  The fields are:
+
+; <name>	official name of this host
+
+; <addresses>	A single <address> or a list of them in
+;		 brackets and separated by commas, with no
+;		 spaces in between.
+;
+;		A <address> is an OCTAL number, 
+;		 preceded by a network name (ARPA, CHAOS, DIAL,
+;		 LCS, RCC, SU) and a space.  The default network
+;		 name is ARPA.
+;
+; 		ARPANET host numbers are represented in as H/I
+;		 where H and I are 8 bit DECIMAL numbers.  H is
+;		 the host number, I is the IMP number.
+;
+;		Chaosnet host numbers are in octal.
+;
+;		Dialnet host "numbers" are 10 digit telephone
+;		 network numbers.
+;
+;		LCSnet addresses are represented as LCS S/H,
+;		 where S and H are 8 bit OCTAL numbers.  S is
+;		 the LCSnet subnet, H is the host.
+;
+;		RCCnet addresses are in the same format as
+;		 ARPANET addresses.
+;
+;		SUnet addresses are represented as SU S#H, where
+;		 S and H are 8 bit OCTAL numbers.  S is the SUnet
+;		 subnet, H is the host.
+
+; <status>	whether USER or SERVER. Time sharing machines should be SERVER
+;		workstations (single user) should be USER
+
+; <system>	operating system name (e.g., TENEX, ITS,
+;		 MULTICS, UNIX, TOPS-20, LISPM)
+
+; <machine>	actual machine type (e.g., PDP10, IBM-370, PDP11, LISPM, VAX,
+;		 etc).  By convention, KA-10, KI-10, KL-10,
+;		 KL-20, Foonly are all considered to be
+;		 PDP-10s.  No - should be after "PDP"; this
+;		 is so it fits in one 36-bit word.
+
+; <nicknames>	nicknames for this host.  The list is in
+;		 square brackets and each name is delimited
+;		 by a comma.
+;
+; Here is a simple sample for a site called SCRC with a VAX and 2 lispm's
+NET	SCRC-CHAOS,	1
+HOST	SCRC-VAX,	SCRC-CHAOS 401,SERVER,UNIX,VAX,[VAX,V]
+HOST	SCRC-LM1,	SCRC-CHAOS 403,USER,LISPM,LISPM,[LM1,L1]
+HOST	SCRC-LM2,	SCRC-CHAOS 405,USER,LISPM,LISPM,[LM2,L2]

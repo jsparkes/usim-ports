@@ -1,0 +1,11 @@
+/* -*- C -*-
+ *
+ * The syntax of the X macro is as follows:
+ *	X(section, name, default)
+ */
+
+X(chaos, servername, "server")
+X(chaos, hosts, "hosts.text")
+
+X(trace, level, "notice")
+X(trace, facilities, "none")

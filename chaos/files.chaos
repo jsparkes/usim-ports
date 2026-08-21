@@ -1,0 +1,18 @@
+#	$OpenBSD$
+
+pseudo-device  chaos: ifnet
+
+# file netchaos/chncp/chdr11c.c		chdr device-driver
+# file netchaos/chncp/chch11.c		chch device-driver
+file netchaos/chncp/chclock.c		chaos
+file netchaos/chncp/chrcv.c		chaos
+file netchaos/chncp/chsend.c		chaos
+file netchaos/chncp/chstream.c		chaos
+file netchaos/chncp/chuser.c		chaos
+file netchaos/chncp/chutil.c		chaos
+file netchaos/chunix/challoc.c		chaos
+file netchaos/chunix/channel.c		chaos
+file netchaos/chunix/chaos.c		chaos
+file netchaos/chunix/chconf.c		chaos
+file netchaos/chunix/chtty.c		chaos
+file netchaos/chunix/chtime.c		chaos
