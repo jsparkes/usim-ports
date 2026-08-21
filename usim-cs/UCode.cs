@@ -184,6 +184,70 @@ public class UCode
     }
 
     /// <summary>
+    /// Load PROM from file
+    /// </summary>
+    public void LoadPromFromFile(string filename)
+    {
+        using var stream = File.OpenRead(filename);
+        for (int i = 0; i < Prom.Length; i++)
+        {
+            if (stream.Position >= stream.Length)
+                break;
+
+            // Read 64-bit microcode instruction
+            byte[] buffer = new byte[8];
+            stream.Read(buffer, 0, 8);
+
+            Prom[i] = BitConverter.ToUInt64(buffer, 0);
+        }
+
+        PromEnabledFlag = true;
+    }
+
+    /// <summary>
+    /// Set interrupt status register
+    /// </summary>
+    public void SetInterruptStatusReg(int newValue)
+    {
+        InterruptStatusReg = newValue;
+        InterruptPendingFlag = (newValue != 0);
+    }
+
+    /// <summary>
+    /// Assert Unibus interrupt
+    /// </summary>
+    public void AssertUnibusInterrupt(int level)
+    {
+        InterruptStatusReg |= (1 << level);
+        InterruptPendingFlag = true;
+    }
+
+    /// <summary>
+    /// Deassert Unibus interrupt
+    /// </summary>
+    public void DeassertUnibusInterrupt()
+    {
+        InterruptStatusReg = 0;
+        InterruptPendingFlag = false;
+    }
+
+    /// <summary>
+    /// Assert Xbus interrupt
+    /// </summary>
+    public void AssertXbusInterrupt()
+    {
+        InterruptPendingFlag = true;
+    }
+
+    /// <summary>
+    /// Deassert Xbus interrupt
+    /// </summary>
+    public void DeassertXbusInterrupt()
+    {
+        InterruptPendingFlag = false;
+    }
+
+    /// <summary>
     /// Execute one microcode step
     /// </summary>
     public static void Step()
