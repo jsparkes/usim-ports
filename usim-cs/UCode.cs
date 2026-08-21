@@ -183,6 +183,176 @@ public class UCode
         Oah = false;
     }
 
+    #region Fetch, Decode, and Dispatch
+
+    /// <summary>
+    /// Advance the pipeline: P1 becomes P0, then prefetch the next word into P1.
+    /// </summary>
+    private void IncNpc()
+    {
+        P0 = P1; P0Pc = P1Pc; P0Imem = P1Imem;
+
+        P1Imem = !PromEnabledFlag;
+        P1 = P1Imem ? IMem[Npc] : Prom[Npc];
+        P1Pc = Npc;
+
+        if (Npc == 0x3FFF) Npc = 0; else Npc++;
+
+        Opc = P0Pc;
+    }
+
+    /// <summary>
+    /// Execute one microcode cycle (faithful port of uexec_step()).
+    /// </summary>
+    public void Step()
+    {
+        UExecHasRunOnce = true;
+
+        IncNpc();
+
+        if (NewMdDelay != 0)
+        {
+            NewMdDelay--;
+            if (NewMdDelay == 0) MdReg = NewMd;
+        }
+
+        if (Inhibit)
+        {
+            Inhibit = false;
+            MachineCycles++;
+            return;
+        }
+
+        if (Oal) { Oal = false; P0 |= OaRegLow & 0x03FFFFFF; }
+        if (Oah) { Oah = false; P0 |= (ulong)(OaRegHigh & 0x003FFFFF) << 26; }
+
+        Op = (uint)Ir(43, 2);
+        Popj = Ir(42, 1) == 1;
+        AAddr = (uint)Ir(32, 10);
+        ulong msource = Ir(31, 1);
+        MAddr = (uint)Ir(26, 5);
+
+        MData = msource == 0 ? (int)MMem[MAddr] : MfRead(MAddr);
+        AData = (int)AMem[AAddr];
+
+        Iwr = ((ulong)(uint)(AData & 0xFFFF) << 32) | (uint)MData;
+
+        switch (Op)
+        {
+            case 0: Alu(); break;
+            case 1: Jmp(); break;
+            case 2: Dsp(); break;
+            case 3: Byt(); break;
+        }
+
+        if (Popj)
+        {
+            uint target = PopSpc();
+            if ((target >> 14 & 1) != 0) target = AdvanceLc(target);
+            Npc = target & 0x3FFF;
+        }
+
+        MachineCycles++;
+    }
+
+    private int LcByteMode()
+    {
+        if ((InterruptControl & (1 << 29)) != 0)
+        {
+            int ir4 = (int)(P0 >> 4) & 1, ir3 = (int)(P0 >> 3) & 1;
+            int lc1 = (int)(Lc >> 1) & 1, lc0 = (int)Lc & 1;
+            int pos = (int)(P0 & 7);
+            pos |= ((ir4 ^ (lc1 ^ lc0)) << 4) | ((ir3 ^ lc0) << 3);
+            return pos;
+        }
+        else
+        {
+            int ir4 = (int)(P0 >> 4) & 1, lc1 = (int)(Lc >> 1) & 1;
+            int pos = (int)(P0 & 0xF);
+            pos |= ((ir4 ^ lc1) == 0 ? 1 : 0) << 4;
+            return pos;
+        }
+    }
+
+    private uint AdvanceLc(uint ppc)
+    {
+        uint oldLc = Lc & 0x0FFFFFFF;
+        if ((InterruptControl & (1 << 29)) != 0) Lc++; else Lc += 2;
+
+        if ((Lc & (1u << 31)) != 0)
+        {
+            Lc &= ~(1u << 31);
+            VmaReg = oldLc >> 2;
+            VmRead(oldLc >> 2, out NewMd);
+            NewMdDelay = 2;
+        }
+        else
+        {
+            ppc |= 2;
+        }
+
+        uint lc0b = ((InterruptControl & (1 << 29)) != 0 ? 1u : 0u) & (Lc & 1);
+        uint lc1 = (Lc & 2) != 0 ? 1u : 0u;
+        bool lastByteInWord = (~lc0b & ~lc1 & 1) != 0;
+        if (lastByteInWord) Lc |= (1u << 31);
+
+        return ppc;
+    }
+
+    private void PushSpc(uint pc)
+    {
+        SpcPtr = (SpcPtr + 1) & 0x1F;
+        Spc[SpcPtr] = pc;
+    }
+
+    private uint PopSpc()
+    {
+        uint v = Spc[SpcPtr];
+        SpcPtr = (SpcPtr - 1) & 0x1F;
+        return v;
+    }
+
+    private int MfRead(uint addr)
+    {
+        throw new NotImplementedException("MfRead is implemented in Phase 4 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+    }
+
+    private void Alu()
+    {
+        throw new NotImplementedException("Alu is implemented in Phase 2 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+    }
+
+    private void Jmp()
+    {
+        throw new NotImplementedException("Jmp is implemented in Phase 3 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+    }
+
+    private void Dsp()
+    {
+        throw new NotImplementedException("Dsp is implemented in Phase 6 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+    }
+
+    private void Byt()
+    {
+        throw new NotImplementedException("Byt is implemented in Phase 7 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+    }
+
+    /// <summary>
+    /// VMA-ok state for the current cycle (real page-fault detection lands in Phase 5;
+    /// defaults to true — "no page fault" — until then).
+    /// </summary>
+    public bool VmaOk { get; set; } = true;
+
+    private void VmRead(uint vaddr, out uint v)
+    {
+        // Real virtual-memory read lands in Phase 5. Until then, treat every
+        // read as a page fault-free no-op returning 0, matching "VmaOk = true"
+        // above (Phase 5 replaces this with the real Vm()/Uvmem-backed path).
+        v = 0;
+    }
+
+    #endregion
+
     /// <summary>
     /// Load PROM from file
     /// </summary>
@@ -247,283 +417,9 @@ public class UCode
         InterruptPendingFlag = false;
     }
 
-    /// <summary>
-    /// Execute one microcode step
-    /// </summary>
-    public static void Step()
-    {
-        // This is a placeholder - actual microcode execution logic
-        // would be significantly more complex
-        MachineCycles++;
-        UExecHasRunOnce = true;
-    }
-    
-    /// <summary>
-    /// Execute one complete microcode instruction
-    /// </summary>
-    public static void ExecuteInstruction(uint pc, bool useImem)
-    {
-        // Fetch instruction
-        ulong instruction = FetchInstruction(pc, useImem);
-        
-        // Decode instruction fields
-        AluOp aluOp = GetAluOp(instruction);
-        uint mSource = GetMSource(instruction);
-        uint aSource = GetASource(instruction);
-        uint dest = GetDest(instruction);
-        uint jumpCond = GetJumpCond(instruction);
-        uint nextPc = GetNextPC(instruction);
-        
-        // Read operands
-        uint mValue = ReadMSource(mSource);
-        uint aValue = ReadASource(aSource);
-        
-        // Execute ALU operation
-        uint aluResult = ExecuteAlu(aluOp, mValue, aValue, CarryFlag);
-        
-        // Update processor flags
-        UpdateFlags(aluResult, mValue, aValue, aluOp);
-        
-        // Store result to destination
-        WriteDestination(dest, aluResult);
-        
-        // Update output register
-        Out = aluResult;
-        
-        // Trace instruction execution
-        TraceInstruction(pc, useImem, instruction, aluResult);
-        
-        // Evaluate jump condition and update PC
-        bool jumpTaken = EvaluateJumpCondition(jumpCond, aluResult);
-        if (jumpTaken)
-        {
-            Npc = nextPc;
-        }
-        
-        // Update statistics
-        MachineCycles++;
-        TotalInstructions++;
-        TotalAluOps++;
-    }
-    
-    /// <summary>
-    /// Fetch instruction from memory
-    /// </summary>
-    public static ulong FetchInstruction(uint pc, bool useImem)
-    {
-        if (useImem && pc < IMEM_SIZE)
-        {
-            return IMem[pc];
-        }
-        else if (!useImem && PromEnabledFlag && pc < PROM_SIZE)
-        {
-            return Prom[pc];
-        }
-        else if (pc < IMEM_SIZE)
-        {
-            return IMem[pc];
-        }
-        
-        return 0; // Invalid PC
-    }
-    
-    /// <summary>
-    /// Read M-source operand
-    /// </summary>
-    public static uint ReadMSource(uint mSource)
-    {
-        return mSource switch
-        {
-            0 => 0,                    // Zero
-            1 => ReadMMem(0),          // M[0]
-            2 => ReadMMem(1),          // M[1]
-            3 => ReadMMem(2),          // M[2]
-            4 => ReadMMem(3),          // M[3]
-            5 => PdlPointer,           // PDL pointer
-            6 => VmaReg,               // VMA
-            7 => MdReg,                // MD
-            8 => Lc,                   // LC
-            9 => Q,                    // Q register
-            10 => OaRegLow,            // OA low
-            11 => OaRegHigh,           // OA high
-            _ => ReadMMem(mSource & 0x1F)
-        };
-    }
-    
-    /// <summary>
-    /// Read A-source operand
-    /// </summary>
-    public static uint ReadASource(uint aSource)
-    {
-        if (aSource < 1024)
-        {
-            return ReadAMem(aSource);
-        }
-        
-        // Special A-sources beyond 1024
-        return aSource switch
-        {
-            1024 => Pdl[PdlPointer],     // PDL top
-            1025 => Out,                 // Output register
-            _ => 0
-        };
-    }
-    
-    /// <summary>
-    /// Write to destination
-    /// </summary>
-    public static void WriteDestination(uint dest, uint value)
-    {
-        switch (dest)
-        {
-            case 0: // NOP - no write
-                break;
-            case 1: // A memory
-                WriteAMem((uint)AData, value);
-                break;
-            case 2: // M memory
-                WriteMMem((uint)MData, value);
-                break;
-            case 3: // PDL
-                PushPdl(value);
-                break;
-            case 4: // VMA
-                VmaReg = value;
-                break;
-            case 5: // MD
-                MdReg = value;
-                break;
-            case 6: // LC
-                Lc = value;
-                break;
-            case 7: // Q
-                Q = value;
-                break;
-            case 8: // OA low
-                OaRegLow = value;
-                break;
-            case 9: // OA high
-                OaRegHigh = value;
-                break;
-            case 10: // PDL pointer
-                PdlPointer = value & 0x3FF;
-                break;
-            default:
-                // Extended destinations
-                break;
-        }
-    }
-    
-    /// <summary>
-    /// Evaluate jump condition
-    /// </summary>
-    public static bool EvaluateJumpCondition(uint condition, uint aluResult)
-    {
-        return condition switch
-        {
-            0 => true,                              // Unconditional
-            1 => ZeroFlag,                          // Jump if zero
-            2 => !ZeroFlag,                         // Jump if not zero
-            3 => NegativeFlag,                      // Jump if negative
-            4 => !NegativeFlag,                     // Jump if not negative
-            5 => CarryFlag,                         // Jump if carry
-            6 => !CarryFlag,                        // Jump if no carry
-            7 => OverflowFlag,                      // Jump if overflow
-            8 => !OverflowFlag,                     // Jump if no overflow
-            9 => (aluResult & 1) != 0,              // Jump if bit 0 set
-            10 => (aluResult & 1) == 0,             // Jump if bit 0 clear
-            11 => InterruptPendingFlag,             // Jump if interrupt pending
-            12 => !InterruptPendingFlag,            // Jump if no interrupt
-            13 => ZeroFlag || NegativeFlag,         // Jump if <= 0
-            14 => !ZeroFlag && !NegativeFlag,       // Jump if > 0
-            15 => false,                            // Never (for debugging)
-            _ => true                               // Default to unconditional
-        };
-    }
-    
-    /// <summary>
-    /// Main machine run loop
-    /// </summary>
-    public static bool MachRun()
-    {
-        // Return true if machine should continue running
-        return !Inhibit;
-    }
-    
-    /// <summary>
-    /// Run the microcode engine
-    /// </summary>
-    public static void Run()
-    {
-        while (MachRun())
-        {
-            Step();
-        }
-    }
-    
     #region ALU Operations
     #endregion
-    
-    #region Instruction Decode
-    
-    /// <summary>
-    /// Extract field from microcode instruction
-    /// </summary>
-    public static ulong ExtractField(ulong instruction, int position, int size)
-    {
-        return MiscUtils.LoadByte(instruction, position, size);
-    }
-    
-    /// <summary>
-    /// Get ALU operation from instruction
-    /// </summary>
-    public static AluOp GetAluOp(ulong instruction)
-    {
-        return (AluOp)ExtractField(instruction, ALU_OP_POS, ALU_OP_SIZE);
-    }
-    
-    /// <summary>
-    /// Get M-source from instruction
-    /// </summary>
-    public static uint GetMSource(ulong instruction)
-    {
-        return (uint)ExtractField(instruction, M_SOURCE_POS, M_SOURCE_SIZE);
-    }
-    
-    /// <summary>
-    /// Get A-source from instruction
-    /// </summary>
-    public static uint GetASource(ulong instruction)
-    {
-        return (uint)ExtractField(instruction, A_SOURCE_POS, A_SOURCE_SIZE);
-    }
-    
-    /// <summary>
-    /// Get destination from instruction
-    /// </summary>
-    public static uint GetDest(ulong instruction)
-    {
-        return (uint)ExtractField(instruction, DEST_POS, DEST_SIZE);
-    }
-    
-    /// <summary>
-    /// Get jump condition from instruction
-    /// </summary>
-    public static uint GetJumpCond(ulong instruction)
-    {
-        return (uint)ExtractField(instruction, JUMP_COND_POS, JUMP_COND_SIZE);
-    }
-    
-    /// <summary>
-    /// Get next PC from instruction
-    /// </summary>
-    public static uint GetNextPC(ulong instruction)
-    {
-        return (uint)ExtractField(instruction, NEXT_PC_POS, NEXT_PC_SIZE);
-    }
-    
-    #endregion
-    
+
     #region Memory Access
     
     /// <summary>
@@ -653,94 +549,6 @@ public class UCode
         }
         
         return 0;
-    }
-    
-    #endregion
-    
-    #region SPC (Stack Pointer Cache)
-    
-    /// <summary>
-    /// Push value onto SPC
-    /// </summary>
-    public static void PushSpc(uint value)
-    {
-        SpcPtr = (SpcPtr + 1) & 0x1F;
-        Spc[SpcPtr] = value;
-    }
-    
-    /// <summary>
-    /// Pop value from SPC
-    /// </summary>
-    public static uint PopSpc()
-    {
-        uint value = Spc[SpcPtr];
-        SpcPtr = (SpcPtr - 1) & 0x1F;
-        return value;
-    }
-    
-    /// <summary>
-    /// Read SPC without modifying pointer
-    /// </summary>
-    public static uint ReadSpc()
-    {
-        return Spc[SpcPtr];
-    }
-    
-    #endregion
-    
-    #region Pipeline and Control
-    
-    /// <summary>
-    /// Advance pipeline by one stage
-    /// </summary>
-    public static void AdvancePipeline(uint currentPc, bool currentPcImem)
-    {
-        // Shift pipeline: P0 -> P1 -> IWR
-        Iwr = P1;
-        P1 = P0;
-        P1Pc = P0Pc;
-        P1IMem = P0IMem;
-        
-        // Fetch next instruction into P0
-        P0 = FetchInstruction(currentPc, currentPcImem);
-        P0Pc = currentPc;
-        P0IMem = currentPcImem;
-    }
-    
-    /// <summary>
-    /// Flush pipeline (for jumps/interrupts)
-    /// </summary>
-    public static void FlushPipeline()
-    {
-        P0 = 0;
-        P0Pc = 0;
-        P0IMem = false;
-        
-        P1 = 0;
-        P1Pc = 0;
-        P1IMem = false;
-        
-        Iwr = 0;
-    }
-    
-    /// <summary>
-    /// Check if page fault occurred
-    /// </summary>
-    public static bool CheckPageFault(uint address)
-    {
-        // Simplified page fault check
-        // In real hardware, this would check page tables
-        return false;
-    }
-    
-    /// <summary>
-    /// Handle memory cycle
-    /// </summary>
-    public static void MemoryCycle()
-    {
-        // This would handle memory access timing
-        // For now, just increment cycle counter
-        MachineCycles++;
     }
     
     #endregion
