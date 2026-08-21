@@ -166,6 +166,13 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--debug-microcode":
+                case "--debug-ucode":
+                    var debugger = new MicrocodeDebugger();
+                    debugger.StartDebugSession();
+                    Environment.Exit(0);
+                    break;
+
                 default:
                     Console.Error.WriteLine($"Unknown option: {args[i]}");
                     return false;
@@ -200,6 +207,9 @@ public class Program
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
+        Console.WriteLine();
+        Console.WriteLine("Debugging:");
+        Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
     }
     
     private static MachineControl? _machine;
