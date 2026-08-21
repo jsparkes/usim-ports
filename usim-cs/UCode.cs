@@ -283,7 +283,8 @@ public class UCode
         {
             Lc &= ~(1u << 31);
             VmaReg = oldLc >> 2;
-            VmRead(oldLc >> 2, out NewMd);
+            VmRead(oldLc >> 2, out uint newMd);
+            NewMd = newMd;
             NewMdDelay = 2;
         }
         else
@@ -425,80 +426,80 @@ public class UCode
     /// <summary>
     /// Read from A memory
     /// </summary>
-    public static uint ReadAMem(uint address)
+    public uint ReadAMem(uint address)
     {
         address &= 0x3FF; // 10-bit address
         return AMem[address];
     }
-    
+
     /// <summary>
     /// Write to A memory
     /// </summary>
-    public static void WriteAMem(uint address, uint value)
+    public void WriteAMem(uint address, uint value)
     {
         address &= 0x3FF;
         AMem[address] = value;
     }
-    
+
     /// <summary>
     /// Read from M memory
     /// </summary>
-    public static uint ReadMMem(uint address)
+    public uint ReadMMem(uint address)
     {
         address &= 0x1F; // 5-bit address
         return MMem[address];
     }
-    
+
     /// <summary>
     /// Write to M memory
     /// </summary>
-    public static void WriteMMem(uint address, uint value)
+    public void WriteMMem(uint address, uint value)
     {
         address &= 0x1F;
         MMem[address] = value;
     }
-    
+
     /// <summary>
     /// Read from D memory
     /// </summary>
-    public static uint ReadDMem(uint address)
+    public uint ReadDMem(uint address)
     {
         address &= 0x7FF; // 11-bit address
         return DMem[address];
     }
-    
+
     /// <summary>
     /// Write to D memory
     /// </summary>
-    public static void WriteDMem(uint address, uint value)
+    public void WriteDMem(uint address, uint value)
     {
         address &= 0x7FF;
         DMem[address] = value;
     }
-    
+
     /// <summary>
     /// Push value onto PDL stack
     /// </summary>
-    public static void PushPdl(uint value)
+    public void PushPdl(uint value)
     {
         PdlPointer = (PdlPointer + 1) & 0x3FF;
         Pdl[PdlPointer] = value;
     }
-    
+
     /// <summary>
     /// Pop value from PDL stack
     /// </summary>
-    public static uint PopPdl()
+    public uint PopPdl()
     {
         uint value = Pdl[PdlPointer];
         PdlPointer = (PdlPointer - 1) & 0x3FF;
         return value;
     }
-    
+
     /// <summary>
     /// Read PDL at offset from pointer (0 = top of stack, 1 = second from top, etc.)
     /// </summary>
-    public static uint ReadPdl(uint offset)
+    public uint ReadPdl(uint offset)
     {
         // In CADR, offset 0 means top of stack (current PdlPointer)
         // offset 1 means one back, offset 2 means two back, etc.
@@ -511,13 +512,13 @@ public class UCode
     #region Dispatch ROM
     
     // Dispatch ROM for opcode dispatch
-    public static ushort[] DispatchRom { get; } = new ushort[2048];
-    public static bool DispatchRomLoadedFlag { get; set; }
-    
+    public ushort[] DispatchRom { get; } = new ushort[2048];
+    public bool DispatchRomLoadedFlag { get; set; }
+
     /// <summary>
     /// Load dispatch ROM from file
     /// </summary>
-    public static void LoadDispatchRomFromFile(string filename)
+    public void LoadDispatchRomFromFile(string filename)
     {
         using var stream = File.OpenRead(filename);
         for (int i = 0; i < DispatchRom.Length; i++)
@@ -538,7 +539,7 @@ public class UCode
     /// <summary>
     /// Perform dispatch operation
     /// </summary>
-    public static uint Dispatch(uint dispatchAddress, uint instruction)
+    public uint Dispatch(uint dispatchAddress, uint instruction)
     {
         // Combine dispatch address with instruction bits to form ROM address
         uint romAddress = (dispatchAddress & 0x7FF) | ((instruction & 0x0F) << 11);
@@ -558,27 +559,27 @@ public class UCode
     /// <summary>
     /// Enable/disable instruction tracing
     /// </summary>
-    public static bool InstructionTraceEnabled { get; set; }
-    
+    public bool InstructionTraceEnabled { get; set; }
+
     /// <summary>
     /// Enable/disable microcode tracing
     /// </summary>
-    public static bool MicrocodeTraceEnabled { get; set; }
-    
+    public bool MicrocodeTraceEnabled { get; set; }
+
     /// <summary>
     /// Maximum number of trace lines to keep
     /// </summary>
-    public static int MaxTraceLines { get; set; } = 10000;
-    
+    public int MaxTraceLines { get; set; } = 10000;
+
     /// <summary>
     /// Trace buffer for instruction history
     /// </summary>
-    private static readonly System.Collections.Generic.Queue<string> _traceBuffer = new();
-    
+    private readonly System.Collections.Generic.Queue<string> _traceBuffer = new();
+
     /// <summary>
     /// Trace an instruction execution
     /// </summary>
-    private static void TraceInstruction(uint pc, bool useImem, ulong instruction, uint result)
+    private void TraceInstruction(uint pc, bool useImem, ulong instruction, uint result)
     {
         if (!InstructionTraceEnabled && !MicrocodeTraceEnabled)
             return;
@@ -615,55 +616,54 @@ public class UCode
     /// <summary>
     /// Format processor flags as string
     /// </summary>
-    private static string FormatFlags()
+    private string FormatFlags()
     {
-        return $"C={BoolToChar(CarryFlag)}V={BoolToChar(OverflowFlag)}" +
-               $"N={BoolToChar(NegativeFlag)}Z={BoolToChar(ZeroFlag)}";
+        return $"CARRY={AluCarry}";
     }
-    
+
     /// <summary>
     /// Convert bool to single character
     /// </summary>
-    private static char BoolToChar(bool value)
+    private char BoolToChar(bool value)
     {
         return value ? '1' : '0';
     }
-    
+
     /// <summary>
     /// Get trace buffer contents
     /// </summary>
-    public static string[] GetTraceBuffer()
+    public string[] GetTraceBuffer()
     {
         return _traceBuffer.ToArray();
     }
-    
+
     /// <summary>
     /// Clear trace buffer
     /// </summary>
-    public static void ClearTraceBuffer()
+    public void ClearTraceBuffer()
     {
         _traceBuffer.Clear();
     }
-    
+
     /// <summary>
     /// Dump trace buffer to console
     /// </summary>
-    public static void DumpTraceBuffer()
+    public void DumpTraceBuffer()
     {
         Console.WriteLine("=== Microcode Trace Buffer ===");
         Console.WriteLine($"Lines: {_traceBuffer.Count}");
         Console.WriteLine();
-        
+
         foreach (var line in _traceBuffer)
         {
             Console.WriteLine(line);
         }
     }
-    
+
     /// <summary>
     /// Save trace buffer to file
     /// </summary>
-    public static void SaveTraceBuffer(string filename)
+    public void SaveTraceBuffer(string filename)
     {
         try
         {
@@ -679,7 +679,7 @@ public class UCode
     /// <summary>
     /// Get current instruction as string for debugging
     /// </summary>
-    public static string GetCurrentInstructionString()
+    public string GetCurrentInstructionString()
     {
         if (Iwr != 0)
         {
@@ -687,11 +687,11 @@ public class UCode
         }
         return "[No instruction in IWR]";
     }
-    
+
     /// <summary>
     /// Dump microcode state for debugging
     /// </summary>
-    public static void DumpState()
+    public void DumpState()
     {
         Console.WriteLine("=== Microcode State ===");
         Console.WriteLine($"Cycles: {MachineCycles}");
@@ -700,15 +700,15 @@ public class UCode
         Console.WriteLine($"VMA: {VmaReg:X8}  MD: {MdReg:X8}");
         Console.WriteLine($"LC: {Lc:X8}");
         Console.WriteLine($"PDL Ptr: {PdlPointer:X3}  SPC Ptr: {SpcPtr:X2}");
-        Console.WriteLine($"Flags: C={CarryFlag} V={OverflowFlag} N={NegativeFlag} Z={ZeroFlag}");
+        Console.WriteLine($"AluCarry: {AluCarry}");
         Console.WriteLine($"Interrupts: {(InterruptPendingFlag ? "PENDING" : "None")} (SR={InterruptStatusReg:X})");
         Console.WriteLine($"IWR: {GetCurrentInstructionString()}");
     }
-    
+
     /// <summary>
     /// Dump A memory contents
     /// </summary>
-    public static void DumpAMem(uint start, uint count)
+    public void DumpAMem(uint start, uint count)
     {
         Console.WriteLine($"=== A Memory [{start:X3}..{start+count-1:X3}] ===");
         for (uint i = 0; i < count; i++)
@@ -727,7 +727,7 @@ public class UCode
     /// <summary>
     /// Dump M memory contents
     /// </summary>
-    public static void DumpMMem()
+    public void DumpMMem()
     {
         Console.WriteLine("=== M Memory ===");
         for (int i = 0; i < MMEM_SIZE; i++)
@@ -743,7 +743,7 @@ public class UCode
     /// <summary>
     /// Dump PDL stack
     /// </summary>
-    public static void DumpPdlStack(int depth)
+    public void DumpPdlStack(int depth)
     {
         Console.WriteLine($"=== PDL Stack (top {depth}) ===");
         Console.WriteLine($"PDL Pointer: {PdlPointer:X3}");
@@ -758,16 +758,16 @@ public class UCode
     
     #region Performance Statistics
     
-    public static ulong TotalInstructions { get; set; }
-    public static ulong TotalAluOps { get; set; }
-    public static ulong TotalMemoryAccesses { get; set; }
-    public static ulong TotalJumps { get; set; }
-    public static ulong TotalInterrupts { get; set; }
-    
+    public ulong TotalInstructions { get; set; }
+    public ulong TotalAluOps { get; set; }
+    public ulong TotalMemoryAccesses { get; set; }
+    public ulong TotalJumps { get; set; }
+    public ulong TotalInterrupts { get; set; }
+
     /// <summary>
     /// Reset performance counters
     /// </summary>
-    public static void ResetStats()
+    public void ResetStats()
     {
         TotalInstructions = 0;
         TotalAluOps = 0;
@@ -779,7 +779,7 @@ public class UCode
     /// <summary>
     /// Print performance statistics
     /// </summary>
-    public static void PrintStats()
+    public void PrintStats()
     {
         Console.WriteLine("=== Performance Statistics ===");
         Console.WriteLine($"Total Cycles:          {MachineCycles:N0}");
