@@ -150,10 +150,10 @@ public class DebugCommands
         for (int i = 0; i < count; i++)
         {
             _perfCounter.Start("step");
-            UCode.Step();
+            _machine.UCode.Step();
             _perfCounter.Stop("step");
-            
-            Console.WriteLine($"PC: 0x{_machine.UCode.Pc:X4}");
+
+            Console.WriteLine($"PC: 0x{_machine.UCode.Npc:X4}");
         }
     }
     
@@ -161,10 +161,10 @@ public class DebugCommands
     {
         if (parts.Length > 1 && uint.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out uint addr))
         {
-            _machine.UCode.Pc = (ushort)addr;
+            _machine.UCode.Npc = addr;
         }
-        
-        Console.WriteLine($"Running from PC=0x{_machine.UCode.Pc:X4}");
+
+        Console.WriteLine($"Running from PC=0x{_machine.UCode.Npc:X4}");
         Console.WriteLine("Press Ctrl+C to stop");
         
         // Start continuous execution

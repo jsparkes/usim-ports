@@ -25,7 +25,14 @@ public class MicrocodeDebugger
     private readonly HashSet<uint> _mMemWatchPoints = new();
     private readonly Dictionary<uint, uint> _lastAMemValues = new();
     private readonly Dictionary<uint, uint> _lastMMemValues = new();
-    
+
+    private readonly UCode _uCode;
+
+    public MicrocodeDebugger(UCode uCode)
+    {
+        _uCode = uCode;
+    }
+
     #endregion
     
     #region Configuration
@@ -53,8 +60,8 @@ public class MicrocodeDebugger
         _stepMode = true;
         
         // Enable microcode tracing
-        UCode.MicrocodeTraceEnabled = true;
-        UCode.InstructionTraceEnabled = false; // We'll handle display
+        _uCode.MicrocodeTraceEnabled = true;
+        _uCode.InstructionTraceEnabled = false; // We'll handle display
         
         while (_running)
         {
@@ -70,9 +77,9 @@ public class MicrocodeDebugger
                     // Run mode - execute until breakpoint
                     ExecuteSingleStep();
                     
-                    if (_breakpoints.Contains(UCode.Npc))
+                    if (_breakpoints.Contains(_uCode.Npc))
                     {
-                        Console.WriteLine($"\n*** Breakpoint hit at PC={UCode.Npc:X4} ***\n");
+                        Console.WriteLine($"\n*** Breakpoint hit at PC={_uCode.Npc:X4} ***\n");
                         _stepMode = true;
                     }
                     
@@ -107,18 +114,14 @@ public class MicrocodeDebugger
     /// </summary>
     private void ExecuteSingleStep()
     {
-        uint pc = UCode.Npc;
+        uint pc = _uCode.Npc;
         bool useImem = true; // Typically use IMEM
         
         // Check watch points before execution
         CheckWatchPoints();
         
         // Execute one instruction
-        UCode.ExecuteInstruction(pc, useImem);
-        
-        // Update PC
-        UCode.Opc = pc;
-        // UCode.Npc is updated by ExecuteInstruction
+        _uCode.Step();
     }
     
     /// <summary>
@@ -126,13 +129,13 @@ public class MicrocodeDebugger
     /// </summary>
     private void ShowStatus()
     {
-        Console.WriteLine($"???? Cycle {UCode.MachineCycles} ??????????????????????????????");
+        Console.WriteLine($"???? Cycle {_uCode.MachineCycles} ??????????????????????????????");
         
         // Current instruction
         if (ShowDisassembly)
         {
-            uint pc = UCode.Npc;
-            ulong instruction = UCode.FetchInstruction(pc, true);
+            uint pc = _uCode.Npc;
+            ulong instruction = pc < UCode.IMEM_SIZE ? _uCode.IMem[pc] : 0;
             string disasm = Disassembler.DisassembleInst2(instruction, true);
             
             string label = _pcLabels.ContainsKey(pc) ? $" ({_pcLabels[pc]})" : "";
@@ -144,29 +147,26 @@ public class MicrocodeDebugger
         if (ShowRegisters)
         {
             Console.WriteLine();
-            Console.WriteLine($"OUT: {UCode.Out:X8}  Q:   {UCode.Q:X8}  MD:  {UCode.MdReg:X8}");
-            Console.WriteLine($"VMA: {UCode.VmaReg:X8}  LC:  {UCode.Lc:X8}  OA:  {UCode.OaRegHigh:X4}{UCode.OaRegLow:X4}");
-            Console.WriteLine($"M:   {UCode.MData:X8}  A:   {UCode.AData:X8}");
+            Console.WriteLine($"OUT: {_uCode.Out:X8}  Q:   {_uCode.Q:X8}  MD:  {_uCode.MdReg:X8}");
+            Console.WriteLine($"VMA: {_uCode.VmaReg:X8}  LC:  {_uCode.Lc:X8}  OA:  {_uCode.OaRegHigh:X4}{_uCode.OaRegLow:X4}");
+            Console.WriteLine($"M:   {_uCode.MData:X8}  A:   {_uCode.AData:X8}");
         }
         
         // Flags
         if (ShowFlags)
         {
             Console.Write("FLAGS: ");
-            Console.Write(UCode.CarryFlag ? "C" : "c");
-            Console.Write(UCode.OverflowFlag ? "V" : "v");
-            Console.Write(UCode.NegativeFlag ? "N" : "n");
-            Console.Write(UCode.ZeroFlag ? "Z" : "z");
+            Console.Write($"CARRY={_uCode.AluCarry}");
             Console.WriteLine();
         }
         
         // Stack
         if (ShowStack)
         {
-            Console.WriteLine($"\nStack (PDL Ptr={UCode.PdlPointer:X3}):");
+            Console.WriteLine($"\nStack (PDL Ptr={_uCode.PdlPointer:X3}):");
             for (int i = 0; i < 4; i++)
             {
-                uint value = UCode.ReadPdl((uint)i);
+                uint value = _uCode.ReadPdl((uint)i);
                 Console.WriteLine($"  [{i}]: {value:X8}");
             }
         }
@@ -286,7 +286,7 @@ public class MicrocodeDebugger
                 break;
                 
             case "dump":
-                UCode.DumpState();
+                _uCode.DumpState();
                 break;
                 
             case "label":
@@ -294,7 +294,7 @@ public class MicrocodeDebugger
                 break;
                 
             case "reset":
-                UCode.Init();
+                _uCode.Init();
                 Console.WriteLine("Microcode engine reset");
                 break;
                 
@@ -324,7 +324,7 @@ public class MicrocodeDebugger
         // Check A memory watch points
         foreach (var addr in _aMemWatchPoints)
         {
-            uint current = UCode.ReadAMem(addr);
+            uint current = _uCode.ReadAMem(addr);
             if (_lastAMemValues.TryGetValue(addr, out uint last) && current != last)
             {
                 Console.WriteLine($"*** Watch: A[{addr:X3}] changed: {last:X8} -> {current:X8} ***");
@@ -335,7 +335,7 @@ public class MicrocodeDebugger
         // Check M memory watch points
         foreach (var addr in _mMemWatchPoints)
         {
-            uint current = UCode.ReadMMem(addr);
+            uint current = _uCode.ReadMMem(addr);
             if (_lastMMemValues.TryGetValue(addr, out uint last) && current != last)
             {
                 Console.WriteLine($"*** Watch: M[{addr:X2}] changed: {last:X8} -> {current:X8} ***");
@@ -365,13 +365,13 @@ public class MicrocodeDebugger
         if (memType == "a")
         {
             _aMemWatchPoints.Add(addr);
-            _lastAMemValues[addr] = UCode.ReadAMem(addr);
+            _lastAMemValues[addr] = _uCode.ReadAMem(addr);
             Console.WriteLine($"Watch point set on A[{addr:X3}]");
         }
         else if (memType == "m")
         {
             _mMemWatchPoints.Add(addr);
-            _lastMMemValues[addr] = UCode.ReadMMem(addr);
+            _lastMMemValues[addr] = _uCode.ReadMMem(addr);
             Console.WriteLine($"Watch point set on M[{addr:X2}]");
         }
         else
@@ -402,10 +402,10 @@ public class MicrocodeDebugger
             uint addr = start + (uint)i;
             uint value = memType switch
             {
-                "a" => UCode.ReadAMem(addr),
-                "m" => UCode.ReadMMem(addr),
-                "d" => UCode.ReadDMem(addr),
-                "pdl" => UCode.Pdl[addr & 0x3FF],
+                "a" => _uCode.ReadAMem(addr),
+                "m" => _uCode.ReadMMem(addr),
+                "d" => _uCode.ReadDMem(addr),
+                "pdl" => _uCode.Pdl[addr & 0x3FF],
                 _ => 0
             };
             
@@ -429,17 +429,17 @@ public class MicrocodeDebugger
         
         switch (expr)
         {
-            case "pc": Console.WriteLine($"PC = {UCode.Npc:X4}"); break;
-            case "opc": Console.WriteLine($"OPC = {UCode.Opc:X4}"); break;
-            case "out": Console.WriteLine($"OUT = {UCode.Out:X8}"); break;
-            case "q": Console.WriteLine($"Q = {UCode.Q:X8}"); break;
-            case "vma": Console.WriteLine($"VMA = {UCode.VmaReg:X8}"); break;
-            case "md": Console.WriteLine($"MD = {UCode.MdReg:X8}"); break;
-            case "lc": Console.WriteLine($"LC = {UCode.Lc:X8}"); break;
-            case "m": Console.WriteLine($"M = {UCode.MData:X8}"); break;
-            case "a": Console.WriteLine($"A = {UCode.AData:X8}"); break;
-            case "pdlptr": Console.WriteLine($"PDL Ptr = {UCode.PdlPointer:X3}"); break;
-            case "cycles": Console.WriteLine($"Cycles = {UCode.MachineCycles}"); break;
+            case "pc": Console.WriteLine($"PC = {_uCode.Npc:X4}"); break;
+            case "opc": Console.WriteLine($"OPC = {_uCode.Opc:X4}"); break;
+            case "out": Console.WriteLine($"OUT = {_uCode.Out:X8}"); break;
+            case "q": Console.WriteLine($"Q = {_uCode.Q:X8}"); break;
+            case "vma": Console.WriteLine($"VMA = {_uCode.VmaReg:X8}"); break;
+            case "md": Console.WriteLine($"MD = {_uCode.MdReg:X8}"); break;
+            case "lc": Console.WriteLine($"LC = {_uCode.Lc:X8}"); break;
+            case "m": Console.WriteLine($"M = {_uCode.MData:X8}"); break;
+            case "a": Console.WriteLine($"A = {_uCode.AData:X8}"); break;
+            case "pdlptr": Console.WriteLine($"PDL Ptr = {_uCode.PdlPointer:X3}"); break;
+            case "cycles": Console.WriteLine($"Cycles = {_uCode.MachineCycles}"); break;
             default:
                 Console.WriteLine($"Unknown expression: {expr}");
                 break;
@@ -451,7 +451,7 @@ public class MicrocodeDebugger
     /// </summary>
     private void DisassembleRange(string[] parts)
     {
-        uint start = parts.Length > 1 && uint.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out uint s) ? s : UCode.Npc;
+        uint start = parts.Length > 1 && uint.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out uint s) ? s : _uCode.Npc;
         int count = parts.Length > 2 && int.TryParse(parts[2], out int c) ? c : 10;
         
         Console.WriteLine($"\nDisassembly starting at PC={start:X4}:");
@@ -459,13 +459,13 @@ public class MicrocodeDebugger
         for (int i = 0; i < count; i++)
         {
             uint pc = start + (uint)i;
-            ulong instruction = UCode.FetchInstruction(pc, true);
-            
+            ulong instruction = pc < UCode.IMEM_SIZE ? _uCode.IMem[pc] : 0;
+
             if (instruction == 0)
                 break;
                 
             string disasm = Disassembler.DisassembleInst2(instruction, true);
-            string marker = (pc == UCode.Npc) ? "=>" : "  ";
+            string marker = (pc == _uCode.Npc) ? "=>" : "  ";
             string label = _pcLabels.ContainsKey(pc) ? $" <{_pcLabels[pc]}>" : "";
             
             Console.WriteLine($"{marker} {pc:X4}: {disasm}{label}");
@@ -478,8 +478,8 @@ public class MicrocodeDebugger
     /// </summary>
     private void ToggleTrace()
     {
-        UCode.InstructionTraceEnabled = !UCode.InstructionTraceEnabled;
-        Console.WriteLine($"Instruction trace: {UCode.InstructionTraceEnabled}");
+        _uCode.InstructionTraceEnabled = !_uCode.InstructionTraceEnabled;
+        Console.WriteLine($"Instruction trace: {_uCode.InstructionTraceEnabled}");
     }
     
     /// <summary>

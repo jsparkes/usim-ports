@@ -12,7 +12,8 @@ namespace Usim;
 public class ConfigManager
 {
     private readonly ConfigParser _config;
-    
+    private readonly UCode _uCode = new UCode();
+
     public ConfigManager()
     {
         _config = new ConfigParser();
@@ -71,35 +72,35 @@ public class ConfigManager
         UsimState.ColorTvEnabled = _config.GetBool("Display", "color_tv", true);
         
         // Microcode tracing
-        UCode.InstructionTraceEnabled = _config.GetBool("Microcode", "instruction_trace", false);
-        UCode.MicrocodeTraceEnabled = _config.GetBool("Microcode", "microcode_trace", false);
-        
+        _uCode.InstructionTraceEnabled = _config.GetBool("Microcode", "instruction_trace", false);
+        _uCode.MicrocodeTraceEnabled = _config.GetBool("Microcode", "microcode_trace", false);
+
         // Tracing settings
         var traceExecution = _config.GetBool("Tracing", "trace_execution", false);
         var traceMicrocode = _config.GetBool("Tracing", "trace_microcode", false);
         var maxTraceLines = _config.GetInt("Tracing", "max_trace_lines", 10000);
-        
+
         if (traceExecution || traceMicrocode)
         {
-            UCode.InstructionTraceEnabled = traceExecution;
-            UCode.MicrocodeTraceEnabled = traceMicrocode;
-            UCode.MaxTraceLines = maxTraceLines;
+            _uCode.InstructionTraceEnabled = traceExecution;
+            _uCode.MicrocodeTraceEnabled = traceMicrocode;
+            _uCode.MaxTraceLines = maxTraceLines;
         }
-        
+
         // Debug
         var traceCategories = _config.GetString("Debug", "trace_categories", "");
         var traceLevel = _config.GetString("Debug", "trace_level", "Info");
-        
+
         Console.WriteLine("Configuration applied successfully");
-        
+
         // Report trace settings
-        if (UCode.InstructionTraceEnabled)
+        if (_uCode.InstructionTraceEnabled)
         {
             Console.WriteLine("Instruction tracing enabled (console output)");
         }
-        if (UCode.MicrocodeTraceEnabled)
+        if (_uCode.MicrocodeTraceEnabled)
         {
-            Console.WriteLine($"Microcode tracing enabled (buffer size: {UCode.MaxTraceLines})");
+            Console.WriteLine($"Microcode tracing enabled (buffer size: {_uCode.MaxTraceLines})");
         }
     }
     

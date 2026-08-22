@@ -168,7 +168,7 @@ public class Program
 
                 case "--debug-microcode":
                 case "--debug-ucode":
-                    var debugger = new MicrocodeDebugger();
+                    var debugger = new MicrocodeDebugger(new UCode());
                     debugger.StartDebugSession();
                     Environment.Exit(0);
                     break;
