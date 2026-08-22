@@ -276,7 +276,7 @@ public class UCode
 
     private uint AdvanceLc(uint ppc)
     {
-        uint oldLc = Lc & 0x0FFFFFFF;
+        uint oldLc = Lc & 0x03FFFFFF; // 26-bit mask (LC is 26 bits; the real C mask is octal 0377777777 = 0x03FFFFFF, not 0x0FFFFFFF)
         if ((InterruptControl & (1 << 29)) != 0) Lc++; else Lc += 2;
 
         if ((Lc & (1u << 31)) != 0)
