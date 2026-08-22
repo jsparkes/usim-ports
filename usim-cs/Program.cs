@@ -151,6 +151,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-microcode-decode":
+                    UCodeFetchDecodeTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--demo-execution":
                     UCodeTests.DemoInstructionExecution();
                     Environment.Exit(0);
@@ -204,6 +209,7 @@ public class Program
         Console.WriteLine("  --test-microcode        Run microcode tests only");
         Console.WriteLine("  --test-config           Run configuration tests only");
         Console.WriteLine("  --test-wpf              Run WPF backend tests only");
+        Console.WriteLine("  --test-microcode-decode Run microcode fetch/decode tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");

@@ -355,21 +355,56 @@ public class UCode
     #endregion
 
     /// <summary>
-    /// Load PROM from file
+    /// Load PROM from a .mcr file (faithful port of ucode.c's
+    /// ucode_load_prom_from_file()). The file starts with a 12-byte section
+    /// header — code/start/size, each a 32-bit "PDP-endian" (middle-endian,
+    /// byte order 1-0-3-2) value — followed by `size` 64-bit microcode words,
+    /// each stored as four little-endian 16-bit halves assembled MSB-first
+    /// (w1&lt;&lt;48 | w2&lt;&lt;32 | w3&lt;&lt;16 | w4). This does NOT match a
+    /// straight little-endian 8-byte read, and the header must be skipped —
+    /// both were bugs in the previous version of this method.
     /// </summary>
     public void LoadPromFromFile(string filename)
     {
         using var stream = File.OpenRead(filename);
-        for (int i = 0; i < Prom.Length; i++)
+
+        uint ReadU16Le()
         {
-            if (stream.Position >= stream.Length)
+            int b0 = stream.ReadByte();
+            int b1 = stream.ReadByte();
+            return (uint)(((b1 & 0xFF) << 8) | (b0 & 0xFF));
+        }
+
+        uint ReadU32Pdp()
+        {
+            int b0 = stream.ReadByte();
+            int b1 = stream.ReadByte();
+            int b2 = stream.ReadByte();
+            int b3 = stream.ReadByte();
+            return (uint)(((b1 & 0xFF) << 24) | ((b0 & 0xFF) << 16) | ((b3 & 0xFF) << 8) | (b2 & 0xFF));
+        }
+
+        // Section header: code (section type, unused here — the boot PROM
+        // is always the file's first, I-memory, section), start (base PROM
+        // location), size (word count).
+        ReadU32Pdp(); // code
+        uint start = ReadU32Pdp();
+        uint size = ReadU32Pdp();
+
+        for (uint i = 0; i < size; i++)
+        {
+            if (stream.Position + 8 > stream.Length)
                 break;
 
-            // Read 64-bit microcode instruction
-            byte[] buffer = new byte[8];
-            stream.Read(buffer, 0, 8);
+            ulong w1 = ReadU16Le();
+            ulong w2 = ReadU16Le();
+            ulong w3 = ReadU16Le();
+            ulong w4 = ReadU16Le();
+            ulong word = (w1 << 48) | (w2 << 32) | (w3 << 16) | w4;
 
-            Prom[i] = BitConverter.ToUInt64(buffer, 0);
+            uint loc = start + i;
+            if (loc < (uint)Prom.Length)
+                Prom[loc] = word;
         }
 
         PromEnabledFlag = true;
