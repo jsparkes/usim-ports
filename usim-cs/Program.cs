@@ -423,7 +423,12 @@ public class Program
         Console.WriteLine("Running Microcode Tests...\n");
         UCodeTests.RunAllTests();
         Console.WriteLine();
-        
+
+        // Run microcode fetch/decode tests
+        Console.WriteLine("Running Microcode Fetch/Decode Tests...\n");
+        UCodeFetchDecodeTests.RunAllTests();
+        Console.WriteLine();
+
         // Run configuration tests
         Console.WriteLine("Running Configuration Tests...\n");
         ConfigTests.RunAllTests();

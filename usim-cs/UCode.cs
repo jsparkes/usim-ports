@@ -42,6 +42,7 @@ public class UCode
 
     // Microcode memory
     public bool PromEnabledFlag { get; set; }
+    public bool PromDisabled { get; set; }
     public ulong[] Prom { get; } = new ulong[PROM_SIZE];
     public ulong[] IMem { get; } = new ulong[IMEM_SIZE];
 
@@ -130,6 +131,7 @@ public class UCode
         InterruptStatusReg = 0;
         InterruptPendingFlag = false;
         PromEnabledFlag = false;
+        PromDisabled = false;
 
         Array.Clear(Prom);
         Array.Clear(IMem);
@@ -192,7 +194,7 @@ public class UCode
     {
         P0 = P1; P0Pc = P1Pc; P0Imem = P1Imem;
 
-        P1Imem = !PromEnabledFlag;
+        P1Imem = PromDisabled;
         P1 = P1Imem ? IMem[Npc] : Prom[Npc];
         P1Pc = Npc;
 

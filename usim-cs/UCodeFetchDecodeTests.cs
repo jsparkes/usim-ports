@@ -9,22 +9,37 @@ namespace Usim;
 
 public static class UCodeFetchDecodeTests
 {
+    /// <summary>
+    /// Tri-state test outcome, distinguishing an explicit skip (e.g. a
+    /// required data file not being present) from a real pass or failure,
+    /// so a skip never silently counts as a pass in the summary.
+    /// </summary>
+    private enum TestOutcome { Passed, Failed, Skipped }
+
     public static void RunAllTests()
     {
         Console.WriteLine("=== UCode Fetch/Decode Test Suite ===\n");
 
         int passed = 0;
         int failed = 0;
+        int skipped = 0;
 
         if (TestPipelineAdvance()) passed++; else failed++;
         if (TestNpcWraparound()) passed++; else failed++;
         if (TestCommonFieldDecode()) passed++; else failed++;
-        if (TestPromDecodeSanity()) passed++; else failed++;
+
+        switch (TestPromDecodeSanity())
+        {
+            case TestOutcome.Passed: passed++; break;
+            case TestOutcome.Failed: failed++; break;
+            case TestOutcome.Skipped: skipped++; break;
+        }
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
         Console.WriteLine($"Failed: {failed}");
-        Console.WriteLine($"Total:  {passed + failed}");
+        Console.WriteLine($"Skipped: {skipped}");
+        Console.WriteLine($"Total:  {passed + failed + skipped}");
     }
 
     private static bool TestPipelineAdvance()
@@ -75,14 +90,18 @@ public static class UCodeFetchDecodeTests
         {
             var ucode = new UCode();
             ucode.Init();
-            // Deliberately IMem-backed (PromEnabledFlag stays false, its
-            // Init() default), not PROM-backed: IMem is sized IMEM_SIZE
-            // (0x4000), matching Npc's full 14-bit range, whereas Prom is
-            // only PROM_SIZE (512) words — a real hardware PROM boot image
-            // never runs code that jumps past its own small size, but this
-            // test deliberately drives Npc to the top of its range purely
-            // to check the register's wraparound arithmetic, so it needs
-            // the correctly-sized backing store to do that safely.
+            // Deliberately IMem-backed: explicitly set PromDisabled so
+            // IncNpc() fetches from IMem rather than Prom. IMem is sized
+            // IMEM_SIZE (0x4000), matching Npc's full 14-bit range, whereas
+            // Prom is only PROM_SIZE (512) words — a real hardware PROM boot
+            // image never runs code that jumps past its own small size, but
+            // this test deliberately drives Npc to the top of its range
+            // purely to check the register's wraparound arithmetic, so it
+            // needs the correctly-sized backing store to do that safely.
+            // (Since the final review's fix wave, PromDisabled — not
+            // PromEnabledFlag — controls which store IncNpc() fetches from,
+            // and it defaults to false/PROM-mapped to match real hardware.)
+            ucode.PromDisabled = true;
             ucode.Npc = 0x3FFF;
 
             // Step() always dispatches after IncNpc (see TestPipelineAdvance);
@@ -147,7 +166,7 @@ public static class UCodeFetchDecodeTests
         }
     }
 
-    private static bool TestPromDecodeSanity()
+    private static TestOutcome TestPromDecodeSanity()
     {
         Console.WriteLine("Test: Real promh.mcr Decode Sanity");
         try
@@ -156,7 +175,7 @@ public static class UCodeFetchDecodeTests
             if (!File.Exists(path))
             {
                 Console.WriteLine("  SKIPPED (sys/ubin/promh.mcr not found at expected path)\n");
-                return true;
+                return TestOutcome.Skipped;
             }
 
             var ucode = new UCode();
@@ -172,22 +191,23 @@ public static class UCodeFetchDecodeTests
                 opCounts[op]++;
             }
 
-            int nonZeroClasses = 0;
-            foreach (int c in opCounts) if (c > 0) nonZeroClasses++;
-
-            Assert(nonZeroClasses >= 2,
-                $"real microcode uses at least 2 distinct opcode classes across the first {sampleSize} words " +
-                $"(ALU={opCounts[0]}, JUMP={opCounts[1]}, DISPATCH={opCounts[2]}, BYTE={opCounts[3]}) " +
-                "— a degenerate single-class distribution would suggest the decode's bit positions are wrong");
+            // Exact counts verified by hand-decoding the first 200 words of
+            // the real sys/ubin/promh.mcr during final review: this turns
+            // the sanity check into a real regression guard on the decode's
+            // bit positions rather than a loose "at least 2 classes" check.
+            Assert(opCounts[0] == 55, $"ALU class count is exactly 55, got {opCounts[0]}");
+            Assert(opCounts[1] == 103, $"JUMP class count is exactly 103, got {opCounts[1]}");
+            Assert(opCounts[2] == 1, $"DISPATCH class count is exactly 1, got {opCounts[2]}");
+            Assert(opCounts[3] == 41, $"BYTE class count is exactly 41, got {opCounts[3]}");
 
             Console.WriteLine($"  Opcode class distribution: ALU={opCounts[0]} JUMP={opCounts[1]} DISPATCH={opCounts[2]} BYTE={opCounts[3]}");
             Console.WriteLine("  Real promh.mcr Decode Sanity tests passed\n");
-            return true;
+            return TestOutcome.Passed;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"  Real promh.mcr Decode Sanity tests failed: {ex.Message}\n");
-            return false;
+            return TestOutcome.Failed;
         }
     }
 
