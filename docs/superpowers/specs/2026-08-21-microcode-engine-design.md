@@ -302,7 +302,7 @@ private bool CheckJumpCondition()
 | Code (oct) | Register | C# logic |
 |---|---|---|
 | 0 | (unused) | no-op |
-| 1 | LC | `Lc = (Lc & ~0x0FFFFFFFu) \| ((uint)data & 0x0FFFFFFF);` then if not byte mode, `Lc &= ~1u;` then `Lc \|= (1u<<31);` |
+| 1 | LC | `Lc = (Lc & ~0x03FFFFFFu) \| ((uint)data & 0x03FFFFFF);` (26-bit mask — see the correction note below the table) then if not byte mode, `Lc &= ~1u;` then `Lc \|= (1u<<31);` |
 | 2 | INTERRUPT-CONTROL | `InterruptControl = (uint)data;` then if bit 28 set, call bus-reset equivalent; then `Lc = (Lc & ~(0xFu<<26)) \| (InterruptControl & (0xFu<<26));` |
 | 8 | C-PDL-BUFFER-POINTER | `Pdl[PdlPointer] = (uint)data;` |
 | 9 | C-PDL-BUFFER-POINTER-PUSH | `PdlPointer = (PdlPointer+1)&0x3FF; Pdl[PdlPointer] = (uint)data;` |
@@ -310,8 +310,8 @@ private bool CheckJumpCondition()
 | 11 | PDL-BUFFER-INDEX | `PdlIndex = (uint)data & 0x3FF;` |
 | 12 | PDL-BUFFER-POINTER | `PdlPointer = (uint)data & 0x3FF;` |
 | 13 | MICRO-STACK-DATA-PUSH | `PushSpc((uint)data);` |
-| 14 | OA-REG-LO | `OaRegLow = (uint)data & 0x0FFFFFFF; Oal = true;` |
-| 15 | OA-REG-HI | `OaRegHigh = (uint)data & 0x00FFFFFF; Oah = true;` |
+| 14 | OA-REG-LO | `OaRegLow = (uint)data & 0x03FFFFFF; Oal = true;` (26-bit mask — see correction note below) |
+| 15 | OA-REG-HI | `OaRegHigh = (uint)data & 0x7FFFFF; Oah = true;` (23-bit mask, matching the C literal `037777777` exactly — one bit wider than the `OA<47-26>` (22-bit) comment in the register table above; port the literal, not the comment, since the comment appears to be the original hardware documentation's own imprecision, not something to "fix") |
 | 16 | VMA | `VmaReg = (uint)data;` |
 | 17 | VMA-START-READ | `VmaReg = (uint)data; VmRead(VmaReg, out NewMd); NewMdDelay = 2;` |
 | 18 | VMA-START-WRITE | `VmaReg = (uint)data; VmWrite(VmaReg, MdReg);` |
@@ -323,6 +323,8 @@ private bool CheckJumpCondition()
 | *default* | `TraceLog.Instance.Warning(...)` (matches C's non-fatal `warn()`) |
 
 (As with `MfRead`, the table above uses decimal restated from octal for readability — re-derive exact octal case labels from the extracted reference during Phase 4 implementation; the octal source values are `1,2,010,011,012,013,014,015,016,017,020,021,022,023,030,031,032,033`.)
+
+**Correction (found during Phase 1's task review, applied 2026-08-22):** the first draft of this spec mistranslated three C octal masks to hex. The real C masks: LC's `0377777777` and OA-REG-LO's `0377777777` are both `0x03FFFFFF` (26 bits) — the draft had `0x0FFFFFFF` (28 bits) for both, which is wrong by 2 bits and, left uncorrected, would have let `InterruptControl` bits 26-27 leak into `AdvanceLc`'s address computation once Phase 5 makes that path reachable. OA-REG-HI's `037777777` is `0x7FFFFF` (23 bits) — the draft had `0x00FFFFFF` (24 bits). All three are fixed above and in Phase 1's `AdvanceLc` code (§ below); if you're implementing Phase 4 from an older read of this file cached elsewhere, use the values in this current version, not any earlier copy.
 
 `WriteDest(dest)` (used by `Alu()`/`Byt()`, ported once as part of Phase 2 since both need it):
 ```csharp
@@ -533,7 +535,7 @@ private int LcByteMode()
 
 private uint AdvanceLc(uint ppc)
 {
-    uint oldLc = Lc & 0x0FFFFFFF;
+    uint oldLc = Lc & 0x03FFFFFF; // 26-bit mask (LC is 26 bits; see correction note above)
     if ((InterruptControl & (1 << 29)) != 0) Lc++; else Lc += 2;
 
     if ((Lc & (1u << 31)) != 0)
