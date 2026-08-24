@@ -287,18 +287,43 @@ public static class UCodeAluTests
             ucode.DivOps(41);
             Assert(ucode.AluOut == 6, $"initial divide step: Sub32(10,3,ci=false)=10-3-1=6, got {ucode.AluOut}");
 
+            // Code 33 (divide step), Q bit0 == 1 -> Sub32(MData, Abs32(AData), !cin).
+            ucode.Q = 1;
+            ucode.MData = 100; ucode.AData = -30; // Abs32(-30) = 30
+            ucode.P0 = 0; // cin = 0 -> !cin = true -> Sub32(100, 30, true)
+            ucode.DivOps(33);
+            Assert(ucode.AluOut == 70, $"divide step, Q bit0=1: Sub32(100,30,ci=true)=100-30-0=70, got {ucode.AluOut}");
+            Assert(ucode.AluCarry == 1, $"divide step, Q bit0=1: Sub32 carry, got {ucode.AluCarry}");
+
+            // Code 33 (divide step), Q bit0 == 0 -> Add32(MData, Abs32(AData), cin).
+            ucode.Q = 0;
+            ucode.MData = 100; ucode.AData = -30; // Abs32(-30) = 30
+            ucode.P0 = 0; // cin = 0 -> Add32(100, 30, false)
+            ucode.DivOps(33);
+            Assert(ucode.AluOut == 130, $"divide step, Q bit0=0: Add32(100,30,ci=false)=130, got {ucode.AluOut}");
+            Assert(ucode.AluCarry == 0, $"divide step, Q bit0=0: Add32 carry, got {ucode.AluCarry}");
+
             // Code 37 (remainder correction), Q bit0 == 0 branch: replicates the C
             // macro's self-aliasing quirk (add32's out/a alias to alu_out at this
             // call site — the carry line re-reads the just-written alu_out).
+            // These operands are a discriminating counterexample (independently
+            // found and verified by two reviewers): AluOut=-5, AData=3 give
+            // newOut = -5+3+0 = -2 (0xFFFFFFFE). The correct aliased carry line
+            // re-reads the NEW AluOut (-2): ~(-2)=1, bArg(3) > 1 -> carry=0. The
+            // old, buggy non-aliased computation would instead re-read the STALE
+            // pre-call AluOut (-5): ~(-5)=4, bArg(3) > 4 is false -> carry=1. The
+            // two computations diverge on carry, so this case actually catches
+            // a regression back to the non-aliased bug (unlike the previous
+            // AluOut=5/AData=3 case, which gave carry=0 either way).
             ucode.Q = 0; // bit 0 clear -> take the add32-aliasing branch
-            ucode.AluOut = 5; // pre-call alu_out, used as the 'a' operand for the sum
+            ucode.AluOut = unchecked((uint)-5); // 0xFFFFFFFB; pre-call alu_out, the 'a' operand for the sum
             ucode.AData = 3; // Abs32(3) = 3
             ucode.P0 = 0; // cin = 0
             ucode.DivOps(37);
-            Assert(ucode.AluOut == 8, $"code37: newOut = 5+3+0 = 8, got {ucode.AluOut}");
-            // carry re-reads the NEW AluOut (8), not the pre-call value (5):
-            // signed comparison bArg(3) > ~8(=-9) is true -> carry=0
-            Assert(ucode.AluCarry == 0, $"code37: carry recomputed from post-write AluOut=8, got {ucode.AluCarry}");
+            Assert(ucode.AluOut == unchecked((uint)-2), $"code37: newOut = -5+3+0 = -2 (0xFFFFFFFE), got 0x{ucode.AluOut:X}");
+            // carry re-reads the NEW AluOut (-2), not the pre-call value (-5):
+            // signed comparison bArg(3) > ~(-2)(=1) is true -> carry=0
+            Assert(ucode.AluCarry == 0, $"code37: carry recomputed from post-write AluOut=-2, got {ucode.AluCarry}");
 
             // Code 37, Q bit0 == 1 branch: unconditional carry=0, AluOut untouched.
             ucode.Q = 1;
@@ -424,8 +449,10 @@ public static class UCodeAluTests
             ucode.WriteDest(0x800 | 0x123);
             Assert(ucode.AMem[0x123] == 0xCAFEBABEu, $"A-memory write at index 0x123, got 0x{ucode.AMem[0x123]:X}");
 
-            // dest without bit 11 -> goes through MfWrite (stubbed) AND still updates
-            // the low-5-bit-addressed MMem/AMem shadow copies per the spec.
+            // dest without bit 11 -> goes through MfWrite, which is still stubbed
+            // and throws before the low-5-bit-addressed MMem/AMem shadow-copy line
+            // ever executes, so only the throw is being asserted here (the
+            // shadow-copy behavior can't be tested until Phase 4 replaces the stub).
             bool threw = false;
             try
             {

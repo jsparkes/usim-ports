@@ -320,7 +320,7 @@ public class UCode
         throw new NotImplementedException("MfRead is implemented in Phase 4 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
     }
 
-    internal int MfWrite(uint dest, int data)
+    private void MfWrite(uint dest, int data)
     {
         throw new NotImplementedException("MfWrite is implemented in Phase 4 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
     }
@@ -469,6 +469,8 @@ public class UCode
     {
         InterruptPendingFlag = false;
     }
+
+    #region ALU Operations
 
     /// <summary>
     /// 32-bit add with carry-in/carry-out, matching the C macro add32().
@@ -737,7 +739,6 @@ public class UCode
         }
     }
 
-    #region ALU Operations
     #endregion
 
     #region Memory Access
