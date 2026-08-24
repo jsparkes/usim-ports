@@ -183,6 +183,7 @@ public class UCode
         AluOut = 0;
         Oal = false;
         Oah = false;
+        Halted = false;
     }
 
     #region Fetch, Decode, and Dispatch
@@ -340,10 +341,91 @@ public class UCode
         WriteDest(dest);
     }
 
+    /// <summary>
+    /// Fixed jump-condition codes (Ir(0,4) when Ir(5,1) != 0), or a rotate-
+    /// and-test-bit-0 mode when Ir(5,1) == 0. Faithful port of check_jcond()
+    /// (usim/uexec.c:858-892) — note the bit-test mode mutates MData as a
+    /// side effect (it really does rotate MData in place in the real C too).
+    /// </summary>
+    internal bool CheckJumpCondition()
+    {
+        if (Ir(5, 1) == 0)
+        {
+            int rot = (int)Ir(0, 5);
+            MData = (int)Rol32((uint)MData, rot);
+            return (MData & 1) != 0;
+        }
+        return Ir(0, 4) switch
+        {
+            1 => MData < AData,
+            2 => MData <= AData,
+            3 => MData == AData,
+            4 => !VmaOk,
+            5 => !VmaOk || (((InterruptControl & (1 << 27)) != 0) && InterruptPendingFlag),
+            6 => !VmaOk || (((InterruptControl & (1 << 27)) != 0) && InterruptPendingFlag) || (InterruptControl & (1 << 26)) != 0,
+            7 => true,
+            _ => throw new InvalidOperationException($"unknown jump condition {Ir(0, 4)}"), // includes code 0, matching the C's fall-through-to-err()
+        };
+    }
+
+    /// <summary>
+    /// Faithful port of jmp() (usim/uexec.c:894-953). Note ILLOP sets
+    /// Halted but does NOT return early — the real C continues on to
+    /// evaluate the jump condition and can still branch afterward. Port
+    /// this exactly; it is surprising but real reference behavior, not a
+    /// bug to "fix".
+    /// </summary>
     private void Jmp()
     {
-        throw new NotImplementedException("Jmp is implemented in Phase 3 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+        uint target = (uint)Ir(12, 14);
+        bool r = Ir(9, 1) != 0, p = Ir(8, 1) != 0, n = Ir(7, 1) != 0;
+        bool invertSense = Ir(6, 1) != 0;
+
+        if (Ir(10, 2) == 1)
+        {
+            TraceLog.Instance.Info(TraceCategory.MicroCode, "usim: illop, asserting halted");
+            Halted = true;
+        }
+        if (Ir(10, 2) == 3)
+        {
+            TraceLog.Instance.Warning(TraceCategory.MicroCode, "jump w/misc-3!");
+        }
+
+        if (p && r)
+        {
+            IMem[target] = Iwr;
+            return;
+        }
+
+        bool cond = CheckJumpCondition();
+        if (invertSense) cond = !cond;
+
+        if (p && cond)
+        {
+            if (!n) PushSpc(Npc); else PushSpc(Npc - 1);
+        }
+        if (r && cond)
+        {
+            target = PopSpc();
+            if ((target >> 14 & 1) != 0) target = AdvanceLc(target);
+            target &= 0x3FFF;
+        }
+        if (cond)
+        {
+            if (n) Inhibit = true;
+            Npc = target;
+            Popj = false;
+        }
     }
+
+    /// <summary>
+    /// Test-only forwarding wrapper: Jmp() itself stays private (matching
+    /// Alu()'s existing visibility — the per-instruction-class dispatcher
+    /// is only ever meant to be reached through Step()), but UCodeJumpTests
+    /// needs to exercise its many branch combinations directly without
+    /// going through Step()'s full fetch/decode pipeline.
+    /// </summary>
+    internal void CallJmp() => Jmp();
 
     private void Dsp()
     {
@@ -360,6 +442,14 @@ public class UCode
     /// defaults to true — "no page fault" — until then).
     /// </summary>
     public bool VmaOk { get; set; } = true;
+
+    /// <summary>
+    /// Set by Jmp()'s ILLOP handling (matches the C's machine_state.halted).
+    /// This class has no reference to MachineControl's richer power-state
+    /// machinery — wiring this flag to an actual run-loop stop condition is
+    /// an integration concern outside this phase's scope.
+    /// </summary>
+    public bool Halted { get; set; }
 
     private void VmRead(uint vaddr, out uint v)
     {
