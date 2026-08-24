@@ -37,16 +37,21 @@ public static class UCodeAluTests
         {
             var (out1, carry1) = UCode.Add32(5, 3, false);
             Assert(out1 == 8, $"5 + 3 + 0 = 8, got {out1}");
-            Assert(carry1 == 1, $"carry=1 per m32.h macro (inverted from naive intuition), got {carry1}");
+            Assert(carry1 == 0, $"carry=0: signed comparison 3 > ~5(=-6) is true, got {carry1}");
 
             var (out2, carry2) = UCode.Add32(5, 3, true);
             Assert(out2 == 9, $"5 + 3 + 1 = 9, got {out2}");
-            Assert(carry2 == 1, $"carry=1 per m32.h macro (inverted from naive intuition), got {carry2}");
+            Assert(carry2 == 0, $"carry=0: signed comparison 3 >= ~5(=-6) is true, got {carry2}");
 
-            // unsigned overflow: 0xFFFFFFFF + 1 + 0 wraps to 0 (carry=0 per inverted m32.h logic)
+            // unsigned overflow: 0xFFFFFFFF + 1 + 0 wraps to 0
             var (out3, carry3) = UCode.Add32(-1, 1, false);
             Assert(out3 == 0, $"0xFFFFFFFF + 1 wraps to 0, got 0x{out3:X}");
-            Assert(carry3 == 0, $"carry=0 per m32.h macro (inverted from naive intuition), got {carry3}");
+            Assert(carry3 == 0, $"carry=0: signed comparison 1 > ~(-1)(=0) is true, got {carry3}");
+
+            // a genuine carry=1 case: b <= ~a under signed comparison (negative b, small a)
+            var (out4, carry4) = UCode.Add32(10, -20, false);
+            Assert(out4 == unchecked((uint)-10), $"10 + (-20) = -10 (as uint 0xFFFFFFF6), got 0x{out4:X}");
+            Assert(carry4 == 1, $"carry=1: signed comparison -20 > ~10(=-11) is FALSE, got {carry4}");
 
             Console.WriteLine("  Add32 tests passed\n");
             return true;
@@ -215,6 +220,30 @@ public static class UCodeAluTests
             Assert(ucode.AluOut == 0, $"[M+1] with M=0xFFFFFFFF, cin=1 wraps to 0, got 0x{ucode.AluOut:X}");
             Assert(ucode.AluCarry == 1, "special carry case: M==0xFFFFFFFF && cin");
 
+            // Code 17: (M AND A) - 1 + CIN, lv-based — negative operand exercises
+            // the sign-extension path (regression coverage for a zero- vs
+            // sign-extension bug found in review).
+            ucode.MData = -1; ucode.AData = -1; // M&A = -1 (all bits set)
+            ucode.P0 = 1UL << 2; // cin = 1
+            ucode.ArithOps(17);
+            Assert(ucode.AluOut == unchecked((uint)-1), $"code17 M=A=-1,cin=1: (-1)-0=-1, got 0x{ucode.AluOut:X}");
+            Assert(ucode.AluCarry == 1, $"code17 M=A=-1,cin=1: lv=-1 sign-extended, lv>>32 != 0, got {ucode.AluCarry}");
+
+            // Code 19: M - 1 + CIN, lv-based.
+            ucode.MData = -1;
+            ucode.P0 = 0; // cin = 0
+            ucode.ArithOps(19);
+            Assert(ucode.AluOut == unchecked((uint)-2), $"code19 M=-1,cin=0: (-1)-1=-2, got 0x{ucode.AluOut:X}");
+            Assert(ucode.AluCarry == 1, $"code19 M=-1,cin=0: lv=-2 sign-extended, lv>>32 != 0, got {ucode.AluCarry}");
+
+            // Code 24: (M OR A) + CIN, lv-based, non-negative case gives carry=0
+            // (confirms the fix doesn't spuriously set carry for ordinary values).
+            ucode.MData = 5; ucode.AData = 3;
+            ucode.P0 = 0; // cin = 0
+            ucode.ArithOps(24);
+            Assert(ucode.AluOut == 7, $"code24 M=5,A=3,cin=0: (5|3)+0=7, got {ucode.AluOut}");
+            Assert(ucode.AluCarry == 0, $"code24 M=5,A=3,cin=0: lv=7, no sign extension needed, got {ucode.AluCarry}");
+
             Console.WriteLine("  ArithOps tests passed\n");
             return true;
         }
@@ -253,6 +282,26 @@ public static class UCodeAluTests
             ucode.P0 = 1UL << 2; // cin = 1 -> !cin = false -> Sub32(10, 3, false)
             ucode.DivOps(41);
             Assert(ucode.AluOut == 6, $"initial divide step: Sub32(10,3,ci=false)=10-3-1=6, got {ucode.AluOut}");
+
+            // Code 37 (remainder correction), Q bit0 == 0 branch: replicates the C
+            // macro's self-aliasing quirk (add32's out/a alias to alu_out at this
+            // call site — the carry line re-reads the just-written alu_out).
+            ucode.Q = 0; // bit 0 clear -> take the add32-aliasing branch
+            ucode.AluOut = 5; // pre-call alu_out, used as the 'a' operand for the sum
+            ucode.AData = 3; // Abs32(3) = 3
+            ucode.P0 = 0; // cin = 0
+            ucode.DivOps(37);
+            Assert(ucode.AluOut == 8, $"code37: newOut = 5+3+0 = 8, got {ucode.AluOut}");
+            // carry re-reads the NEW AluOut (8), not the pre-call value (5):
+            // signed comparison bArg(3) > ~8(=-9) is true -> carry=0
+            Assert(ucode.AluCarry == 0, $"code37: carry recomputed from post-write AluOut=8, got {ucode.AluCarry}");
+
+            // Code 37, Q bit0 == 1 branch: unconditional carry=0, AluOut untouched.
+            ucode.Q = 1;
+            ucode.AluOut = 42;
+            ucode.DivOps(37);
+            Assert(ucode.AluOut == 42, $"code37 Q bit0=1: AluOut untouched, got {ucode.AluOut}");
+            Assert(ucode.AluCarry == 0, "code37 Q bit0=1: carry always 0");
 
             Console.WriteLine("  DivOps tests passed\n");
             return true;

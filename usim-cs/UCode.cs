@@ -462,11 +462,17 @@ public class UCode
     /// doc comment) — ported literally from the real m32.h macro text,
     /// which is what actually runs. Verified by hand against the C source;
     /// do not "fix" this to match intuition.
+    /// NOTE: the carry line's comparison (`b >= ~a` / `b > ~a`) is a plain
+    /// SIGNED int comparison in the real macro — there are no casts anywhere
+    /// in that line of m32.h, and every real call site passes plain
+    /// `int`-typed arguments (mdata/adata, abs32(...), or (int32_t)alu_out).
+    /// Do not cast to unsigned here.
     /// </summary>
     internal static (uint Out, uint Carry) Add32(int a, int b, bool ci)
     {
         uint outv = unchecked((uint)a + (uint)b + (ci ? 1u : 0u));
-        uint co = ci ? ((uint)b >= (uint)~a ? 0u : 1u) : ((uint)b > (uint)~a ? 0u : 1u);
+        int notA = ~a;
+        uint co = ci ? (b >= notA ? 0u : 1u) : (b > notA ? 0u : 1u);
         return (outv, co);
     }
 
@@ -538,37 +544,37 @@ public class UCode
         {
             case 16: AluOut = cin ? 0u : uint.MaxValue; AluCarry = 0; return;
             case 17:
-                lv = (long)(uint)(MData & AData) - (cin ? 0 : 1);
+                lv = (long)(MData & AData) - (cin ? 0 : 1);
                 break;
             case 18:
-                lv = (long)(uint)(MData & ~AData) - (cin ? 0 : 1);
+                lv = (long)(MData & ~AData) - (cin ? 0 : 1);
                 break;
             case 19:
-                lv = (long)(uint)MData - (cin ? 0 : 1);
+                lv = (long)MData - (cin ? 0 : 1);
                 break;
             case 20:
-                lv = (long)(uint)(MData | ~AData) + (cin ? 1 : 0);
+                lv = (long)(MData | ~AData) + (cin ? 1 : 0);
                 break;
             case 21:
-                lv = (long)(uint)(MData | ~AData) + (uint)(MData & AData) + (cin ? 1 : 0);
+                lv = (long)(MData | ~AData) + (MData & AData) + (cin ? 1 : 0);
                 break;
             case 22:
                 (AluOut, AluCarry) = Sub32(MData, AData, cin);
                 return;
             case 23:
-                lv = (long)(uint)(MData | ~AData) + (uint)MData + (cin ? 1 : 0);
+                lv = (long)(MData | ~AData) + MData + (cin ? 1 : 0);
                 break;
             case 24:
-                lv = (long)(uint)(MData | AData) + (cin ? 1 : 0);
+                lv = (long)(MData | AData) + (cin ? 1 : 0);
                 break;
             case 25:
                 (AluOut, AluCarry) = Add32(MData, AData, cin);
                 return;
             case 26:
-                lv = (long)(uint)(MData | AData) + (uint)(MData & ~AData) + (cin ? 1 : 0);
+                lv = (long)(MData | AData) + (MData & ~AData) + (cin ? 1 : 0);
                 break;
             case 27:
-                lv = (long)(uint)(MData | AData) + (uint)MData + (cin ? 1 : 0);
+                lv = (long)(MData | AData) + MData + (cin ? 1 : 0);
                 break;
             case 28:
                 AluOut = (uint)(MData + (cin ? 1 : 0));
@@ -576,10 +582,10 @@ public class UCode
                 if (MData == -1 && cin) AluCarry = 1;
                 return;
             case 29:
-                lv = (long)(uint)MData + (uint)(MData & AData) + (cin ? 1 : 0);
+                lv = (long)MData + (MData & AData) + (cin ? 1 : 0);
                 break;
             case 30:
-                lv = (long)(uint)MData + (uint)(MData | ~AData) + (cin ? 1 : 0);
+                lv = (long)MData + (MData | ~AData) + (cin ? 1 : 0);
                 break;
             case 31:
                 (AluOut, AluCarry) = Add32(MData, MData, cin);
@@ -620,10 +626,31 @@ public class UCode
                     (AluOut, AluCarry) = Add32(MData, Abs32(AData), cin);
                 break;
             case 37: // remainder correction
+                // The real C call is add32((int32_t)alu_out, abs32(adata), cin,
+                // alu_out, alu_carry) — 'out' and 'a' are the SAME variable
+                // (alu_out) at this call site. Textually expanding the macro,
+                // line 1 reassigns alu_out first, then line 2's carry
+                // computation re-reads ~(a), which is now the just-written
+                // NEW alu_out, not the value alu_out held on entry. A plain
+                // function call (Add32((int)AluOut, ...)) evaluates its
+                // argument once before the call and would use the OLD value
+                // instead, diverging from the reference emulator. This must
+                // be expanded inline to replicate that self-aliasing quirk.
                 if ((Q & 1) != 0)
+                {
                     AluCarry = 0;
+                }
                 else
-                    (AluOut, AluCarry) = Add32((int)AluOut, Abs32(AData), cin);
+                {
+                    int aArg = (int)AluOut;
+                    int bArg = Abs32(AData);
+                    uint newOut = unchecked((uint)aArg + (uint)bArg + (cin ? 1u : 0u));
+                    AluOut = newOut;
+                    int aAfterReassign = (int)AluOut;
+                    AluCarry = cin
+                        ? (bArg >= ~aAfterReassign ? 0u : 1u)
+                        : (bArg > ~aAfterReassign ? 0u : 1u);
+                }
                 break;
             case 41: // initial divide step (unconditional)
                 (AluOut, AluCarry) = Sub32(MData, Abs32(AData), !cin);
