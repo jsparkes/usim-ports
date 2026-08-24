@@ -58,10 +58,13 @@ public static class UCodeFetchDecodeTests
             // prefetches Prom[0] into P1 for next time; Npc advances to 1.
             // Step() always decodes+dispatches P0 after IncNpc (even on this
             // priming cycle, where P0 is still the initial empty value,
-            // decoding as Op=0/ALU) — and since Alu/Jmp/Dsp/Byt are all
-            // still NotImplementedException stubs in this phase, every
-            // Step() call throws. IncNpc's pipeline update happens before
-            // the dispatch, so the exception is swallowed to check it.
+            // decoding as Op=0/ALU). Alu() and Jmp() are now fully
+            // implemented (Phases 2 and 3), but an all-zero P0 dispatches
+            // ALU code 0 (SETZ), whose WriteDest call reaches the
+            // still-stubbed MfWrite (Phase 4's job) — so this still throws
+            // NotImplementedException, just from a deeper call site than
+            // before. IncNpc's pipeline update happens before the dispatch,
+            // so the exception is swallowed to check it.
             try { ucode.Step(); } catch (NotImplementedException) { /* expected: dispatch stub */ }
             Assert(ucode.P0 == 0, "first Step(): P0 is still the initial (empty) P1");
             Assert(ucode.P1 == ucode.Prom[0], "first Step(): P1 prefetched Prom[0]");
@@ -104,9 +107,11 @@ public static class UCodeFetchDecodeTests
             ucode.PromDisabled = true;
             ucode.Npc = 0x3FFF;
 
-            // Step() always dispatches after IncNpc (see TestPipelineAdvance);
-            // Alu/Jmp/Dsp/Byt are still stubs in this phase, so it throws —
-            // swallow it, IncNpc's Npc update already happened first.
+            // Step() always dispatches after IncNpc (see TestPipelineAdvance).
+            // As there, this drives an all-zero P0 through the now-real
+            // Alu() -> LogiOps(0) (SETZ) -> WriteDest, which still hits the
+            // stubbed MfWrite (Phase 4) and throws — swallow it, IncNpc's
+            // Npc update already happened first.
             try { ucode.Step(); } catch (NotImplementedException) { /* expected: dispatch stub */ }
             Assert(ucode.Npc == 0, "Npc wraps from 0x3FFF to 0");
 
@@ -142,13 +147,21 @@ public static class UCodeFetchDecodeTests
             // Two Step() calls needed: first prefetches Prom[0] into P1
             // (decoding+dispatching on the still-empty P0, i.e. Op=0/ALU);
             // second promotes it to P0 and actually decodes our word (Op=1/
-            // JUMP). Both calls dispatch through a stub (Alu()/Jmp()) that
-            // throws NotImplementedException — that's fine, the decode
-            // happens before the stub throws in each case, so both are
-            // wrapped to check the decoded fields afterward.
+            // JUMP). Alu() and Jmp() are now fully implemented (Phases 2
+            // and 3): the first call's all-zero P0 still throws
+            // NotImplementedException (SETZ's WriteDest reaches the
+            // still-stubbed MfWrite, Phase 4's job), same as
+            // TestPipelineAdvance/TestNpcWraparound above. The second
+            // call's word decodes as a real jump (with all of Jmp()'s own
+            // Ir() fields reading as 0, per this word's bit layout) that
+            // does NOT throw — it's a real branch taken via the fully-
+            // implemented Jmp(), so this try/catch is harmless but no
+            // longer expected to catch anything; both calls are still
+            // wrapped uniformly so the decoded fields can be checked
+            // afterward regardless of which one throws.
             ucode.Npc = 0;
-            try { ucode.Step(); } catch (NotImplementedException) { /* expected: Alu() stub */ }
-            try { ucode.Step(); } catch (NotImplementedException) { /* expected: Jmp() stub */ }
+            try { ucode.Step(); } catch (NotImplementedException) { /* expected: Alu()'s WriteDest reaches stubbed MfWrite */ }
+            try { ucode.Step(); } catch (NotImplementedException) { /* not expected to throw now that Jmp() is implemented; kept defensively */ }
 
             Assert(ucode.Op == 1, $"Op decoded as 1 (JUMP), got {ucode.Op}");
             Assert(ucode.AAddr == 0x2AA, $"AAddr decoded as 0x2AA, got 0x{ucode.AAddr:X}");

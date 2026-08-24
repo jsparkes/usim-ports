@@ -19,6 +19,8 @@ public static class UCodeJumpTests
         if (TestCheckJumpConditionBitTest()) passed++; else failed++;
         if (TestCheckJumpConditionFixedCodes()) passed++; else failed++;
         if (TestJmpUnconditional()) passed++; else failed++;
+        if (TestJmpInhibitNoPush()) passed++; else failed++;
+        if (TestJmpInhibitWithPush()) passed++; else failed++;
         if (TestJmpConditionalNotTaken()) passed++; else failed++;
         if (TestJmpPushPop()) passed++; else failed++;
         if (TestJmpInvertSense()) passed++; else failed++;
@@ -160,6 +162,69 @@ public static class UCodeJumpTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Jmp unconditional tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestJmpInhibitNoPush()
+    {
+        Console.WriteLine("Test: Jmp n=1, p=0 (inhibit next Step's dispatch, no SPC push)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // target = Ir(12,14) = 0x1500 (within the 14-bit field); n=1 (bit7), p=0, r=0,
+            // invertSense=0, condition code 7 (always true). This is the dominant real-world
+            // jump shape per the boot-microcode survey (n=1 without p): plain inhibit-next-
+            // dispatch, target taken directly, no PushSpc involved.
+            ucode.P0 = ((ulong)0x1500 << 12) | (1UL << 7) | (1UL << 5) | 7;
+            ucode.Npc = 0x0200;
+            ucode.CallJmp();
+
+            Assert(ucode.Inhibit == true, $"n=1 -> Inhibit=true, got {ucode.Inhibit}");
+            Assert(ucode.Npc == 0x1500, $"cond=true, p=0 -> Npc=target, got 0x{ucode.Npc:X}");
+            Assert(ucode.Popj == false, "Popj forced false when cond is true");
+
+            Console.WriteLine("  Jmp n=1,p=0 tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Jmp n=1,p=0 tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestJmpInhibitWithPush()
+    {
+        Console.WriteLine("Test: Jmp n=1, p=1 (PushSpc(Npc-1) variant, differs from n=0,p=1's PushSpc(Npc))");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // target = Ir(12,14) = 0x2600; p=1 (bit8), n=1 (bit7), r=0, invertSense=0,
+            // condition code 7 (always true). Per Jmp()'s p&&cond block: since n is set,
+            // it pushes Npc-1 (not Npc) onto the SPC stack. This n=1&&p=1 combination is
+            // the single most common real jump shape in ucadr.mcr (per the boot-microcode
+            // survey), so it needs its own coverage distinct from the n=0,p=1 push case.
+            uint npcBefore = 0x0050;
+            ucode.P0 = ((ulong)0x2600 << 12) | (1UL << 8) | (1UL << 7) | (1UL << 5) | 7;
+            ucode.Npc = npcBefore;
+            ucode.CallJmp();
+
+            Assert(ucode.Spc[ucode.SpcPtr] == npcBefore - 1,
+                $"n=1,p=1 -> PushSpc(Npc-1), got 0x{ucode.Spc[ucode.SpcPtr]:X}, expected 0x{npcBefore - 1:X}");
+            Assert(ucode.Inhibit == true, $"n=1 -> Inhibit=true, got {ucode.Inhibit}");
+            Assert(ucode.Npc == 0x2600, $"cond=true -> Npc=target, got 0x{ucode.Npc:X}");
+
+            Console.WriteLine("  Jmp n=1,p=1 tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Jmp n=1,p=1 tests failed: {ex.Message}\n");
             return false;
         }
     }
