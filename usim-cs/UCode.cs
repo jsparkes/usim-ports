@@ -658,6 +658,52 @@ public class UCode
         }
     }
 
+    /// <summary>
+    /// Q-register shift/load control, dispatched on Ir(0,2).
+    /// </summary>
+    internal void QControl()
+    {
+        OldQ = Q;
+        switch (Ir(0, 2))
+        {
+            case 1:
+                Q <<= 1;
+                if ((AluOut & 0x80000000) == 0) Q |= 1;
+                break;
+            case 2:
+                Q >>= 1;
+                if ((AluOut & 1) != 0) Q |= 0x80000000;
+                break;
+            case 3:
+                Q = AluOut;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// ALU-output routing/shift control, dispatched on bits 12-13 of P0 (raw,
+    /// not via Ir() — matches the C source's direct bit extraction).
+    /// </summary>
+    internal void OutControl()
+    {
+        switch ((P0 >> 12) & 3)
+        {
+            case 0:
+                TraceLog.Instance.Warning(TraceCategory.MicroCode, "OutControl: out == 0!");
+                Out = Rol32((uint)MData, (int)(P0 & 0x1F));
+                break;
+            case 1:
+                Out = AluOut;
+                break;
+            case 2:
+                Out = (AluOut >> 1) | (AluCarry != 0 ? 0x80000000u : 0);
+                break;
+            case 3:
+                Out = (AluOut << 1) | ((OldQ & 0x80000000) != 0 ? 1u : 0);
+                break;
+        }
+    }
+
     #region ALU Operations
     #endregion
 

@@ -23,6 +23,8 @@ public static class UCodeAluTests
         if (TestLogiOps()) passed++; else failed++;
         if (TestArithOps()) passed++; else failed++;
         if (TestDivOps()) passed++; else failed++;
+        if (TestQControl()) passed++; else failed++;
+        if (TestOutControl()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -309,6 +311,100 @@ public static class UCodeAluTests
         catch (Exception ex)
         {
             Console.WriteLine($"  DivOps tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestQControl()
+    {
+        Console.WriteLine("Test: QControl");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 0: no-op (Ir(0,2) reads P0 bits 0-1)
+            ucode.P0 = 0; // code 0
+            ucode.Q = 0x12345678;
+            ucode.QControl();
+            Assert(ucode.Q == 0x12345678u, $"QControl code 0 is a no-op, got 0x{ucode.Q:X}");
+
+            // Code 1: Q <<= 1; shift in the INVERSE of AluOut's sign bit.
+            ucode.P0 = 1; // code 1
+            ucode.Q = 0x00000001;
+            ucode.AluOut = 0x00000000; // sign bit clear -> shift in a 1
+            ucode.QControl();
+            Assert(ucode.Q == 0x00000003u, $"QControl code 1 shift-left, sign clear shifts in 1, got 0x{ucode.Q:X}");
+
+            ucode.P0 = 1;
+            ucode.Q = 0x00000001;
+            ucode.AluOut = 0x80000000; // sign bit set -> shift in a 0
+            ucode.QControl();
+            Assert(ucode.Q == 0x00000002u, $"QControl code 1 shift-left, sign set shifts in 0, got 0x{ucode.Q:X}");
+
+            // Code 2: Q >>= 1; shift in AluOut's bit 0.
+            ucode.P0 = 2; // code 2
+            ucode.Q = 0x00000002;
+            ucode.AluOut = 0x00000001; // bit 0 set -> shift in a 1 at bit 31
+            ucode.QControl();
+            Assert(ucode.Q == 0x80000001u, $"QControl code 2 shift-right, bit0 set shifts in top bit, got 0x{ucode.Q:X}");
+
+            // Code 3: Q = AluOut.
+            ucode.P0 = 3; // code 3
+            ucode.AluOut = 0xDEADBEEF;
+            ucode.QControl();
+            Assert(ucode.Q == 0xDEADBEEFu, $"QControl code 3 loads AluOut, got 0x{ucode.Q:X}");
+
+            Console.WriteLine("  QControl tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  QControl tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestOutControl()
+    {
+        Console.WriteLine("Test: OutControl");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 0 (bits 12-13 of P0): rotate MData by low 5 bits of P0.
+            ucode.P0 = 0; // code 0, rotate amount 0
+            ucode.MData = 0x12345678;
+            ucode.OutControl();
+            Assert(ucode.Out == 0x12345678u, $"OutControl code 0, rotate 0, got 0x{ucode.Out:X}");
+
+            // Code 1: passthrough.
+            ucode.P0 = 1UL << 12; // code 1
+            ucode.AluOut = 0xABCDEF01;
+            ucode.OutControl();
+            Assert(ucode.Out == 0xABCDEF01u, $"OutControl code 1 passthrough, got 0x{ucode.Out:X}");
+
+            // Code 2: AluOut >> 1, with AluCarry shifted into bit 31.
+            ucode.P0 = 2UL << 12; // code 2
+            ucode.AluOut = 0x00000002;
+            ucode.AluCarry = 1;
+            ucode.OutControl();
+            Assert(ucode.Out == 0x80000001u, $"OutControl code 2, got 0x{ucode.Out:X}");
+
+            // Code 3: AluOut << 1, with OldQ's sign bit shifted into bit 0.
+            ucode.P0 = 3UL << 12; // code 3
+            ucode.AluOut = 0x00000001;
+            ucode.OldQ = 0x80000000; // sign bit set -> shift in a 1
+            ucode.OutControl();
+            Assert(ucode.Out == 0x00000003u, $"OutControl code 3, got 0x{ucode.Out:X}");
+
+            Console.WriteLine("  OutControl tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  OutControl tests failed: {ex.Message}\n");
             return false;
         }
     }
