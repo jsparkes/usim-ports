@@ -455,6 +455,42 @@ public class UCode
         InterruptPendingFlag = false;
     }
 
+    /// <summary>
+    /// 32-bit add with carry-in/carry-out, matching the C macro add32().
+    /// </summary>
+    internal static (uint Out, uint Carry) Add32(int a, int b, bool ci)
+    {
+        uint outv = unchecked((uint)a + (uint)b + (ci ? 1u : 0u));
+        uint co = ci ? ((uint)b >= (uint)~a ? 1u : 0u) : ((uint)b > (uint)~a ? 1u : 0u);
+        return (outv, co);
+    }
+
+    /// <summary>
+    /// 32-bit subtract with carry-in/carry-out, matching the C macro sub32().
+    /// </summary>
+    internal static (uint Out, uint Carry) Sub32(int a, int b, bool ci)
+    {
+        uint outv = unchecked((uint)a - (uint)b - (ci ? 0u : 1u));
+        uint co = outv > (uint)a ? 1u : 0u;
+        return (outv, co);
+    }
+
+    /// <summary>
+    /// Two's-complement absolute value, matching the C macro abs32().
+    /// </summary>
+    internal static int Abs32(int a) => a < 0 ? ~a + 1 : a;
+
+    /// <summary>
+    /// 32-bit rotate-left, matching the C function rol32() in m32.c.
+    /// </summary>
+    internal static uint Rol32(uint value, int bits)
+    {
+        if (bits == 0) return value;
+        int mask = unchecked((int)0x80000000) >> bits;
+        uint tmp = (uint)(((ulong)(value & (uint)mask)) >> (32 - bits));
+        return (value << bits) | tmp;
+    }
+
     #region ALU Operations
     #endregion
 
