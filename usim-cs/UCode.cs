@@ -320,9 +320,24 @@ public class UCode
         throw new NotImplementedException("MfRead is implemented in Phase 4 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
     }
 
+    internal int MfWrite(uint dest, int data)
+    {
+        throw new NotImplementedException("MfWrite is implemented in Phase 4 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+    }
+
     private void Alu()
     {
-        throw new NotImplementedException("Alu is implemented in Phase 2 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+        uint dest = (uint)Ir(14, 12);
+        uint aluop = (uint)Ir(3, 6);
+        AluCarry = 0;
+
+        if (aluop <= 15) LogiOps(aluop);
+        else if (aluop >= 16 && aluop <= 31) ArithOps(aluop);
+        else if (aluop == 32 || aluop == 33 || aluop == 37 || aluop == 41) DivOps(aluop);
+
+        QControl();
+        OutControl();
+        WriteDest(dest);
     }
 
     private void Jmp()
@@ -701,6 +716,24 @@ public class UCode
             case 3:
                 Out = (AluOut << 1) | ((OldQ & 0x80000000) != 0 ? 1u : 0);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// Route the ALU/byte-instruction result to its destination: plain
+    /// A-memory (if dest bit 11 is set) or a functional register via
+    /// MfWrite, plus the low-5-bit-addressed MMem/AMem shadow copies.
+    /// </summary>
+    internal void WriteDest(uint dest)
+    {
+        if ((dest & 0x800) != 0)
+        {
+            AMem[dest & 0x3FF] = Out;
+        }
+        else
+        {
+            MfWrite(dest, (int)Out);
+            MMem[dest & 0x1F] = AMem[dest & 0x1F] = Out;
         }
     }
 

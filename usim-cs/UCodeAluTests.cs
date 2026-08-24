@@ -25,6 +25,8 @@ public static class UCodeAluTests
         if (TestDivOps()) passed++; else failed++;
         if (TestQControl()) passed++; else failed++;
         if (TestOutControl()) passed++; else failed++;
+        if (TestWriteDest()) passed++; else failed++;
+        if (TestAluEndToEnd()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -405,6 +407,92 @@ public static class UCodeAluTests
         catch (Exception ex)
         {
             Console.WriteLine($"  OutControl tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestWriteDest()
+    {
+        Console.WriteLine("Test: WriteDest");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // dest with bit 11 set (0x800) -> plain A-memory write, low 10 bits are the index.
+            ucode.Out = 0xCAFEBABE;
+            ucode.WriteDest(0x800 | 0x123);
+            Assert(ucode.AMem[0x123] == 0xCAFEBABEu, $"A-memory write at index 0x123, got 0x{ucode.AMem[0x123]:X}");
+
+            // dest without bit 11 -> goes through MfWrite (stubbed) AND still updates
+            // the low-5-bit-addressed MMem/AMem shadow copies per the spec.
+            bool threw = false;
+            try
+            {
+                ucode.Out = 0x11111111;
+                ucode.WriteDest(0x05); // dest & 037 == 5, dest & 0x800 == 0
+            }
+            catch (NotImplementedException)
+            {
+                threw = true;
+            }
+            Assert(threw, "non-A-memory dest routes through the still-stubbed MfWrite and throws");
+
+            Console.WriteLine("  WriteDest tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  WriteDest tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestAluEndToEnd()
+    {
+        Console.WriteLine("Test: Alu() end-to-end via Step()");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+            ucode.PromEnabledFlag = true;
+
+            // Build one ALU instruction word by hand:
+            //   Op (bits 43-44) = 0 (ALU)
+            //   AAddr (bits 32-41) = 0x010 (A-memory source address)
+            //   msource (bit 31) = 0 (plain MMem read)
+            //   MAddr (bits 26-30) = 0x03 (M-memory source address)
+            //   dest (bits 14-25) = 0x800 | 0x020 (A-memory write, index 0x020)
+            //   aluop (bits 3-8) = 1 (AND)
+            //   qcontrol (bits 0-1) = 0 (no-op)
+            //   outcontrol (bits 12-13) = 1 (passthrough)
+            ulong dest = 0x800 | 0x020;
+            ulong word = ((ulong)0 << 43) | ((ulong)0x010 << 32) | ((ulong)0x03 << 26)
+                       | (dest << 14) | ((ulong)1 << 3) | ((ulong)1 << 12);
+            ucode.Prom[0] = word;
+            ucode.AMem[0x010] = 0xF0F0F0F0;
+            ucode.MMem[0x03] = 0x0FF00FF0;
+
+            ucode.Npc = 0;
+            // First Step() decodes+dispatches on the still-empty P0 (Op=0/ALU,
+            // dest=0), which now runs Alu() for real and reaches WriteDest's
+            // non-A-memory branch (dest=0 has bit 11 clear) -> the still-stubbed
+            // MfWrite throws NotImplementedException. Same established pattern
+            // as UCodeFetchDecodeTests.TestCommonFieldDecode's first Step() call.
+            try { ucode.Step(); } catch (NotImplementedException) { /* expected: MfWrite stub on the empty first dispatch */ }
+            ucode.Step(); // promote to P0, decode, execute ALU, write dest
+
+            uint expected = 0xF0F0F0F0u & 0x0FF00FF0u;
+            Assert(ucode.AluOut == expected, $"AluOut = AData & MData = 0x{expected:X}, got 0x{ucode.AluOut:X}");
+            Assert(ucode.Out == expected, $"Out (outcontrol=1, passthrough) = 0x{expected:X}, got 0x{ucode.Out:X}");
+            Assert(ucode.AMem[0x020] == expected, $"WriteDest wrote Out to AMem[0x020], got 0x{ucode.AMem[0x020]:X}");
+
+            Console.WriteLine("  Alu() end-to-end tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Alu() end-to-end tests failed: {ex.Message}\n");
             return false;
         }
     }
