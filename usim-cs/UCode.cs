@@ -500,6 +500,137 @@ public class UCode
         return (value << bits) | tmp;
     }
 
+    /// <summary>
+    /// Logical ALU operations, codes 0-15 (octal 000-017).
+    /// </summary>
+    internal void LogiOps(uint op)
+    {
+        switch (op)
+        {
+            case 0: AluOut = 0; break;                                       // SETZ
+            case 1: AluOut = (uint)(MData & AData); break;                   // AND
+            case 2: AluOut = (uint)(MData & ~AData); break;                  // ANDCA
+            case 3: AluOut = (uint)MData; break;                             // SETM
+            case 4: AluOut = (uint)(~MData & AData); break;                  // ANDCM
+            case 5: AluOut = (uint)AData; break;                             // SETA
+            case 6: AluOut = (uint)(MData ^ AData); break;                   // XOR
+            case 7: AluOut = (uint)(MData | AData); break;                   // IOR
+            case 8: AluOut = (uint)(~AData & ~MData); break;                 // NOR
+            case 9: AluOut = (AData == MData) ? 1u : 0u; break;              // EQV (boolean test)
+            case 10: AluOut = (uint)~AData; break;                           // SETCA
+            case 11: AluOut = (uint)(MData | ~AData); break;                // ORCA
+            case 12: AluOut = (uint)~MData; break;                          // SETCM
+            case 13: AluOut = (uint)(~MData | AData); break;                 // ORCM
+            case 14: AluOut = (uint)(~MData | ~AData); break;                // ORCB
+            case 15: AluOut = 0xFFFFFFFFu; break;                           // SETO
+        }
+    }
+
+    /// <summary>
+    /// Arithmetic ALU operations, codes 16-31 (octal 020-037).
+    /// </summary>
+    internal void ArithOps(uint op)
+    {
+        bool cin = Ir(2, 1) != 0;
+        long lv;
+
+        switch (op)
+        {
+            case 16: AluOut = cin ? 0u : uint.MaxValue; AluCarry = 0; return;
+            case 17:
+                lv = (long)(uint)(MData & AData) - (cin ? 0 : 1);
+                break;
+            case 18:
+                lv = (long)(uint)(MData & ~AData) - (cin ? 0 : 1);
+                break;
+            case 19:
+                lv = (long)(uint)MData - (cin ? 0 : 1);
+                break;
+            case 20:
+                lv = (long)(uint)(MData | ~AData) + (cin ? 1 : 0);
+                break;
+            case 21:
+                lv = (long)(uint)(MData | ~AData) + (uint)(MData & AData) + (cin ? 1 : 0);
+                break;
+            case 22:
+                (AluOut, AluCarry) = Sub32(MData, AData, cin);
+                return;
+            case 23:
+                lv = (long)(uint)(MData | ~AData) + (uint)MData + (cin ? 1 : 0);
+                break;
+            case 24:
+                lv = (long)(uint)(MData | AData) + (cin ? 1 : 0);
+                break;
+            case 25:
+                (AluOut, AluCarry) = Add32(MData, AData, cin);
+                return;
+            case 26:
+                lv = (long)(uint)(MData | AData) + (uint)(MData & ~AData) + (cin ? 1 : 0);
+                break;
+            case 27:
+                lv = (long)(uint)(MData | AData) + (uint)MData + (cin ? 1 : 0);
+                break;
+            case 28:
+                AluOut = (uint)(MData + (cin ? 1 : 0));
+                AluCarry = 0;
+                if (MData == -1 && cin) AluCarry = 1;
+                return;
+            case 29:
+                lv = (long)(uint)MData + (uint)(MData & AData) + (cin ? 1 : 0);
+                break;
+            case 30:
+                lv = (long)(uint)MData + (uint)(MData | ~AData) + (cin ? 1 : 0);
+                break;
+            case 31:
+                (AluOut, AluCarry) = Add32(MData, MData, cin);
+                return;
+            default:
+                return;
+        }
+
+        AluOut = (uint)lv;
+        AluCarry = (lv >> 32) != 0 ? 1u : 0u;
+    }
+
+    /// <summary>
+    /// Multiply/divide-step ALU operations, codes 32, 33, 37, 41
+    /// (octal 040, 041, 045, 051).
+    /// </summary>
+    internal void DivOps(uint op)
+    {
+        bool cin = Ir(2, 1) != 0;
+
+        switch (op)
+        {
+            case 32: // multiply step
+                if ((Q & 1) != 0)
+                {
+                    (AluOut, AluCarry) = Add32(AData, MData, cin);
+                }
+                else
+                {
+                    AluOut = (uint)MData;
+                    AluCarry = (AluOut & 0x80000000) != 0 ? 1u : 0u;
+                }
+                break;
+            case 33: // divide step
+                if ((Q & 1) != 0)
+                    (AluOut, AluCarry) = Sub32(MData, Abs32(AData), !cin);
+                else
+                    (AluOut, AluCarry) = Add32(MData, Abs32(AData), cin);
+                break;
+            case 37: // remainder correction
+                if ((Q & 1) != 0)
+                    AluCarry = 0;
+                else
+                    (AluOut, AluCarry) = Add32((int)AluOut, Abs32(AData), cin);
+                break;
+            case 41: // initial divide step (unconditional)
+                (AluOut, AluCarry) = Sub32(MData, Abs32(AData), !cin);
+                break;
+        }
+    }
+
     #region ALU Operations
     #endregion
 

@@ -20,6 +20,9 @@ public static class UCodeAluTests
         if (TestSub32()) passed++; else failed++;
         if (TestAbs32()) passed++; else failed++;
         if (TestRol32()) passed++; else failed++;
+        if (TestLogiOps()) passed++; else failed++;
+        if (TestArithOps()) passed++; else failed++;
+        if (TestDivOps()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -118,6 +121,145 @@ public static class UCodeAluTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Rol32 tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestLogiOps()
+    {
+        Console.WriteLine("Test: LogiOps");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 0: SETZ
+            ucode.MData = 0x12345678; ucode.AData = 0x0F0F0F0F; ucode.AluCarry = 0;
+            ucode.LogiOps(0);
+            Assert(ucode.AluOut == 0, $"SETZ -> 0, got 0x{ucode.AluOut:X}");
+            Assert(ucode.AluCarry == 0, "LogiOps never sets carry");
+
+            // Code 1: AND
+            ucode.MData = 0x12345678; ucode.AData = 0x0F0F0F0F;
+            ucode.LogiOps(1);
+            Assert(ucode.AluOut == (0x12345678u & 0x0F0F0F0Fu), $"AND, got 0x{ucode.AluOut:X}");
+
+            // Code 6: XOR
+            ucode.MData = 0x12345678; ucode.AData = 0x0F0F0F0F;
+            ucode.LogiOps(6);
+            Assert(ucode.AluOut == (0x12345678u ^ 0x0F0F0F0Fu), $"XOR, got 0x{ucode.AluOut:X}");
+
+            // Code 7: IOR
+            ucode.MData = 0x12345678; ucode.AData = 0x0F0F0F0F;
+            ucode.LogiOps(7);
+            Assert(ucode.AluOut == (0x12345678u | 0x0F0F0F0Fu), $"IOR, got 0x{ucode.AluOut:X}");
+
+            // Code 9: EQV (boolean equality test, NOT bitwise XNOR)
+            ucode.MData = 5; ucode.AData = 5;
+            ucode.LogiOps(9);
+            Assert(ucode.AluOut == 1, $"EQV(5,5) -> 1 (boolean true), got {ucode.AluOut}");
+            ucode.MData = 5; ucode.AData = 6;
+            ucode.LogiOps(9);
+            Assert(ucode.AluOut == 0, $"EQV(5,6) -> 0 (boolean false), got {ucode.AluOut}");
+
+            // Code 15: SETO
+            ucode.LogiOps(15);
+            Assert(ucode.AluOut == 0xFFFFFFFFu, $"SETO -> all ones, got 0x{ucode.AluOut:X}");
+
+            Console.WriteLine("  LogiOps tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  LogiOps tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestArithOps()
+    {
+        Console.WriteLine("Test: ArithOps");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 22 (SUB): M - A - 1 + CIN, via Sub32 delegate. cin = Ir(2,1) — set
+            // via P0 bit 2 since ArithOps reads cin from the instruction register.
+            ucode.MData = 10; ucode.AData = 3;
+            ucode.P0 = 1UL << 2; // cin = 1
+            ucode.ArithOps(22);
+            Assert(ucode.AluOut == 7, $"SUB with cin=1: 10 - 3 - 0 = 7, got {ucode.AluOut}");
+
+            ucode.MData = 10; ucode.AData = 3;
+            ucode.P0 = 0; // cin = 0
+            ucode.ArithOps(22);
+            Assert(ucode.AluOut == 6, $"SUB with cin=0: 10 - 3 - 1 = 6, got {ucode.AluOut}");
+
+            // Code 25 (ADD): M + A + CIN, via Add32 delegate.
+            ucode.MData = 10; ucode.AData = 3;
+            ucode.P0 = 1UL << 2; // cin = 1
+            ucode.ArithOps(25);
+            Assert(ucode.AluOut == 14, $"ADD with cin=1: 10 + 3 + 1 = 14, got {ucode.AluOut}");
+
+            // Code 28 ([M+1]): M + CIN, with the special all-ones-plus-carry case.
+            ucode.MData = 5;
+            ucode.P0 = 1UL << 2; // cin = 1
+            ucode.ArithOps(28);
+            Assert(ucode.AluOut == 6, $"[M+1] with cin=1: 5 + 1 = 6, got {ucode.AluOut}");
+            Assert(ucode.AluCarry == 0, "no special carry case for M=5");
+
+            ucode.MData = -1; // 0xFFFFFFFF
+            ucode.P0 = 1UL << 2; // cin = 1
+            ucode.ArithOps(28);
+            Assert(ucode.AluOut == 0, $"[M+1] with M=0xFFFFFFFF, cin=1 wraps to 0, got 0x{ucode.AluOut:X}");
+            Assert(ucode.AluCarry == 1, "special carry case: M==0xFFFFFFFF && cin");
+
+            Console.WriteLine("  ArithOps tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ArithOps tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestDivOps()
+    {
+        Console.WriteLine("Test: DivOps");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 32 (multiply step): Q bit 0 == 0 -> AluOut = MData, carry = sign bit.
+            ucode.Q = 0; // bit 0 clear
+            ucode.MData = unchecked((int)0x80000000); // sign bit set (0x80000000 is a uint literal; MData is int, needs an explicit cast)
+            ucode.P0 = 0; // cin = 0 (unused on this branch)
+            ucode.DivOps(32);
+            Assert(ucode.AluOut == 0x80000000u, $"mult step, Q bit0=0: AluOut=MData, got 0x{ucode.AluOut:X}");
+            Assert(ucode.AluCarry == 1, "mult step, Q bit0=0: carry = MData's sign bit");
+
+            // Code 32 (multiply step): Q bit 0 == 1 -> Add32(AData, MData, cin).
+            ucode.Q = 1; // bit 0 set
+            ucode.AData = 5; ucode.MData = 3;
+            ucode.P0 = 1UL << 2; // cin = 1
+            ucode.DivOps(32);
+            Assert(ucode.AluOut == 9, $"mult step, Q bit0=1: Add32(5,3,cin=1)=9, got {ucode.AluOut}");
+
+            // Code 41 (initial divide step): unconditional Sub32(MData, Abs32(AData), !cin).
+            ucode.MData = 10; ucode.AData = -3; // Abs32(-3) = 3
+            ucode.P0 = 1UL << 2; // cin = 1 -> !cin = false -> Sub32(10, 3, false)
+            ucode.DivOps(41);
+            Assert(ucode.AluOut == 6, $"initial divide step: Sub32(10,3,ci=false)=10-3-1=6, got {ucode.AluOut}");
+
+            Console.WriteLine("  DivOps tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  DivOps tests failed: {ex.Message}\n");
             return false;
         }
     }
