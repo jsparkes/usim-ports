@@ -176,6 +176,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-microcode-vm":
+                    UCodeVirtualMemoryTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--demo-execution":
                     UCodeTests.DemoInstructionExecution();
                     Environment.Exit(0);
@@ -234,6 +239,7 @@ public class Program
         Console.WriteLine("  --test-microcode-jump   Run microcode jump tests only");
         Console.WriteLine("  --test-microcode-mregisters Run microcode M-register tests only");
         Console.WriteLine("  --test-uvmem            Run virtual memory (Uvmem) tests only");
+        Console.WriteLine("  --test-microcode-vm     Run microcode virtual memory tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
@@ -481,6 +487,11 @@ public class Program
         // Run virtual memory (Uvmem) tests
         Console.WriteLine("Running Uvmem Tests...\n");
         UvmemTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run microcode virtual memory tests
+        Console.WriteLine("Running Microcode Virtual Memory Tests...\n");
+        UCodeVirtualMemoryTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");

@@ -32,7 +32,18 @@ public class UCode
     public const int SPC_SIZE = 32;
 
     #endregion
-    
+
+    private readonly MainMemory _mainMemory;
+    public Uvmem Uvmem { get; }
+
+    public UCode() : this(new MainMemory()) { }
+
+    public UCode(MainMemory mainMemory)
+    {
+        _mainMemory = mainMemory;
+        Uvmem = new Uvmem();
+    }
+
     // Machine cycles counter
     public ulong MachineCycles { get; set; }
 
@@ -589,24 +600,62 @@ public class UCode
     /// </summary>
     public bool Halted { get; set; }
 
-    private void VmRead(uint vaddr, out uint v)
+    /// <summary>
+    /// Faithful port of the virtual-memory-resolution part of vm()
+    /// (usim/uexec.c:172-228). Sets VmaOk from Uvmem's permission bits;
+    /// on a fault, reads return 0 and writes are discarded (matching the
+    /// real C's *pv=0 on read). For an address that resolves within the
+    /// "xbus main memory" range (physical page number &lt;= 0x3BFB -- verified
+    /// against usim/bus-adaptor.c's bus_adaptor_xbus_rw, whose own pn&lt;=035773
+    /// branch is a bare pass-through to real main memory), reads/writes go
+    /// through MainMemory's physical-address accessors for real. Anything
+    /// else (XBus I/O devices, Unibus) is a deliberately deferred,
+    /// non-fatal placeholder -- see this phase's plan for why (a wholly
+    /// separate, not-yet-ported bus-adaptor/device subsystem).
+    /// </summary>
+    private void Vm(bool write, uint vaddr, ref uint v)
     {
-        // Real virtual-memory read lands in Phase 5. Until then, treat every
-        // read as a page fault-free no-op returning 0, matching "VmaOk = true"
-        // above (Phase 5 replaces this with the real Vm()/Uvmem-backed path).
-        v = 0;
+        vaddr &= 0x00FFFFFF;
+        uint paddr = Uvmem.Vtop(vaddr, out _, out _, out uint pn, out bool wp, out bool ap);
+        VmaOk = write ? (ap && wp) : ap;
+        if (!VmaOk) { v = 0; return; }
+
+        // TV-screen quirk (usim/uvmem.c's vm(): known not to work correctly per its
+        // own comment) -- ported as-is. 036000 octal = 0x3C00 (NOT 0x1E00) and
+        // 017000000 octal = 0x3C0000 (NOT 0x0F00000) -- both corrected from an
+        // earlier draft of this spec; re-derived by direct computation, not manual
+        // octal-digit counting.
+        if (pn == 0x3C00) paddr = 0x3C0000 | (vaddr & 0x7FFF);
+
+        // The real C dispatches through bus_adaptor_read/write, which re-derives its
+        // OWN page number from the (possibly quirk-overridden) paddr, not from Vtop's
+        // original pn -- mirrored here. The 0x3BFC-0x3BFF range (the real C's
+        // assert(false)-guarded dead branch) is folded into the "not main memory"
+        // placeholder below, which is a safe superset for it.
+        uint dispatchPn = (paddr >> 8) & 0x3FFF;
+        if (dispatchPn <= 0x3BFB)
+        {
+            if (write) _mainMemory.WritePhysical(paddr, v);
+            else v = _mainMemory.ReadPhysical(paddr);
+        }
+        else
+        {
+            TraceLog.Instance.Warning(TraceCategory.Memory,
+                $"Vm: {(write ? "write" : "read")} to un-ported XBus-I/O/Unibus paddr 0x{paddr:X} (pn 0x{dispatchPn:X}) -- deferred to a future bus-adaptor port");
+            if (!write) v = 0;
+        }
     }
 
+    private void VmRead(uint vaddr, out uint v) { v = 0; Vm(false, vaddr, ref v); }
+    private void VmWrite(uint vaddr, uint data) { uint v = data; Vm(true, vaddr, ref v); }
+
     /// <summary>
-    /// Placeholder for the real virtual-memory write path (Phase 5's Vm()-
-    /// backed implementation). A no-op until then, matching VmRead's own
-    /// Phase 1 no-op precedent -- deliberately NOT throwing, so MfWrite's
-    /// other, unrelated register codes remain testable without needing
-    /// try/catch wrappers.
+    /// Test-only forwarding wrapper: Vm() stays private (matching Jmp()'s
+    /// visibility -- only reachable through VmRead/VmWrite in production),
+    /// but UCodeVirtualMemoryTests needs to exercise its branch combinations
+    /// directly. Matches the CallJmp() precedent from Phase 3.
     /// </summary>
-    private void VmWrite(uint vaddr, uint data)
-    {
-    }
+    internal void CallVm(bool write, uint vaddr, ref uint v) => Vm(write, vaddr, ref v);
 
     /// <summary>
     /// Placeholder for Uvmem.WriteMap (Phase 5's "new file" Uvmem.cs does

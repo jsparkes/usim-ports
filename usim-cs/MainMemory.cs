@@ -108,6 +108,15 @@ public class MainMemory
     }
     
     /// <summary>
+    /// Direct physical-memory access, bypassing this class's own (separate,
+    /// invented) virtual-paging TranslateAddress -- the caller (UCode.Vm(),
+    /// via Uvmem's faithful L1/L2 tables) has already resolved the physical
+    /// address itself.
+    /// </summary>
+    public uint ReadPhysical(uint physicalAddress) => physicalAddress < PHYSICAL_MEM_SIZE ? _physicalMemory[physicalAddress] : 0;
+    public void WritePhysical(uint physicalAddress, uint value) { if (physicalAddress < PHYSICAL_MEM_SIZE) _physicalMemory[physicalAddress] = value; }
+
+    /// <summary>
     /// Translate virtual address to physical address
     /// </summary>
     private uint TranslateAddress(uint virtualAddress)
