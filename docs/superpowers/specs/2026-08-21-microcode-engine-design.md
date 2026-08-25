@@ -350,14 +350,13 @@ private void WriteDest(uint dest)
 
 ## Phase 5 — Virtual Memory (`Uvmem.cs`, new file)
 
+**Correction (Phase 5 implementation, 2026-08-25):** `Uvmem` has NO `MainMemory` dependency — the `_mainMemory` field/constructor-parameter below is dead weight. Neither `Vtop` nor `WriteMap` ever reads or writes through it, matching the real C (`uvmem_vtop`/`uvmem_write_map` never touch main memory either). Actual physical memory access belongs to `UCode.Vm()` (below), which holds its own separate `MainMemory` reference.
+
 ```csharp
 public class Uvmem
 {
     private readonly uint[] _l1Map = new uint[2048];
     private readonly uint[] _l2Map = new uint[1024];
-    private readonly MainMemory _mainMemory;
-
-    public Uvmem(MainMemory mainMemory) { _mainMemory = mainMemory; }
 
     public uint Vtop(uint vaddr, out uint l1Data, out uint l2Data,
                       out uint physicalPageNumber, out bool writePermission, out bool accessPermission)
@@ -391,7 +390,7 @@ public class Uvmem
 ```
 Note: `WriteMap` re-reads `_l1Map[l1Index]` for the L2 write *after* the L1 write executes (matching the C's sequential-statement-order behavior) — if both enable bits are set in one call, the L2 write sees the just-written L1 entry.
 
-`UCode` holds its `Uvmem` dependency as a property: `public Uvmem Uvmem { get; }`, set once from the constructor (`new UCode(mainMemory)` internally does `Uvmem = new Uvmem(mainMemory)`, or `UCode` receives an already-constructed `Uvmem` — finalize whichever fits `MachineControl`'s wiring better during Phase 5's plan). Every call site below (`Vm`, `MfRead` code 9, `Dsp`'s L2-map step) uses this same `Uvmem` property — there is exactly one virtual-memory instance per `UCode`, never a static/singleton.
+`UCode` holds its `Uvmem` dependency as a property: `public Uvmem Uvmem { get; }`. As implemented, `UCode` has two constructors — `public UCode() : this(new MainMemory()) { }` (preserves every existing Phases 1-4 call site's behavior unchanged) and `public UCode(MainMemory mainMemory)` (stores it in a private `_mainMemory` field for `Vm()`'s real physical-memory access, and always builds `Uvmem = new Uvmem();`) — so `Uvmem` and `_mainMemory` are non-null regardless of which constructor is used. Every call site below (`Vm`, `MfRead` code 9, `Dsp`'s L2-map step) uses this same `Uvmem` property — there is exactly one virtual-memory instance per `UCode`, never a static/singleton. **`MachineControl` does not yet use the `UCode(MainMemory)` overload** (it still does `Memory = new MainMemory(); UCode = new UCode();` separately, so microcode-driven physical writes are currently invisible to `MachineControl.Memory`) — see the new Open Items entry below; wiring this through is Phase 8's job, already named in that phase's own `new UCode(mainMemory)` bullet.
 
 `Vm`/`VmRead`/`VmWrite` (on `UCode`, calling into `Uvmem` and `MainMemory`'s new physical-address API):
 ```csharp
@@ -401,15 +400,47 @@ private void Vm(bool write, uint vaddr, ref uint v)
     uint paddr = Uvmem.Vtop(vaddr, out _, out _, out uint pn, out bool wp, out bool ap);
     VmaOk = write ? (ap && wp) : ap;
     if (!VmaOk) { v = 0; return; }
-    // TV-screen quirk (usim/uvmem.c comment: known not to work correctly) — port as-is, flag in Phase 5's plan
-    if (pn == 0x1E00 /* 036000 octal */) paddr = 0x0F00000 | (vaddr & 0x7FFF); // 017000000 octal | vaddr&077777
-    if (write) _mainMemory.WritePhysical(paddr, v);
-    else v = _mainMemory.ReadPhysical(paddr);
+
+    // TV-screen quirk: this line is the WORKAROUND, not the bug -- usim/uvmem.c's
+    // vm() comments on a symptom in the plain (pn<<8)|(vaddr&0xFF) formula for this
+    // one page ("this is not working for the access below... no idea why"), and this
+    // override is what actually produces the correct address (reproduces the C
+    // comment's own worked "actual paddr should be 17'051'765" example exactly).
+    // 036000 octal = 0x3C00 (NOT 0x1E00, an earlier draft's mistranslation) and
+    // 017000000 octal = 0x3C0000 (NOT 0x0F00000, likewise) -- re-derive from the
+    // literal octal digits directly if this ever needs re-checking, never trust a
+    // restated hex value in this document (this is the fourth such mistranslation
+    // found in this spec, after Phase 1's LC/OA masks and Phase 4's MfRead mask).
+    if (pn == 0x3C00) paddr = 0x3C0000 | (vaddr & 0x7FFF);
+
+    // The real C dispatches through bus_adaptor_read/write -> bus_adaptor_rw, which
+    // re-derives ITS OWN page number from the (possibly quirk-overridden) paddr, not
+    // from Vtop's original pn, and routes across three ranges: pn<=0x3BFB ("xbus
+    // main memory" -- confirmed a bare pass-through to real main memory) is
+    // implemented for real below; 0x3C00-0x3DFF (XBus I/O devices) and
+    // 0x3E00-0x3FFF (Unibus) need a wholly separate, not-yet-ported "bus adaptor"
+    // subsystem (usim/bus-adaptor.c, usim/tv.c, usim/iob.c, etc.) -- see the new
+    // Open Items entry below. Real-microcode calibration (decoding this repo's own
+    // sys/ubin/promh.mcr) found the PROM's own bootstrap reaches this deferred range
+    // within ~10 instructions of its first page-map setup (disk control registers
+    // and diagnostic/spy registers) -- this is the very next real boot blocker, not
+    // a backwater; a throw here would abort the boot immediately, so the deferral is
+    // a non-fatal, warning-logged placeholder instead.
+    uint dispatchPn = (paddr >> 8) & 0x3FFF;
+    if (dispatchPn <= 0x3BFB)
+    {
+        if (write) _mainMemory.WritePhysical(paddr, v);
+        else v = _mainMemory.ReadPhysical(paddr);
+    }
+    else
+    {
+        // TraceLog.Instance.Warning(...); if (!write) v = 0;
+    }
 }
 private void VmRead(uint vaddr, out uint v) { v = 0; Vm(false, vaddr, ref v); }
 private void VmWrite(uint vaddr, uint v) { Vm(true, vaddr, ref v); }
 ```
-The C reference's `035774 <= pn <= 035777` A-memory-mapped branch always hits `assert(false)` in the original (dead/broken as written) — **omit this branch entirely** in the port rather than faithfully porting an assertion-guarded dead path; note this omission in the Phase 5 plan.
+The C reference's `035774 <= pn <= 035777` (`0x3BFC-0x3BFF`) A-memory-mapped branch always hits `assert(false)` in the original (dead/broken as written) — **omitted entirely** in the port (implemented in Phase 5); its range is folded into the `dispatchPn > 0x3BFB` placeholder above, a safe superset since that branch has no reachable behavior to be faithful to.
 
 `MainMemory.cs` gains:
 ```csharp
@@ -576,7 +607,7 @@ private uint PopSpc() { uint v = Spc[SpcPtr]; SpcPtr = (SpcPtr - 1) & 0x1F; retu
 - **`Disassembler.cs`**: entirely rewritten. Field extraction must use the real layout (§ above) and mnemonic tables come from the real ALU op names (§ Phase 2 tables) and jump condition names (§ Phase 3), not the current invented `AluOp` enum. Dispatch-instruction disassembly can use `defmic300.h`'s `defmics[]` table (function-number → Lisp primitive name) for symbolic output where applicable.
 - **`MicrocodeDebugger.cs`**: register-display code (`Npc`, `Opc`, `Out`, `Q`, `MdReg`, `VmaReg`, `Lc`, `OaRegHigh`/`Low`, `MData`, `AData`, `PdlPointer`) keeps working unchanged (same names, same meanings). The `CarryFlag`/`OverflowFlag`/`NegativeFlag`/`ZeroFlag` display block is replaced with `AluCarry` (the real hardware has no persistent flags register — those four were an invented artifact). `ExecuteInstruction(pc, useImem)`/`FetchInstruction` call sites are replaced by the new `Step()`-based execution path.
 - **`ConfigManager.cs`**: no changes needed (its `UCode` references are pure tracing-flag configuration, already generic).
-- **`MachineControl.cs`**: `UCode` field becomes a normal instance reference (`new UCode(mainMemory)` or similar, wiring in the `Uvmem`/`MainMemory` dependency from Phase 5); state save/restore's register list (`Npc`, `PdlPointer`, `VmaReg`, `MdReg`) stays valid since those registers are unchanged by the rewrite.
+- **`MachineControl.cs`**: `UCode` field becomes a normal instance reference built via `new UCode(mainMemory)` (the constructor already exists and is tested, as of Phase 5 — `MachineControl` just doesn't call it yet, still building `Memory`/`UCode` as two disconnected instances); state save/restore's register list (`Npc`, `PdlPointer`, `VmaReg`, `MdReg`) stays valid since those registers are unchanged by the rewrite. Also reconcile `MainMemory`'s pre-existing `Read`/`Write`/`TranslateAddress` (an invented paging scheme) with `Uvmem`'s faithful L1/L2 map, now that both exist side by side (Phase 5) — decide whether the old paging survives for any real consumer or should be retired.
 - **`UCode.Halted` needs a consumer.** Phase 3 added `Halted` (set by `Jmp()`'s ILLOP handling) as a plain field with no run-loop reading it, since no continuous `Step()`-driving loop exists yet (`MachineControl.Run()` loops on `PowerState`, not on calling `Step()` in a loop; the only `Step()` callers today are single-step debug commands). Whatever this rework introduces as the real "run until halted" loop (mirroring `ucode.c`'s `ucode_run()`: `while (!machine_state.halted) { uexec_step(); ... }`) must check `Halted` and stop.
 
 ## Phase 9 — Test Suite
@@ -592,8 +623,12 @@ Replaces `UCodeTests.cs`'s current self-consistency-only tests (which validate t
 These are flagged rather than resolved here because they need the actual current `UCode.cs` code in front of the implementer, not because they're architecturally ambiguous:
 - Exact current size/type of `DMem` in `UCode.cs` (must be `uint[2048]`) — verify and resize if needed.
 - Where `P1Imem`'s "PROM disabled" source flag currently lives in this port (`machine_state.promdisabled` equivalent) — likely a `MachineControl`/config flag; confirm during Phase 1.
-- `VmaOk`/`InterruptPending` (`machine_state.vmaok`/`interrupt_pending_flag` equivalents) — introduce as fields during Phase 1 (defaulting to `VmaOk = true` until Phase 5 wires real page-fault detection through `Vm()`).
+- ~~`VmaOk`/`InterruptPending`...~~ **Resolved.** `VmaOk`/`InterruptPendingFlag` introduced in Phase 1 as fields; `VmaOk` is now set for real by Phase 5's `Vm()` from `Uvmem`'s permission bits (defaults to `true` before the first cycle that calls it).
 - ~~`bus_interface_bus_reset()` equivalent...~~ **Resolved in Phase 4:** a no-op plus an `Info`-level log — see the "Resolved (Phase 4...)" note above the `MfWrite` table. Not wired to `IOBus.cs` (would be a faithful-looking but wrong substitution); `bus-interface.c` remains a wholly separate, not-yet-ported subsystem.
 - ~~Exact `Halted` flag location...~~ **Resolved in Phase 3:** a plain `public bool Halted { get; set; }` field directly on `UCode`, deliberately NOT wired to `MachineControl`'s richer power-state machinery (no run-loop exists yet that would read either). See the new Phase 8 bullet below — this still needs a consumer once a continuous `Step()`-driving loop exists.
 - **New (found during Phase 3's final review, 2026-08-24):** `UCode`'s interrupt-pending PRODUCERS (`SetInterruptStatusReg`, `AssertUnibusInterrupt`, `AssertXbusInterrupt`, `DeassertUnibusInterrupt`, `DeassertXbusInterrupt` — all pre-existing Phase-1-era code) diverge materially from the real C's `set_interrupt_status_reg`/`assert_unibus_interrupt`/etc. (`usim/ucode.c:114-188`): the real C masks `interrupt_status_reg` with `0140000` to derive `interrupt_pending_flag`, gates `assert_unibus_interrupt` on the `02000` enable bit, masks the stored vector with `01774`, and routes Xbus asserts through the same status register (`|= 040000`) rather than setting the pending flag directly. The C# versions currently just set `InterruptPendingFlag = (newValue != 0)` unconditionally and never route Xbus asserts through the status register at all. This was latent and inert until Phase 3 made `CheckJumpCondition()` the first real consumer of `InterruptPendingFlag` (jump condition codes 5/6 — confirmed via decoding `ucadr.mcr` to have 589 real call sites) — meaning it can now cause `Jmp()` to branch differently than the real hardware for any code exercising interrupt-conditional jumps. Not assigned to any phase yet; Phase 4 covers `MfWrite`'s INTERRUPT-CONTROL register but not this status-register/pending-flag producer logic. Needs its own task in a future phase (most naturally alongside Phase 4, since both touch interrupt state) — re-derive `SetInterruptStatusReg`/`AssertUnibusInterrupt`/`AssertXbusInterrupt`/`DeassertUnibusInterrupt`/`DeassertXbusInterrupt` against `usim/ucode.c:114-188` directly when that task is planned.
   **Escalation (Phase 4's final review, 2026-08-24):** Phase 4's `MfWrite` case 2 makes `InterruptControl` microcode-writable for the first time (previously it was always 0 in any real run, so jump codes 5/6 could never even reach the `InterruptPendingFlag` term) — real-microcode calibration found 9 static INTERRUPT-CONTROL write sites (2 in the boot PROM, 7 in `ucadr.mcr`), including a dedicated single-bit write to bit 27 (interrupt enable). Combined with Phase 3's 589 condition-5/6 call sites, this divergence is now **live, not merely latent** — still no Phase 4/5 code change was needed or made, but this should be prioritized accordingly whenever it is finally scheduled.
+- **New, high priority (Phase 5's final review, 2026-08-25): the deferred XBus-I/O/Unibus "bus adaptor" port is the next real boot blocker, not an unranked future subsystem.** `Vm()`'s placeholder for physical page numbers above `0x3BFB` (XBus I/O devices, Unibus — see the `Vm()` snippet above) has no assigned phase. Real-microcode calibration (decoding `sys/ubin/promh.mcr`, cross-checked against `sys/ucadr/promh.text`) found the boot PROM reaches this deferred range within ~10 instructions of its first page-map setup: it maps a page to XBus disk-control registers (pn `0x3DFF`) and a page to Unibus diagnostic/spy registers (pn `0x3FF6`, resolving to Unibus address `0o766012` — confirmed against `promh.text`'s own documentation of that exact address), and roughly half the PROM's 28 `Vm()`-dispatching sites land in this placeholder. The non-fatal, warning-logged shape was the only survivable choice (a throw would abort the boot immediately) — but this means a "bus adaptor" port (`usim/bus-adaptor.c`, `usim/tv.c`, `usim/iob.c`, etc.) should be scheduled as the immediate next phase after virtual memory, not left unranked.
+- **New (Phase 5's final review, 2026-08-25): `MachineControl` doesn't yet use `UCode(MainMemory)`.** It still does `Memory = new MainMemory(); UCode = new UCode();` as two independent, disconnected instances (confirmed in both `usim-cs/MachineControl.cs` and the untracked `usim-cs-sdl/MachineControl.cs` copy) — so microcode-driven physical writes via `Vm()` are currently invisible to `MachineControl.Memory`, state save/restore, and any dumper. `UCode(MainMemory)` exists and is tested (`UCodeVirtualMemoryTests.cs`) but has zero production call sites. This is squarely Phase 8's `MachineControl.cs` bullet (already named there) — flagging it explicitly so it isn't missed as "already done" just because the constructor exists.
+- **New (Phase 5's final review, 2026-08-25): `MainMemory.ReadPhysical`/`WritePhysical` have no populated-page-count gate.** The real C's `main_memory_read`/`write` gate on a configurable populated-page count (`usim.ini`'s `memory.size`, default 8192 pages) and return `0xffffffff`/fail above it — the C's own comment notes this can happen "during memory probing by the prom". The C# always has all 16384 pages populated and returns plain `0` out of bounds. This can't currently crash (the main-memory dispatch path's max address is within `PHYSICAL_MEM_SIZE`), and the spec's own Phase 5 text sanctioned the return-0 shape — but any microcode that sizes memory by probing will see a different answer than the reference. Belongs on Phase 8's list alongside the `MainMemory`-reconciliation item below.
+- **New (Phase 5's final review, 2026-08-25): `MainMemory`'s pre-existing `Read`/`Write`/`TranslateAddress` use an invented paging scheme unrelated to `Uvmem`'s faithful L1/L2 map.** Two parallel, inconsistent virtual-memory schemes now coexist in the codebase. Reconciling or retiring the old one is Phase 8's job — see its `MachineControl.cs` bullet, which should be expanded to cover this explicitly, not just the constructor wiring.
