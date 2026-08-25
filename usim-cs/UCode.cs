@@ -587,8 +587,8 @@ public class UCode
     }
 
     /// <summary>
-    /// VMA-ok state for the current cycle (real page-fault detection lands in Phase 5;
-    /// defaults to true — "no page fault" — until then).
+    /// VMA-ok state for the current cycle. Set for real by Vm() (Phase 5) from
+    /// Uvmem's permission bits; defaults to true ("no page fault") until then.
     /// </summary>
     public bool VmaOk { get; set; } = true;
 
@@ -602,7 +602,7 @@ public class UCode
 
     /// <summary>
     /// Faithful port of the virtual-memory-resolution part of vm()
-    /// (usim/uexec.c:172-228). Sets VmaOk from Uvmem's permission bits;
+    /// (usim/uvmem.c:172-228). Sets VmaOk from Uvmem's permission bits;
     /// on a fault, reads return 0 and writes are discarded (matching the
     /// real C's *pv=0 on read). For an address that resolves within the
     /// "xbus main memory" range (physical page number &lt;= 0x3BFB -- verified
