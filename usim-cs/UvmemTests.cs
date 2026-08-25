@@ -71,7 +71,7 @@ public static class UvmemTests
 
             uvmem.WriteMap(vma, md);
 
-            uint paddr = uvmem.Vtop(vaddr, out uint l1, out uint l2, out uint pn, out bool wp, out bool ap);
+            _ = uvmem.Vtop(vaddr, out uint l1, out uint l2, out uint pn, out bool wp, out bool ap);
             Assert(l1 == 0x15, $"L1 entry written, got 0x{l1:X}");
             Assert(l2 == 0, "L2 entry untouched (L2 enable bit was not set)");
             Assert(pn == 0, "physicalPageNumber still 0 (derived from untouched L2 entry)");
@@ -106,7 +106,7 @@ public static class UvmemTests
             uint vma2 = (1u << 25) | l2DataToWrite; // enable L2 only
             uvmem.WriteMap(vma2, md);
 
-            uint paddr = uvmem.Vtop(vaddr, out uint l1, out uint l2, out uint pn, out bool wp, out bool ap);
+            _ = uvmem.Vtop(vaddr, out uint l1, out uint l2, out uint pn, out bool wp, out bool ap);
             Assert(l1 == 0x07, $"L1 entry unchanged by the L2-only call, got 0x{l1:X}");
             Assert(l2 == l2DataToWrite, $"L2 entry written, got 0x{l2:X}");
             Assert(pn == 0x1234, $"physicalPageNumber extracted from L2 data, got 0x{pn:X}");
@@ -141,7 +141,7 @@ public static class UvmemTests
 
             uvmem.WriteMap(vma, md);
 
-            uint paddr = uvmem.Vtop(vaddr, out uint l1, out uint l2, out uint pn, out bool wp, out bool ap);
+            _ = uvmem.Vtop(vaddr, out uint l1, out uint l2, out uint pn, out bool wp, out bool ap);
             Assert(l1 == l1DataToWrite, $"L1 entry from the combined call, got 0x{l1:X}");
             // This is the key assertion: if L2's write used a STALE (pre-call) L1 index
             // instead of the just-written one, l2 would be read from the wrong slot and

@@ -329,8 +329,7 @@ public class UCode
 
     /// <summary>
     /// Faithful port of mfread() (usim/uexec.c:233-304). Code 9 (MEMORY-MAP-DATA)
-    /// needs Phase 5's Uvmem.Vtop and stays deferred; every other code is fully
-    /// implemented. Codes 1/12's mask is 0x7FFFF (19 bits, from the C's literal
+    /// uses Uvmem.Vtop, as of Phase 5. Codes 1/12's mask is 0x7FFFF (19 bits, from the C's literal
     /// octal 01777777) -- NOT 0x1FFFFF (21 bits) as an earlier draft of the spec
     /// mistranslated; re-derived and hand-verified against the literal digits.
     /// </summary>
@@ -348,7 +347,7 @@ public class UCode
             case 8: return (int)VmaReg;
             case 9:
             {
-                uint paddr9 = Uvmem.Vtop(MdReg, out uint l1_9, out uint l2_9, out _, out bool wp9, out bool ap9);
+                _ = Uvmem.Vtop(MdReg, out uint l1_9, out uint l2_9, out _, out bool wp9, out bool ap9);
                 return (int)((!wp9 ? (1u << 31) : 0) | (!ap9 ? (1u << 30) : 0) | (1u << 29) | ((l1_9 & 0x1F) << 24) | (l2_9 & 0x00FFFFFF));
             }
             case 10: return (int)MdReg;
@@ -378,8 +377,9 @@ public class UCode
 
     /// <summary>
     /// Faithful port of mfwrite() (usim/uexec.c:306-459). Codes 18/26 call
-    /// VmWrite, still a Phase-5-deferred no-op placeholder for anything
-    /// outside the "xbus main memory" address range (see Vm()). Codes
+    /// VmWrite, still a placeholder (no-op + warning) for anything outside
+    /// the "xbus main memory" address range (see Vm()) -- deferred to a
+    /// future bus-adaptor port, not to a later phase of this project. Codes
     /// 19/27 call the now-real Uvmem.WriteMap. Code 2's bit-28 bus-reset
     /// is a no-op + Info log -- the real
     /// bus_interface_bus_reset() lives in a wholly separate, not-yet-ported
@@ -593,7 +593,8 @@ public class UCode
 
     /// <summary>
     /// VMA-ok state for the current cycle. Set for real by Vm() (Phase 5) from
-    /// Uvmem's permission bits; defaults to true ("no page fault") until then.
+    /// Uvmem's permission bits; defaults to true ("no page fault") before the
+    /// first cycle that calls Vm() (e.g. via AdvanceLc or MfWrite).
     /// </summary>
     public bool VmaOk { get; set; } = true;
 
@@ -625,11 +626,15 @@ public class UCode
         VmaOk = write ? (ap && wp) : ap;
         if (!VmaOk) { v = 0; return; }
 
-        // TV-screen quirk (usim/uvmem.c's vm(): known not to work correctly per its
-        // own comment) -- ported as-is. 036000 octal = 0x3C00 (NOT 0x1E00) and
-        // 017000000 octal = 0x3C0000 (NOT 0x0F00000) -- both corrected from an
-        // earlier draft of this spec; re-derived by direct computation, not manual
-        // octal-digit counting.
+        // TV-screen quirk: this line is the WORKAROUND, not the bug -- usim/uvmem.c's
+        // vm() comments on a symptom in the plain (pn<<8)|(vaddr&0xFF) formula for
+        // this one page ("this is not working for the access below... no idea why"),
+        // and this override is what actually produces the correct address (verified:
+        // it reproduces the C comment's own worked "actual paddr should be
+        // 17'051'765" example exactly). Do not delete this as dead/broken code.
+        // 036000 octal = 0x3C00 (NOT 0x1E00) and 017000000 octal = 0x3C0000 (NOT
+        // 0x0F00000) -- both corrected from an earlier draft of this spec; re-derived
+        // by direct computation, not manual octal-digit counting.
         if (pn == 0x3C00) paddr = 0x3C0000 | (vaddr & 0x7FFF);
 
         // The real C dispatches through bus_adaptor_read/write, which re-derives its
