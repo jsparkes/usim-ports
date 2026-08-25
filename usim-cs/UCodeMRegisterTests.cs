@@ -21,7 +21,7 @@ public static class UCodeMRegisterTests
         if (TestMfReadSpcPeekAndPop()) passed++; else failed++;
         if (TestMfReadPdlPopAndPeek()) passed++; else failed++;
         if (TestMfReadLcByteModeGate()) passed++; else failed++;
-        if (TestMfReadPlaceholdersAndDeferred()) passed++; else failed++;
+        if (TestMfReadPlaceholdersAndMemoryMapData()) passed++; else failed++;
         if (TestMfReadDefaultThrows()) passed++; else failed++;
         if (TestMfWriteLc()) passed++; else failed++;
         if (TestMfWriteInterruptControl()) passed++; else failed++;
@@ -191,9 +191,9 @@ public static class UCodeMRegisterTests
         }
     }
 
-    private static bool TestMfReadPlaceholdersAndDeferred()
+    private static bool TestMfReadPlaceholdersAndMemoryMapData()
     {
-        Console.WriteLine("Test: MfRead placeholder codes 13,22 and Phase-5-deferred code 9");
+        Console.WriteLine("Test: MfRead placeholder codes 13,22 and MEMORY-MAP-DATA code 9");
         try
         {
             var ucode = new UCode();
@@ -202,17 +202,25 @@ public static class UCodeMRegisterTests
             Assert(ucode.MfRead(13) == 0, "code13 (015 octal): placeholder, matches C's '???' returning 0");
             Assert(ucode.MfRead(22) == 0, "code22 (026 octal): placeholder, matches C's '???' returning 0");
 
-            bool threw = false;
-            try { ucode.MfRead(9); }
-            catch (NotImplementedException) { threw = true; }
-            Assert(threw, "code9 (011 octal, MEMORY-MAP-DATA) is deferred to Phase 5 and throws NotImplementedException");
+            // Code 9 (011 octal, MEMORY-MAP-DATA) is implemented as of Phase 5 -- map
+            // MdReg's L1/L2 entries first, then confirm the bit-packed result.
+            uint mdReg = 0x00246000;
+            uint md = mdReg; // md=mdReg keeps L1 and L2 indices consistent with what MfRead(9) uses (Vtop(MdReg))
+            uint l2Data = (1u << 23) | (1u << 22) | 0x00ABCDu; // access+write permission, l2 low bits 0xABCD
+            uint vma = (1u << 26) | (1u << 25) | (0x0Bu << 27) | l2Data; // L1 data = 0x0B
+            ucode.Uvmem.WriteMap(vma, md);
+            ucode.MdReg = mdReg;
 
-            Console.WriteLine("  MfRead placeholder/deferred tests passed\n");
+            int result9 = ucode.MfRead(9);
+            uint expected9 = (0u << 31) | (0u << 30) | (1u << 29) | ((0x0Bu & 0x1F) << 24) | (l2Data & 0x00FFFFFF);
+            Assert(unchecked((uint)result9) == expected9, $"code9: bit-packed MEMORY-MAP-DATA, got 0x{result9:X}, expected 0x{expected9:X}");
+
+            Console.WriteLine("  MfRead placeholder/MEMORY-MAP-DATA tests passed\n");
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  MfRead placeholder/deferred tests failed: {ex.Message}\n");
+            Console.WriteLine($"  MfRead placeholder/MEMORY-MAP-DATA tests failed: {ex.Message}\n");
             return false;
         }
     }

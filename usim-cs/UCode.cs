@@ -347,7 +347,10 @@ public class UCode
             case 7: return (int)Q;
             case 8: return (int)VmaReg;
             case 9:
-                throw new NotImplementedException("MfRead code 9 (MEMORY-MAP-DATA) is implemented in Phase 5 (needs Uvmem.Vtop)");
+            {
+                uint paddr9 = Uvmem.Vtop(MdReg, out uint l1_9, out uint l2_9, out _, out bool wp9, out bool ap9);
+                return (int)((!wp9 ? (1u << 31) : 0) | (!ap9 ? (1u << 30) : 0) | (1u << 29) | ((l1_9 & 0x1F) << 24) | (l2_9 & 0x00FFFFFF));
+            }
             case 10: return (int)MdReg;
             case 11: return (int)((InterruptControl & (1 << 29)) != 0 ? Lc : Lc & ~1u);
             case 12:
