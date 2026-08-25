@@ -166,6 +166,10 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-microcode-mregisters":
+                    UCodeMRegisterTests.RunAllTests();
+                    break;
+
                 case "--demo-execution":
                     UCodeTests.DemoInstructionExecution();
                     Environment.Exit(0);
@@ -222,6 +226,7 @@ public class Program
         Console.WriteLine("  --test-microcode-decode Run microcode fetch/decode tests only");
         Console.WriteLine("  --test-microcode-alu    Run microcode ALU tests only");
         Console.WriteLine("  --test-microcode-jump   Run microcode jump tests only");
+        Console.WriteLine("  --test-microcode-mregisters Run microcode M-register tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
@@ -449,6 +454,11 @@ public class Program
         // Run microcode jump tests
         Console.WriteLine("Running Microcode Jump Tests...\n");
         UCodeJumpTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run microcode M-register tests
+        Console.WriteLine("Running Microcode M-Register Tests...\n");
+        UCodeMRegisterTests.RunAllTests();
         Console.WriteLine();
 
         // Run configuration tests

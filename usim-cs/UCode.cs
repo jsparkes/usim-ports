@@ -316,9 +316,50 @@ public class UCode
         return v;
     }
 
-    private int MfRead(uint addr)
+    /// <summary>
+    /// Faithful port of mfread() (usim/uexec.c:233-304). Code 9 (MEMORY-MAP-DATA)
+    /// needs Phase 5's Uvmem.Vtop and stays deferred; every other code is fully
+    /// implemented. Codes 1/12's mask is 0x7FFFF (19 bits, from the C's literal
+    /// octal 01777777) -- NOT 0x1FFFFF (21 bits) as an earlier draft of the spec
+    /// mistranslated; re-derived and hand-verified against the literal digits.
+    /// </summary>
+    internal int MfRead(uint addr)
     {
-        throw new NotImplementedException("MfRead is implemented in Phase 4 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+        switch (addr & 0x1F)
+        {
+            case 0: return (int)DispatchConstant;
+            case 1: return (int)((SpcPtr << 24) | (Spc[SpcPtr] & 0x7FFFF));
+            case 2: return (int)(PdlPointer & 0x3FF);
+            case 3: return (int)(PdlIndex & 0x3FF);
+            case 5: return (int)Pdl[PdlIndex];
+            case 6: return (int)Opc;
+            case 7: return (int)Q;
+            case 8: return (int)VmaReg;
+            case 9:
+                throw new NotImplementedException("MfRead code 9 (MEMORY-MAP-DATA) is implemented in Phase 5 (needs Uvmem.Vtop)");
+            case 10: return (int)MdReg;
+            case 11: return (int)((InterruptControl & (1 << 29)) != 0 ? Lc : Lc & ~1u);
+            case 12:
+            {
+                int res = (int)((SpcPtr << 24) | (Spc[SpcPtr] & 0x7FFFF));
+                SpcPtr = (SpcPtr - 1) & 0x1F;
+                return res;
+            }
+            case 13: return 0; // placeholder, matches the real C's own "???" comment
+            case 20:
+            {
+                int res = (int)Pdl[PdlPointer];
+                PdlPointer = (PdlPointer - 1) & 0x3FF;
+                return res;
+            }
+            case 21: return (int)Pdl[PdlPointer];
+            case 22: return 0; // placeholder, matches the real C's own "???" comment
+            default:
+                // .NET has no built-in octal format specifier (unlike the C's %o) --
+                // hex is used here purely for a readable diagnostic message; this has
+                // no bearing on emulation behavior, only on the exception's text.
+                throw new InvalidOperationException($"unknown MF register (0x{addr:X}) read"); // matches the C's fatal err()
+        }
     }
 
     private void MfWrite(uint dest, int data)
