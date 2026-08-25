@@ -377,9 +377,11 @@ public class UCode
     }
 
     /// <summary>
-    /// Faithful port of mfwrite() (usim/uexec.c:306-459). Codes 18/19/26/27
-    /// call the Phase-5-deferred VmWrite/WriteMap placeholders (no-ops until
-    /// then). Code 2's bit-28 bus-reset is a no-op + Info log -- the real
+    /// Faithful port of mfwrite() (usim/uexec.c:306-459). Codes 18/26 call
+    /// VmWrite, still a Phase-5-deferred no-op placeholder for anything
+    /// outside the "xbus main memory" address range (see Vm()). Codes
+    /// 19/27 call the now-real Uvmem.WriteMap. Code 2's bit-28 bus-reset
+    /// is a no-op + Info log -- the real
     /// bus_interface_bus_reset() lives in a wholly separate, not-yet-ported
     /// subsystem (usim/bus-interface.c). Note: the real C's comment on this
     /// case claims to detect a "1-0 transition", but the actual code just
