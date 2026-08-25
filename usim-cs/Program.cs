@@ -168,6 +168,7 @@ public class Program
 
                 case "--test-microcode-mregisters":
                     UCodeMRegisterTests.RunAllTests();
+                    Environment.Exit(0);
                     break;
 
                 case "--demo-execution":
