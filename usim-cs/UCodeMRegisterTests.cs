@@ -426,7 +426,7 @@ public static class UCodeMRegisterTests
             ucode.MdReg = 0; // l1Index = (0>>13)&0x7FF = 0
             uint l1DataToWrite19 = 0x0Au;
             ucode.MfWrite(19 << 5, unchecked((int)((1u << 26) | (l1DataToWrite19 << 27))));
-            uint paddrCheck19 = ucode.Uvmem.Vtop(0, out uint l1Check19, out _, out _, out _, out _);
+            _ = ucode.Uvmem.Vtop(0, out uint l1Check19, out _, out _, out _, out _);
             Assert(l1Check19 == l1DataToWrite19, $"code19 reaches the REAL Uvmem.WriteMap (not the old no-op), got L1=0x{l1Check19:X}");
 
             // Code 24 (030 octal): MdReg = data.
@@ -459,8 +459,7 @@ public static class UCodeMRegisterTests
             // MdReg (just set above, 0x88888888) supplies the l1Index WriteMap computes from.
             ucode.VmaReg = (1u << 26) | (0x15u << 27);
             ucode.MfWrite(27 << 5, unchecked((int)0x88888888)); // re-set MdReg=0x88888888, matching VmaReg's target l1Index
-            uint l1IndexCheck27 = (0x88888888u >> 13) & 0x7FF;
-            uint paddrCheck27 = ucode.Uvmem.Vtop(0x88888888u, out uint l1Check27, out _, out _, out _, out _);
+            _ = ucode.Uvmem.Vtop(0x88888888u, out uint l1Check27, out _, out _, out _, out _);
             Assert(l1Check27 == 0x15u, $"code27 reaches the REAL Uvmem.WriteMap (not the old no-op), got L1=0x{l1Check27:X}");
 
             Console.WriteLine("  MfWrite VMA/MD tests passed\n");
