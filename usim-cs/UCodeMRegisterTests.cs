@@ -413,9 +413,21 @@ public static class UCodeMRegisterTests
             ucode.MfWrite(18 << 5, unchecked((int)0x33333333));
             Assert(ucode.VmaReg == 0x33333333, $"code18: VmaReg set, got 0x{ucode.VmaReg:X}");
 
-            // Code 19 (023 octal): VmaReg = data; Uvmem.WriteMap placeholder -- no-op, must not throw.
+            // Code 19 (023 octal): VmaReg = data; Uvmem.WriteMap(VmaReg, MdReg) for real (as
+            // of this phase). This unchanged assertion from Phase 4 (0x44444444 happens to
+            // have bit26 set, so it does trigger a real L1 write at whatever l1Index MdReg
+            // held at this point) only checks VmaReg, not that write's side effect -- the
+            // explicit, controlled check right below is what actually proves the wiring.
             ucode.MfWrite(19 << 5, unchecked((int)0x44444444));
             Assert(ucode.VmaReg == 0x44444444, $"code19: VmaReg set, got 0x{ucode.VmaReg:X}");
+
+            // Now prove the wiring is real (not still the old no-op) with an enable bit set:
+            // Uvmem.WriteMap(vma=data, md=MdReg) should write L1[l1Index] for real.
+            ucode.MdReg = 0; // l1Index = (0>>13)&0x7FF = 0
+            uint l1DataToWrite19 = 0x0Au;
+            ucode.MfWrite(19 << 5, unchecked((int)((1u << 26) | (l1DataToWrite19 << 27))));
+            uint paddrCheck19 = ucode.Uvmem.Vtop(0, out uint l1Check19, out _, out _, out _, out _);
+            Assert(l1Check19 == l1DataToWrite19, $"code19 reaches the REAL Uvmem.WriteMap (not the old no-op), got L1=0x{l1Check19:X}");
 
             // Code 24 (030 octal): MdReg = data.
             ucode.MfWrite(24 << 5, unchecked((int)0x55555555));
@@ -434,7 +446,7 @@ public static class UCodeMRegisterTests
             ucode.MfWrite(26 << 5, unchecked((int)0x77777777));
             Assert(ucode.MdReg == 0x77777777, $"code26: MdReg set, got 0x{ucode.MdReg:X}");
 
-            // Code 27 (033 octal): MdReg = data; Uvmem.WriteMap placeholder -- no-op, must not throw.
+            // Code 27 (033 octal): MdReg = data; Uvmem.WriteMap(VmaReg, MdReg) for real.
             // Note: MdReg == 0x88888888u (bare uint literal), not a cast int -- comparing a
             // uint field against a negative int constant expression doesn't compile in C#
             // (no implicit conversion for a negative value into uint), unlike the method
@@ -442,6 +454,14 @@ public static class UCodeMRegisterTests
             // parameter is int.
             ucode.MfWrite(27 << 5, unchecked((int)0x88888888));
             Assert(ucode.MdReg == 0x88888888u, $"code27: MdReg set, got 0x{ucode.MdReg:X}");
+
+            // Prove the wiring is real: VmaReg supplies WriteMap's L1 enable bit + L1 data;
+            // MdReg (just set above, 0x88888888) supplies the l1Index WriteMap computes from.
+            ucode.VmaReg = (1u << 26) | (0x15u << 27);
+            ucode.MfWrite(27 << 5, unchecked((int)0x88888888)); // re-set MdReg=0x88888888, matching VmaReg's target l1Index
+            uint l1IndexCheck27 = (0x88888888u >> 13) & 0x7FF;
+            uint paddrCheck27 = ucode.Uvmem.Vtop(0x88888888u, out uint l1Check27, out _, out _, out _, out _);
+            Assert(l1Check27 == 0x15u, $"code27 reaches the REAL Uvmem.WriteMap (not the old no-op), got L1=0x{l1Check27:X}");
 
             Console.WriteLine("  MfWrite VMA/MD tests passed\n");
             return true;

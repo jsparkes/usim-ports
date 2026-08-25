@@ -451,7 +451,7 @@ public class UCode
                 return;
             case 19:
                 VmaReg = udata;
-                WriteMap(VmaReg, MdReg);
+                Uvmem.WriteMap(VmaReg, MdReg);
                 return;
             case 24:
                 MdReg = udata;
@@ -468,7 +468,7 @@ public class UCode
                 return;
             case 27:
                 MdReg = udata;
-                WriteMap(VmaReg, MdReg);
+                Uvmem.WriteMap(VmaReg, MdReg);
                 return;
             default:
                 // Hex, not octal, for the same reason noted in MfRead's default case --
@@ -659,14 +659,6 @@ public class UCode
     /// directly. Matches the CallJmp() precedent from Phase 3.
     /// </summary>
     internal void CallVm(bool write, uint vaddr, ref uint v) => Vm(write, vaddr, ref v);
-
-    /// <summary>
-    /// Placeholder for Uvmem.WriteMap (Phase 5's "new file" Uvmem.cs does
-    /// not exist yet). A no-op until then, for the same reason as VmWrite.
-    /// </summary>
-    private void WriteMap(uint vma, uint data)
-    {
-    }
 
     #endregion
 
