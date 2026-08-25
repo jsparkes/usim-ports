@@ -449,21 +449,24 @@ public static class UCodeAluTests
             ucode.WriteDest(0x800 | 0x123);
             Assert(ucode.AMem[0x123] == 0xCAFEBABEu, $"A-memory write at index 0x123, got 0x{ucode.AMem[0x123]:X}");
 
-            // dest without bit 11 -> goes through MfWrite, which is still stubbed
-            // and throws before the low-5-bit-addressed MMem/AMem shadow-copy line
-            // ever executes, so only the throw is being asserted here (the
-            // shadow-copy behavior can't be tested until Phase 4 replaces the stub).
-            bool threw = false;
-            try
-            {
-                ucode.Out = 0x11111111;
-                ucode.WriteDest(0x05); // dest & 037 == 5, dest & 0x800 == 0
-            }
-            catch (NotImplementedException)
-            {
-                threw = true;
-            }
-            Assert(threw, "non-A-memory dest routes through the still-stubbed MfWrite and throws");
+            // dest without bit 11 -> routes through MfWrite (now fully implemented as of
+            // Phase 4) and the shadow-copy line. dest=0x05 -> dest>>5==0, MfWrite's case 0
+            // is a genuine no-op (matching the real C's mfwrite() case 0), so the only
+            // observable effect is WriteDest's own shadow copy at MMem[5]/AMem[5].
+            ucode.Out = 0x11111111;
+            ucode.WriteDest(0x05); // dest & 0x1F == 5, dest & 0x800 == 0
+            Assert(ucode.MMem[5] == 0x11111111u, $"non-A-memory dest: MMem shadow copy, got 0x{ucode.MMem[5]:X}");
+            Assert(ucode.AMem[5] == 0x11111111u, $"non-A-memory dest: AMem shadow copy, got 0x{ucode.AMem[5]:X}");
+
+            // A second non-A-memory case exercising a REAL M-register write (not just the
+            // no-op above) together with the shadow copy -- coverage explicitly deferred
+            // in Phase 2 ("can't be tested until Phase 4 replaces the stub"), now available.
+            // dest = 16<<5 = VMA register (MfWrite case 16: VmaReg = data); 0x200 & 0x1F == 0.
+            ucode.Out = 0x22222222;
+            ucode.WriteDest(16 << 5);
+            Assert(ucode.VmaReg == 0x22222222u, $"non-A-memory dest: MfWrite's real VMA register side effect, got 0x{ucode.VmaReg:X}");
+            Assert(ucode.MMem[0] == 0x22222222u, $"non-A-memory dest: MMem shadow copy at index 0, got 0x{ucode.MMem[0]:X}");
+            Assert(ucode.AMem[0] == 0x22222222u, $"non-A-memory dest: AMem shadow copy at index 0, got 0x{ucode.AMem[0]:X}");
 
             Console.WriteLine("  WriteDest tests passed\n");
             return true;
