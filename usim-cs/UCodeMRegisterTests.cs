@@ -23,6 +23,12 @@ public static class UCodeMRegisterTests
         if (TestMfReadLcByteModeGate()) passed++; else failed++;
         if (TestMfReadPlaceholdersAndDeferred()) passed++; else failed++;
         if (TestMfReadDefaultThrows()) passed++; else failed++;
+        if (TestMfWriteLc()) passed++; else failed++;
+        if (TestMfWriteInterruptControl()) passed++; else failed++;
+        if (TestMfWritePdlAndSpcRegisters()) passed++; else failed++;
+        if (TestMfWriteOaRegisters()) passed++; else failed++;
+        if (TestMfWriteVmaAndMdRegisters()) passed++; else failed++;
+        if (TestMfWriteNoOpAndDefault()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -230,6 +236,237 @@ public static class UCodeMRegisterTests
         catch (Exception ex)
         {
             Console.WriteLine($"  MfRead default-throws tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMfWriteLc()
+    {
+        Console.WriteLine("Test: MfWrite code 1 (LC)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Not byte mode (InterruptControl bit29 clear): low bit cleared, bit31 (NEED-FETCH) set.
+            ucode.InterruptControl = 0;
+            ucode.Lc = 0xFFFFFFFF; // pre-existing garbage in the untouched high bits, to prove the mask
+            ucode.MfWrite(1 << 5, unchecked((int)0x07FFFFFF)); // data with bit26 set, above the 26-bit mask
+            uint expected = (0xFFFFFFFFu & ~0x03FFFFFFu) | (0x07FFFFFFu & 0x03FFFFFFu);
+            expected &= ~1u;          // not byte mode -> low bit cleared
+            expected |= (1u << 31);   // NEED-FETCH always set
+            Assert(ucode.Lc == expected, $"code1 not byte mode, got 0x{ucode.Lc:X}, expected 0x{expected:X}");
+
+            // Byte mode (bit29 set): low bit is NOT forced clear.
+            ucode.InterruptControl = 1u << 29;
+            ucode.Lc = 0;
+            ucode.MfWrite(1 << 5, 0x00000003); // odd value, bit0 set
+            Assert((ucode.Lc & 1) == 1, "code1 byte mode: low bit is NOT cleared");
+            Assert((ucode.Lc & (1u << 31)) != 0, "code1 byte mode: NEED-FETCH still set unconditionally");
+
+            Console.WriteLine("  MfWrite LC tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  MfWrite LC tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMfWriteInterruptControl()
+    {
+        Console.WriteLine("Test: MfWrite code 2 (INTERRUPT-CONTROL)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            ucode.Lc = 0;
+            ucode.MfWrite(2 << 5, unchecked((int)(0xFu << 26))); // set all 4 preserved-flag bits
+            Assert(ucode.InterruptControl == (0xFu << 26), $"code2: InterruptControl set verbatim, got 0x{ucode.InterruptControl:X}");
+            Assert(ucode.Lc == (0xFu << 26), $"code2: Lc bits 26-29 mirror InterruptControl, got 0x{ucode.Lc:X}");
+
+            // Bit 28 (bus reset) does not throw -- it's a deferred, different-subsystem no-op.
+            ucode.MfWrite(2 << 5, unchecked((int)(1u << 28)));
+            Assert(true, "code2 bit28 (bus reset) does not throw");
+
+            Console.WriteLine("  MfWrite INTERRUPT-CONTROL tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  MfWrite INTERRUPT-CONTROL tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMfWritePdlAndSpcRegisters()
+    {
+        Console.WriteLine("Test: MfWrite PDL/SPC registers (codes 8,9,10,11,12,13)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 8 (010 octal): Pdl[PdlPointer] = data (no pointer mutation).
+            ucode.PdlPointer = 0x15;
+            ucode.MfWrite(8 << 5, unchecked((int)0xAAAAAAAA));
+            Assert(ucode.Pdl[0x15] == 0xAAAAAAAA, $"code8: Pdl[PdlPointer] written, got 0x{ucode.Pdl[0x15]:X}");
+            Assert(ucode.PdlPointer == 0x15, "code8 does not mutate PdlPointer");
+
+            // Code 9 (011 octal): PdlPointer++ (mod 0x400) THEN write.
+            ucode.PdlPointer = 0x15;
+            ucode.MfWrite(9 << 5, unchecked((int)0xBBBBBBBB));
+            Assert(ucode.PdlPointer == 0x16, $"code9: PdlPointer incremented first, got 0x{ucode.PdlPointer:X}");
+            Assert(ucode.Pdl[0x16] == 0xBBBBBBBB, $"code9: written at the NEW pointer, got 0x{ucode.Pdl[0x16]:X}");
+
+            // Code 9 wraparound: PdlPointer=0x3FF increments to 0 (10-bit wraparound).
+            ucode.PdlPointer = 0x3FF;
+            ucode.MfWrite(9 << 5, 1);
+            Assert(ucode.PdlPointer == 0, $"code9 increment wraps 0x3FF -> 0, got 0x{ucode.PdlPointer:X}");
+
+            // Code 10 (012 octal): Pdl[PdlIndex] = data.
+            ucode.PdlIndex = 0x20;
+            ucode.MfWrite(10 << 5, unchecked((int)0xCCCCCCCC));
+            Assert(ucode.Pdl[0x20] == 0xCCCCCCCC, $"code10: Pdl[PdlIndex] written, got 0x{ucode.Pdl[0x20]:X}");
+
+            // Code 11 (013 octal): PdlIndex = data & 0x3FF.
+            ucode.MfWrite(11 << 5, 0x7FF);
+            Assert(ucode.PdlIndex == 0x3FF, $"code11: PdlIndex masked to 0x3FF, got 0x{ucode.PdlIndex:X}");
+
+            // Code 12 (014 octal): PdlPointer = data & 0x3FF.
+            ucode.MfWrite(12 << 5, 0x7FF);
+            Assert(ucode.PdlPointer == 0x3FF, $"code12: PdlPointer masked to 0x3FF, got 0x{ucode.PdlPointer:X}");
+
+            // Code 13 (015 octal): PushSpc(data).
+            ucode.SpcPtr = 0;
+            ucode.MfWrite(13 << 5, unchecked((int)0x12345678));
+            Assert(ucode.SpcPtr == 1, $"code13: PushSpc advanced SpcPtr, got {ucode.SpcPtr}");
+            Assert(ucode.Spc[1] == 0x12345678, $"code13: pushed value, got 0x{ucode.Spc[1]:X}");
+
+            Console.WriteLine("  MfWrite PDL/SPC tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  MfWrite PDL/SPC tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMfWriteOaRegisters()
+    {
+        Console.WriteLine("Test: MfWrite OA-REG-LO/HI (codes 14,15)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 14 (016 octal): OaRegLow = data & 0x03FFFFFF (26 bits); Oal = true.
+            ucode.MfWrite(14 << 5, unchecked((int)0xFFFFFFFF));
+            Assert(ucode.OaRegLow == 0x03FFFFFF, $"code14: 26-bit mask, got 0x{ucode.OaRegLow:X}");
+            Assert(ucode.Oal == true, "code14 sets Oal");
+
+            // Code 15 (017 octal): OaRegHigh = data & 0x7FFFFF (23 bits); Oah = true.
+            ucode.MfWrite(15 << 5, unchecked((int)0xFFFFFFFF));
+            Assert(ucode.OaRegHigh == 0x7FFFFF, $"code15: 23-bit mask, got 0x{ucode.OaRegHigh:X}");
+            Assert(ucode.Oah == true, "code15 sets Oah");
+
+            Console.WriteLine("  MfWrite OA-register tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  MfWrite OA-register tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMfWriteVmaAndMdRegisters()
+    {
+        Console.WriteLine("Test: MfWrite VMA/MD registers (codes 16,17,18,19,24,25,26,27)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 16 (020 octal): VmaReg = data.
+            ucode.MfWrite(16 << 5, unchecked((int)0x11111111));
+            Assert(ucode.VmaReg == 0x11111111, $"code16: VmaReg set, got 0x{ucode.VmaReg:X}");
+
+            // Code 17 (021 octal): VmaReg = data; VmRead(VmaReg, out NewMd); NewMdDelay = 2.
+            ucode.NewMdDelay = 0;
+            ucode.MfWrite(17 << 5, unchecked((int)0x22222222));
+            Assert(ucode.VmaReg == 0x22222222, $"code17: VmaReg set, got 0x{ucode.VmaReg:X}");
+            Assert(ucode.NewMdDelay == 2, $"code17: NewMdDelay set to 2, got {ucode.NewMdDelay}");
+
+            // Code 18 (022 octal): VmaReg = data; VmWrite(VmaReg, MdReg) -- no-op placeholder, must not throw.
+            ucode.MfWrite(18 << 5, unchecked((int)0x33333333));
+            Assert(ucode.VmaReg == 0x33333333, $"code18: VmaReg set, got 0x{ucode.VmaReg:X}");
+
+            // Code 19 (023 octal): VmaReg = data; Uvmem.WriteMap placeholder -- no-op, must not throw.
+            ucode.MfWrite(19 << 5, unchecked((int)0x44444444));
+            Assert(ucode.VmaReg == 0x44444444, $"code19: VmaReg set, got 0x{ucode.VmaReg:X}");
+
+            // Code 24 (030 octal): MdReg = data.
+            ucode.MfWrite(24 << 5, unchecked((int)0x55555555));
+            Assert(ucode.MdReg == 0x55555555, $"code24: MdReg set, got 0x{ucode.MdReg:X}");
+
+            // Code 25 (031 octal): MdReg = data; VmRead(VmaReg, out NewMd); NewMdDelay = 2.
+            // Note: reads from VmaReg, not the just-written MdReg -- matches the real C exactly.
+            // VmaReg is left at whatever code 19 set it to just above (0x44444444); irrelevant
+            // to this assertion since VmRead is currently a no-op regardless of its argument.
+            ucode.NewMdDelay = 0;
+            ucode.MfWrite(25 << 5, unchecked((int)0x66666666));
+            Assert(ucode.MdReg == 0x66666666, $"code25: MdReg set, got 0x{ucode.MdReg:X}");
+            Assert(ucode.NewMdDelay == 2, $"code25: NewMdDelay set to 2, got {ucode.NewMdDelay}");
+
+            // Code 26 (032 octal): MdReg = data; VmWrite(VmaReg, MdReg) -- no-op, must not throw.
+            ucode.MfWrite(26 << 5, unchecked((int)0x77777777));
+            Assert(ucode.MdReg == 0x77777777, $"code26: MdReg set, got 0x{ucode.MdReg:X}");
+
+            // Code 27 (033 octal): MdReg = data; Uvmem.WriteMap placeholder -- no-op, must not throw.
+            // Note: MdReg == 0x88888888u (bare uint literal), not a cast int -- comparing a
+            // uint field against a negative int constant expression doesn't compile in C#
+            // (no implicit conversion for a negative value into uint), unlike the method
+            // argument above, which legitimately needs the int cast since MfWrite's data
+            // parameter is int.
+            ucode.MfWrite(27 << 5, unchecked((int)0x88888888));
+            Assert(ucode.MdReg == 0x88888888u, $"code27: MdReg set, got 0x{ucode.MdReg:X}");
+
+            Console.WriteLine("  MfWrite VMA/MD tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  MfWrite VMA/MD tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMfWriteNoOpAndDefault()
+    {
+        Console.WriteLine("Test: MfWrite code 0 (no-op) and default (non-fatal warning)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // Code 0: no-op, must not throw or mutate anything observable.
+            ucode.MfWrite(0 << 5, unchecked((int)0xFFFFFFFF));
+            Assert(true, "code0: no-op does not throw");
+
+            // Default (e.g. dest>>5 == 3, unassigned): matches C's non-fatal warn(), does not throw.
+            ucode.MfWrite(3 << 5, 0);
+            Assert(true, "default case does not throw (non-fatal warning, matching C's warn())");
+
+            Console.WriteLine("  MfWrite no-op/default tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  MfWrite no-op/default tests failed: {ex.Message}\n");
             return false;
         }
     }

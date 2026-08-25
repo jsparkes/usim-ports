@@ -362,9 +362,106 @@ public class UCode
         }
     }
 
-    private void MfWrite(uint dest, int data)
+    /// <summary>
+    /// Faithful port of mfwrite() (usim/uexec.c:306-459). Codes 18/19/26/27
+    /// call the Phase-5-deferred VmWrite/WriteMap placeholders (no-ops until
+    /// then). Code 2's bit-28 bus-reset is a no-op + Info log -- the real
+    /// bus_interface_bus_reset() lives in a wholly separate, not-yet-ported
+    /// subsystem (usim/bus-interface.c). Note: the real C's comment on this
+    /// case claims to detect a "1-0 transition", but the actual code just
+    /// checks whether bit 28 is set on THIS write -- ported the code, not
+    /// the comment, per this project's established practice.
+    /// </summary>
+    internal void MfWrite(uint dest, int data)
     {
-        throw new NotImplementedException("MfWrite is implemented in Phase 4 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+        uint udata = (uint)data;
+        switch (dest >> 5)
+        {
+            case 0:
+                return;
+            case 1:
+                Lc = (Lc & ~0x03FFFFFFu) | (udata & 0x03FFFFFFu);
+                if ((InterruptControl & (1 << 29)) == 0)
+                {
+                    Lc &= ~1u;
+                }
+                Lc |= (1u << 31);
+                return;
+            case 2:
+                InterruptControl = udata;
+                if ((InterruptControl & (1 << 28)) != 0)
+                {
+                    TraceLog.Instance.Info(TraceCategory.MicroCode, "usim: ic.bus reset");
+                }
+                Lc = (Lc & ~(0xFu << 26)) | (InterruptControl & (0xFu << 26));
+                return;
+            case 8:
+                Pdl[PdlPointer] = udata;
+                return;
+            case 9:
+                PdlPointer = (PdlPointer + 1) & 0x3FF;
+                Pdl[PdlPointer] = udata;
+                return;
+            case 10:
+                Pdl[PdlIndex] = udata;
+                return;
+            case 11:
+                PdlIndex = udata & 0x3FF;
+                return;
+            case 12:
+                PdlPointer = udata & 0x3FF;
+                return;
+            case 13:
+                PushSpc(udata);
+                return;
+            case 14:
+                OaRegLow = udata & 0x03FFFFFF;
+                Oal = true;
+                return;
+            case 15:
+                OaRegHigh = udata & 0x7FFFFF;
+                Oah = true;
+                return;
+            case 16:
+                VmaReg = udata;
+                return;
+            case 17:
+                VmaReg = udata;
+                VmRead(VmaReg, out uint newMd17);
+                NewMd = newMd17;
+                NewMdDelay = 2;
+                return;
+            case 18:
+                VmaReg = udata;
+                VmWrite(VmaReg, MdReg);
+                return;
+            case 19:
+                VmaReg = udata;
+                WriteMap(VmaReg, MdReg);
+                return;
+            case 24:
+                MdReg = udata;
+                return;
+            case 25:
+                MdReg = udata;
+                VmRead(VmaReg, out uint newMd25);
+                NewMd = newMd25;
+                NewMdDelay = 2;
+                return;
+            case 26:
+                MdReg = udata;
+                VmWrite(VmaReg, MdReg);
+                return;
+            case 27:
+                MdReg = udata;
+                WriteMap(VmaReg, MdReg);
+                return;
+            default:
+                // Hex, not octal, for the same reason noted in MfRead's default case --
+                // .NET has no built-in octal format specifier; this is diagnostic text only.
+                TraceLog.Instance.Warning(TraceCategory.MicroCode, $"unknown MF register (0x{dest:X}) write (0x{data:X})");
+                return;
+        }
     }
 
     private void Alu()
@@ -498,6 +595,25 @@ public class UCode
         // read as a page fault-free no-op returning 0, matching "VmaOk = true"
         // above (Phase 5 replaces this with the real Vm()/Uvmem-backed path).
         v = 0;
+    }
+
+    /// <summary>
+    /// Placeholder for the real virtual-memory write path (Phase 5's Vm()-
+    /// backed implementation). A no-op until then, matching VmRead's own
+    /// Phase 1 no-op precedent -- deliberately NOT throwing, so MfWrite's
+    /// other, unrelated register codes remain testable without needing
+    /// try/catch wrappers.
+    /// </summary>
+    private void VmWrite(uint vaddr, uint data)
+    {
+    }
+
+    /// <summary>
+    /// Placeholder for Uvmem.WriteMap (Phase 5's "new file" Uvmem.cs does
+    /// not exist yet). A no-op until then, for the same reason as VmWrite.
+    /// </summary>
+    private void WriteMap(uint vma, uint data)
+    {
     }
 
     #endregion
