@@ -186,6 +186,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-microcode-bus-adaptor":
+                    UCodeBusAdaptorTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--demo-execution":
                     UCodeTests.DemoInstructionExecution();
                     Environment.Exit(0);
@@ -246,6 +251,7 @@ public class Program
         Console.WriteLine("  --test-uvmem            Run virtual memory (Uvmem) tests only");
         Console.WriteLine("  --test-microcode-vm     Run microcode virtual memory tests only");
         Console.WriteLine("  --test-bus-adaptor      Run bus adaptor tests only");
+        Console.WriteLine("  --test-microcode-bus-adaptor Run UCode/BusAdaptor wiring tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
@@ -503,6 +509,11 @@ public class Program
         // Run bus adaptor tests
         Console.WriteLine("Running Bus Adaptor Tests...\n");
         BusAdaptorTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run UCode/BusAdaptor wiring tests
+        Console.WriteLine("Running Microcode BusAdaptor Wiring Tests...\n");
+        UCodeBusAdaptorTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");

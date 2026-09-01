@@ -35,6 +35,7 @@ public class UCode
 
     private readonly MainMemory _mainMemory;
     public Uvmem Uvmem { get; }
+    public BusAdaptor BusAdaptor { get; }
 
     public UCode() : this(new MainMemory()) { }
 
@@ -42,6 +43,7 @@ public class UCode
     {
         _mainMemory = mainMemory;
         Uvmem = new Uvmem();
+        BusAdaptor = new BusAdaptor();
     }
 
     // Machine cycles counter
@@ -615,9 +617,10 @@ public class UCode
     /// against usim/bus-adaptor.c's bus_adaptor_xbus_rw, whose own pn&lt;=035773
     /// branch is a bare pass-through to real main memory), reads/writes go
     /// through MainMemory's physical-address accessors for real. Anything
-    /// else (XBus I/O devices, Unibus) is a deliberately deferred,
-    /// non-fatal placeholder -- see this phase's plan for why (a wholly
-    /// separate, not-yet-ported bus-adaptor/device subsystem).
+    /// else (XBus I/O devices, Unibus) is routed through BusAdaptor (Phase
+    /// 5B), which itself implements the boot PROM's disk-control status and
+    /// diagnostic-mode-register accesses for real and keeps its own
+    /// deliberately-scoped, non-fatal placeholders for every other device.
     /// </summary>
     private void Vm(bool write, uint vaddr, ref uint v)
     {
@@ -650,9 +653,10 @@ public class UCode
         }
         else
         {
-            TraceLog.Instance.Warning(TraceCategory.Memory,
-                $"Vm: {(write ? "write" : "read")} to un-ported XBus-I/O/Unibus paddr 0x{paddr:X} (pn 0x{dispatchPn:X}) -- deferred to a future bus-adaptor port");
-            if (!write) v = 0;
+            bool promDisabled = PromDisabled;
+            if (write) BusAdaptor.Write(paddr, v, ref promDisabled);
+            else v = BusAdaptor.Read(paddr);
+            PromDisabled = promDisabled;
         }
     }
 
