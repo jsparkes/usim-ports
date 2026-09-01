@@ -379,10 +379,12 @@ public class UCode
 
     /// <summary>
     /// Faithful port of mfwrite() (usim/uexec.c:306-459). Codes 18/26 call
-    /// VmWrite, still a placeholder (no-op + warning) for anything outside
-    /// the "xbus main memory" address range (see Vm()) -- deferred to a
-    /// future bus-adaptor port, not to a later phase of this project. Codes
-    /// 19/27 call the now-real Uvmem.WriteMap. Code 2's bit-28 bus-reset
+    /// VmWrite, which as of Phase 5B routes through BusAdaptor for real for
+    /// anything outside the "xbus main memory" address range (see Vm()) --
+    /// BusAdaptor itself still has its own deliberately-scoped placeholders
+    /// for most devices (see its class doc comment), so this is no longer a
+    /// blind no-op, just not a full device port. Codes 19/27 call the
+    /// now-real Uvmem.WriteMap. Code 2's bit-28 bus-reset
     /// is a no-op + Info log -- the real
     /// bus_interface_bus_reset() lives in a wholly separate, not-yet-ported
     /// subsystem (usim/bus-interface.c). Note: the real C's comment on this

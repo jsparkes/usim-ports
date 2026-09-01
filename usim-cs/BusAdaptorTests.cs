@@ -177,8 +177,13 @@ public static class BusAdaptorTests
     /// Inverse of BusAdaptor's own uaddr formula, for test setup: given a Unibus
     /// uaddr, produce a paddr whose dispatchPn resolves into the Unibus range and
     /// which BusAdaptor.Read/Write will convert back to exactly that uaddr.
-    /// uaddr = (((dispatchPn - 0x3E00) &lt;&lt; 8) | (paddr &amp; 0xFF)) &lt;&lt; 1, so with
-    /// paddr's low byte held at 0, dispatchPn = (uaddr &gt;&gt; 1 &gt;&gt; 8) + 0x3E00.
+    /// uaddr = (((dispatchPn - 0x3E00) &lt;&lt; 8) | (paddr &amp; 0xFF)) &lt;&lt; 1, so working
+    /// backwards: halfWordIndex = uaddr &gt;&gt; 1 carries BOTH dispatchPn's contribution
+    /// (its high bits) AND paddr's low byte (its low 8 bits) -- the low byte is
+    /// generally nonzero (an earlier draft of this file wrongly assumed it was
+    /// always 0, which produces a different, wrong uaddr for any target whose low
+    /// byte isn't itself 0) and must be extracted with halfWordIndex &amp; 0xFF below,
+    /// not discarded.
     /// </summary>
     private static uint UaddrToPaddr(uint uaddr)
     {

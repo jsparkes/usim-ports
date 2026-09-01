@@ -13,17 +13,40 @@ namespace Usim;
 
 public class BusAdaptor
 {
-    // XBus I/O absolute physical-address range for disk control (usim/bus-adaptor.c's
-    // bus_adaptor_xbusio_rw). 017377774-017377777 octal = 0x3DFFFC-0x3DFFFF.
-    private const uint DiskControlLo = 0x3DFFFC;
+    // XBus I/O absolute physical-address ranges (usim/bus-adaptor.c's
+    // bus_adaptor_xbusio_rw). All boundaries re-derived by direct octal-to-hex
+    // computation (Python `0o`/`hex()`), not manual digit counting.
+    private const uint TvScreenLo = 0x3C0000;      // 017000000-017077777 octal
+    private const uint TvScreenHi = 0x3C7FFF;
+    private const uint ColorTvScreenLo = 0x3D0000; // 017200000-017277777 octal
+    private const uint ColorTvScreenHi = 0x3D7FFF;
+    private const uint ColorTvControlLo = 0x3DFFE8; // 017377750-017377757 octal
+    private const uint ColorTvControlHi = 0x3DFFEF;
+    private const uint TvControlLo = 0x3DFFF0;      // 017377760-017377767 octal
+    private const uint TvControlHi = 0x3DFFF7;
+    private const uint DiskControlLo = 0x3DFFFC;    // 017377774-017377777 octal
     private const uint DiskControlHi = 0x3DFFFF;
+    // The real C special-cases this exact paddr (bus-adaptor.c:125,140) because the
+    // boot PROM's own PAGE-0-PARITY-FIX loop reads/writes it every single boot ("This
+    // does one extra location, too bad" -- promh.text) -- suppressed here too, rather
+    // than warning on a known-benign access the reference emulator's own author
+    // deliberately silenced.
+    private const uint KnownBenignOverrunPaddr = 0x3DFF00; // 017377400 octal
 
-    // Unibus 16-bit-word address range for the diagnostic-interface "spy" registers
-    // (usim/bus-adaptor.c's bus_adaptor_unibus_rw). 0766000-0766036 octal =
-    // 0x3EC00-0x3EC1E; the mode register specifically is 0766012 octal = 0x3EC0A.
-    private const uint DiagnosticLo = 0x3EC00;
+    // Unibus 16-bit-word address ranges (usim/bus-adaptor.c's bus_adaptor_unibus_rw).
+    private const uint UnibusMapLo = 0xC000;        // 0140000-0177777 octal
+    private const uint UnibusMapHi = 0xFFFF;
+    private const uint IobLo = 0x3E800;             // 0764000-0764176 octal
+    private const uint IobHi = 0x3E87E;
+    private const uint DiagnosticLo = 0x3EC00;      // 0766000-0766036 octal
     private const uint DiagnosticHi = 0x3EC1E;
-    private const uint DiagnosticModeRegister = 0x3EC0A;
+    private const uint DiagnosticModeRegister = 0x3EC0A; // 0766012 octal
+    private const uint BusInterfaceLo = 0x3EC20;    // 0766040-0766136 octal -- already a
+    private const uint BusInterfaceHi = 0x3EC5E;    // separately-deferred subsystem (Phase 4 ruling)
+    private const uint UnibusMappingLo = 0x3EC60;   // 0766140-0766176 octal
+    private const uint UnibusMappingHi = 0x3EC7E;
+    private const uint TapeControllerLo = 0x3F550;  // 0772520-0772532 octal
+    private const uint TapeControllerHi = 0x3F55A;
 
     /// <summary>
     /// Faithful port of bus_adaptor_read (usim/bus-adaptor.c), for the XBus-I/O and
@@ -69,8 +92,9 @@ public class BusAdaptor
             // have no real disk state to report either.
             return offset == 0 ? 1u : 0u;
         }
+        if (paddr == KnownBenignOverrunPaddr) return 0; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
-            $"BusAdaptor: read un-ported XBus-I/O paddr 0x{paddr:X} (TV/color-TV -- not implemented, Phase 5B scope)");
+            $"BusAdaptor: read un-ported XBus-I/O paddr 0x{paddr:X} ({DescribeXbusIo(paddr)} -- not implemented, Phase 5B scope)");
         return 0;
     }
 
@@ -83,8 +107,18 @@ public class BusAdaptor
             // Phase 5B spec section, not silently implied to work.
             return;
         }
+        if (paddr == KnownBenignOverrunPaddr) return; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
-            $"BusAdaptor: write un-ported XBus-I/O paddr 0x{paddr:X} v=0x{v:X} (TV/color-TV -- not implemented, Phase 5B scope)");
+            $"BusAdaptor: write un-ported XBus-I/O paddr 0x{paddr:X} v=0x{v:X} ({DescribeXbusIo(paddr)} -- not implemented, Phase 5B scope)");
+    }
+
+    private static string DescribeXbusIo(uint paddr)
+    {
+        if (paddr >= TvScreenLo && paddr <= TvScreenHi) return "main TV screen";
+        if (paddr >= ColorTvScreenLo && paddr <= ColorTvScreenHi) return "color TV screen";
+        if (paddr >= ColorTvControlLo && paddr <= ColorTvControlHi) return "color TV control";
+        if (paddr >= TvControlLo && paddr <= TvControlHi) return "main TV control";
+        return "unmapped XBus I/O";
     }
 
     private uint ReadUnibus(uint uaddr)
@@ -97,7 +131,7 @@ public class BusAdaptor
             return 0;
         }
         TraceLog.Instance.Warning(TraceCategory.Memory,
-            $"BusAdaptor: read un-ported Unibus uaddr 0x{uaddr:X} (Unibus Map/IOB/tape/unibus-mapping/bus-interface -- not implemented, Phase 5B scope)");
+            $"BusAdaptor: read un-ported Unibus uaddr 0x{uaddr:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
         return 0;
     }
 
@@ -117,6 +151,16 @@ public class BusAdaptor
             return;
         }
         TraceLog.Instance.Warning(TraceCategory.Memory,
-            $"BusAdaptor: write un-ported Unibus uaddr 0x{uaddr:X} v=0x{v:X} (Unibus Map/IOB/tape/unibus-mapping/bus-interface -- not implemented, Phase 5B scope)");
+            $"BusAdaptor: write un-ported Unibus uaddr 0x{uaddr:X} v=0x{v:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
+    }
+
+    private static string DescribeUnibus(uint uaddr)
+    {
+        if (uaddr >= UnibusMapLo && uaddr <= UnibusMapHi) return "Unibus Map DMA";
+        if (uaddr >= IobLo && uaddr <= IobHi) return "IOB";
+        if (uaddr >= BusInterfaceLo && uaddr <= BusInterfaceHi) return "bus-interface (already separately deferred, Phase 4)";
+        if (uaddr >= UnibusMappingLo && uaddr <= UnibusMappingHi) return "unibus-mapping";
+        if (uaddr >= TapeControllerLo && uaddr <= TapeControllerHi) return "tape controller";
+        return "unmapped Unibus";
     }
 }
