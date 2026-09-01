@@ -120,8 +120,8 @@ public static class BusAdaptorTests
             // DEBUG-IR (0766000-0766004), clock control (0766006, real C errx()s if v!=1),
             // OPC control (0766010, real C errx()s unconditionally) -- all must be safe no-ops here.
             busAdaptor.Write(UaddrToPaddr(0x3EC00), 0x1234, ref promDisabled);
-            busAdaptor.Write(UaddrToPaddr(0x3EC03), 0x99, ref promDisabled); // clock control, NOT 1 -- would errx() in the real C
-            busAdaptor.Write(UaddrToPaddr(0x3EC05), 0x42, ref promDisabled); // OPC control -- always errx()s in the real C
+            busAdaptor.Write(UaddrToPaddr(0x3EC06), 0x99, ref promDisabled); // clock control (0766006 octal), NOT 1 -- would errx() in the real C
+            busAdaptor.Write(UaddrToPaddr(0x3EC08), 0x42, ref promDisabled); // OPC control (0766010 octal) -- always errx()s in the real C
             Assert(promDisabled == false, "none of these touch promDisabled");
 
             Assert(busAdaptor.Read(UaddrToPaddr(0x3EC00)) == 0, "reading a non-mode spy register is a safe default (0)");
