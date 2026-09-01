@@ -455,6 +455,65 @@ uint paddr = Uvmem.Vtop(MdReg, out uint l1, out uint l2, out _, out bool wp, out
 return (int)((!wp ? (1u<<31) : 0) | (!ap ? (1u<<30) : 0) | (1u<<29) | ((l1 & 0x1F)<<24) | (l2 & 0x00FFFFFF));
 ```
 
+## Phase 5B — Bus Adaptor (`BusAdaptor.cs`, new file)
+
+**Not one of the original 9 phases** — added 2026-08-30 after Phase 5's final review found the deferred XBus-I/O/Unibus placeholder in `Vm()` is hit within ~10 instructions of the boot PROM's own bootstrap (see the Open Items entry this replaces). Scope is deliberately **minimal and honest**, not a full device-emulation port: it replaces `Vm()`'s blind "warn and return/discard zero" placeholder with a *faithful address-routing layer* (matching `usim/bus-adaptor.c`'s actual dispatch structure) plus the two specific register behaviors the PROM's early boot actually depends on. It does **not** implement real disk data transfer, TV/color-TV screens, tape, or Unibus-Map DMA — those stay scoped placeholders, now routed to correctly instead of caught by one blind top-level catch-all. Full-port scope (if ever wanted) would additionally touch `usim/disk-controller.c`'s real transfer logic, `usim/tv.c`, `usim/colortv.c`, `usim/iob.c`, `usim/tape-controller.c`, and `usim/unibus-mapping.c` — roughly 3,150 more lines across 6 files; not attempted here.
+
+### Why this is needed now, not later
+
+Real-microcode calibration (decoding `sys/ubin/promh.mcr`, cross-checked against the annotated `sys/ucadr/promh.text`) found the PROM's `SET-UP-FOUR-PAGES` maps a page to XBus disk-control registers (physical page `0o36777` = `0x3DFF`) and a page to Unibus diagnostic/spy registers (physical page `0o37766` = `0x3FF6`, resolving via the Unibus page formula to Unibus address `0o766012`) — both reachable almost immediately after the PROM's first page-map setup, roughly 10 instructions in. Half the PROM's 28 `Vm()`-dispatching sites land in this range. A throw here would abort the boot; the current placeholder is non-fatal but gives every device the same wrong answer (0), including registers the PROM actually polls in a loop.
+
+### `usim/bus-adaptor.c`'s real dispatch structure (502 lines; verified by direct read, not the earlier per-phase summaries)
+
+- **`bus_adaptor_xbus_rw(write, paddr, pv)`** — the function `Vm()`'s `dispatchPn` split already inlines: `pn<=0x3BFB` → real main memory (already faithful, Phase 5); `0x3C00<=pn<=0x3DFF` → `bus_adaptor_xbusio_rw`; else → warn + NXM (`bus_interface_set_xbus_nxm()`, from the already-deferred `bus-interface.c` — treat as a no-op, same ruling as Phase 4's `bus_interface_bus_reset()`).
+- **`bus_adaptor_xbusio_rw(write, paddr, pv)`** — dispatches by absolute `paddr` (not page number) within the XBus-I/O window:
+  | Range (octal) | Device | This phase's treatment |
+  |---|---|---|
+  | `017000000`-`017077777` | Main TV screen (`tv_screen_read`/`write`) | Scoped placeholder (not implemented) |
+  | `017200000`-`017277777` | Color TV screen, if `colortv_enabled` | Scoped placeholder |
+  | `017377750`-`017377757` | Color TV control | Scoped placeholder |
+  | `017377760`-`017377767` | Main TV control | Scoped placeholder |
+  | `017377774`-`017377777` | (First) disk control, offset = `paddr - 017377774` ∈ {0,1,2,3} | **Real, minimal** (see below) |
+  | else | Unmapped | warn + NXM (no-op) + `*pv=0` on read |
+  Convert every octal boundary above to hex by direct computation, not digit-counting, before implementing — this project has had four octal-to-hex mistranslations already.
+- **`bus_adaptor_unibus_rw(write, uaddr, pv16)`** (16-bit words) — `uaddr` is derived from `paddr` by `Vm()`'s existing Unibus-range branch (`((pn-0x3E00)<<8 | (paddr&0xFF)) << 1`, already the formula `bus_adaptor_rw` uses, per Phase 5's own end-to-end trace B). Dispatch:
+  | Range (octal) | Device | This phase's treatment |
+  |---|---|---|
+  | `0140000`-`0177777` | Unibus Map (DMA remapping into XBus space, incl. the MD-register diagnostic path) | Scoped placeholder — real logic needs `unibus_mapping_registers[]` state and hi/lo-word buffering not built yet |
+  | `0764000`-`0764176` | `iob_unibus_read`/`write` | Scoped placeholder |
+  | `0766000`-`0766036` | `diagnostic-interface.c` ("spy" registers) | **Real for one register** (see below); scoped placeholder for the rest |
+  | `0766040`-`0766136` | `bus-interface.c` | Already a separate deferred subsystem (Phase 4 ruling) |
+  | `0766140`-`0766176` | `unibus-mapping.c` | Scoped placeholder |
+  | `0772520`-`0772532` | `tape-controller.c` | Scoped placeholder |
+  | else | Unmapped | warn + NXM (no-op) |
+
+### Real behavior #1: diagnostic-interface mode register (`0766012`)
+
+`usim/diagnostic-interface.c:286-291`:
+```c
+case 0766012:
+    machine_state.promdisabled = ((v & (1<<5)) != 0);
+    break;
+```
+This is directly load-bearing: `machine_state.promdisabled` is the exact flag this port's `UCode.PromDisabled` already models (resolved as a Phase 1 Open Item — `IncNpc()` already branches on it to choose `IMem`/`Prom`). Port as:
+```csharp
+case 0766012: PromDisabled = (data & (1 << 5)) != 0; break;
+```
+Every other spy register (`0766000`-`0766006` DEBUG-IR, `0766010` OPC control — both `errx()`-fatal in the real C on any write, since real microcode is never expected to touch them; `0766014`/`0766016` unused) gets a scoped placeholder (log + no-op), not a faithful `errx`-equivalent throw — replicating a "should never happen" fatal guard isn't useful here, and if real boot microcode genuinely never hits it (as expected), the distinction never surfaces.
+
+### Real behavior #2: disk-controller status register (offset 0, i.e. paddr `017377774`)
+
+`usim/disk-controller.c:174-219` (`encode_status()`) builds a composite status word from live disk-unit/controller state. The PROM's `DISK-RECALIBRATE` polls exactly two bits in a loop (confirmed against `sys/ucadr/promh.text`): bit 0 (`not_active` — "ready/idle") and bit 9 (`!online`, i.e. "online" when clear). A full port needs real per-unit state (`seek_error`, `read_only`, `has_fault`, `attention`, real command/transfer handling); this phase ports only enough to satisfy the poll:
+```csharp
+// offset 0 (status), read: bit0=1 (not_active/ready), bit9=0 (online), everything else 0 (no errors).
+case 0: return 1u; // (1<<0), matching encode_status()'s default-no-error/ready/online composition
+```
+Offsets 1 (memory address) and 3 (ECC, "no ECC errors in usim, so this always returns 0") get a plain `0`; offset 2 (disk address) can round-trip a written value (matching the real `da` register's read/write semantics) or also return 0 — the PROM's early boot only reads offset 0, so this is a minor, low-stakes choice, not one to over-engineer. Writes to any disk-control offset (the command/CLP/DA registers) are a scoped placeholder (no-op) — **explicitly not a working disk**: nothing here reads a real disk image or performs a real transfer, so any code path that expects `SAVE-A-PAGE`/actual boot-sector data to arrive correctly will not get real data. This is intentionally out of scope; note it as a tracked Open Item, not silently implied to work.
+
+### `UCode` wiring
+
+`BusAdaptor` needs to reach back into `UCode.PromDisabled` for the one real register above — unlike `Uvmem` (which needed no `UCode`/`MainMemory` dependency at all), this is a genuine, justified coupling. Simplest shape: `BusAdaptor` is a plain class with no constructor dependencies, and its `Read`/`Write` methods take `ref bool promDisabled` (or `UCode.Vm()` handles the `0766012` special case itself, inline, before delegating everything else to `BusAdaptor` — whichever reads cleaner; finalize in the Phase 5B plan). `UCode` gains a `BusAdaptor` property analogous to `Uvmem`, constructed the same way (always non-null, no dependency on which `UCode` constructor ran). `Vm()`'s existing placeholder branch (`dispatchPn > 0x3BFB`) is replaced with a real call into `BusAdaptor`, keeping the existing `dispatchPn<=0x3BFB` main-memory fast path exactly as Phase 5 left it.
+
 ## Phase 6 — Dispatch Instructions (`Dsp()`)
 
 Fields: `pos = (int)Ir(0,5)`, `len = (int)Ir(5,3)`, `map = Ir(8,2)`, `dispAddr = (uint)Ir(12,11)`, `nPlus1 = Ir(25,1)!=0`, `enableIsh = Ir(24,1)!=0`, `dispConst = (uint)Ir(32,10)`.
@@ -628,7 +687,7 @@ These are flagged rather than resolved here because they need the actual current
 - ~~Exact `Halted` flag location...~~ **Resolved in Phase 3:** a plain `public bool Halted { get; set; }` field directly on `UCode`, deliberately NOT wired to `MachineControl`'s richer power-state machinery (no run-loop exists yet that would read either). See the new Phase 8 bullet below — this still needs a consumer once a continuous `Step()`-driving loop exists.
 - **New (found during Phase 3's final review, 2026-08-24):** `UCode`'s interrupt-pending PRODUCERS (`SetInterruptStatusReg`, `AssertUnibusInterrupt`, `AssertXbusInterrupt`, `DeassertUnibusInterrupt`, `DeassertXbusInterrupt` — all pre-existing Phase-1-era code) diverge materially from the real C's `set_interrupt_status_reg`/`assert_unibus_interrupt`/etc. (`usim/ucode.c:114-188`): the real C masks `interrupt_status_reg` with `0140000` to derive `interrupt_pending_flag`, gates `assert_unibus_interrupt` on the `02000` enable bit, masks the stored vector with `01774`, and routes Xbus asserts through the same status register (`|= 040000`) rather than setting the pending flag directly. The C# versions currently just set `InterruptPendingFlag = (newValue != 0)` unconditionally and never route Xbus asserts through the status register at all. This was latent and inert until Phase 3 made `CheckJumpCondition()` the first real consumer of `InterruptPendingFlag` (jump condition codes 5/6 — confirmed via decoding `ucadr.mcr` to have 589 real call sites) — meaning it can now cause `Jmp()` to branch differently than the real hardware for any code exercising interrupt-conditional jumps. Not assigned to any phase yet; Phase 4 covers `MfWrite`'s INTERRUPT-CONTROL register but not this status-register/pending-flag producer logic. Needs its own task in a future phase (most naturally alongside Phase 4, since both touch interrupt state) — re-derive `SetInterruptStatusReg`/`AssertUnibusInterrupt`/`AssertXbusInterrupt`/`DeassertUnibusInterrupt`/`DeassertXbusInterrupt` against `usim/ucode.c:114-188` directly when that task is planned.
   **Escalation (Phase 4's final review, 2026-08-24):** Phase 4's `MfWrite` case 2 makes `InterruptControl` microcode-writable for the first time (previously it was always 0 in any real run, so jump codes 5/6 could never even reach the `InterruptPendingFlag` term) — real-microcode calibration found 9 static INTERRUPT-CONTROL write sites (2 in the boot PROM, 7 in `ucadr.mcr`), including a dedicated single-bit write to bit 27 (interrupt enable). Combined with Phase 3's 589 condition-5/6 call sites, this divergence is now **live, not merely latent** — still no Phase 4/5 code change was needed or made, but this should be prioritized accordingly whenever it is finally scheduled.
-- **New, high priority (Phase 5's final review, 2026-08-25): the deferred XBus-I/O/Unibus "bus adaptor" port is the next real boot blocker, not an unranked future subsystem.** `Vm()`'s placeholder for physical page numbers above `0x3BFB` (XBus I/O devices, Unibus — see the `Vm()` snippet above) has no assigned phase. Real-microcode calibration (decoding `sys/ubin/promh.mcr`, cross-checked against `sys/ucadr/promh.text`) found the boot PROM reaches this deferred range within ~10 instructions of its first page-map setup: it maps a page to XBus disk-control registers (pn `0x3DFF`) and a page to Unibus diagnostic/spy registers (pn `0x3FF6`, resolving to Unibus address `0o766012` — confirmed against `promh.text`'s own documentation of that exact address), and roughly half the PROM's 28 `Vm()`-dispatching sites land in this placeholder. The non-fatal, warning-logged shape was the only survivable choice (a throw would abort the boot immediately) — but this means a "bus adaptor" port (`usim/bus-adaptor.c`, `usim/tv.c`, `usim/iob.c`, etc.) should be scheduled as the immediate next phase after virtual memory, not left unranked.
+- ~~New, high priority (Phase 5's final review, 2026-08-25): the deferred XBus-I/O/Unibus "bus adaptor" port is the next real boot blocker...~~ **Scheduled as Phase 5B, 2026-08-30** (see that section) — scoped minimally (address routing + two real registers: the diagnostic-interface mode register and a minimal disk-status register), not a full device-emulation port. Real disk transfer, TV, tape, and Unibus-Map DMA remain deferred placeholders within Phase 5B itself; a full port is still unscheduled.
 - **New (Phase 5's final review, 2026-08-25): `MachineControl` doesn't yet use `UCode(MainMemory)`.** It still does `Memory = new MainMemory(); UCode = new UCode();` as two independent, disconnected instances (confirmed in both `usim-cs/MachineControl.cs` and the untracked `usim-cs-sdl/MachineControl.cs` copy) — so microcode-driven physical writes via `Vm()` are currently invisible to `MachineControl.Memory`, state save/restore, and any dumper. `UCode(MainMemory)` exists and is tested (`UCodeVirtualMemoryTests.cs`) but has zero production call sites. This is squarely Phase 8's `MachineControl.cs` bullet (already named there) — flagging it explicitly so it isn't missed as "already done" just because the constructor exists.
 - **New (Phase 5's final review, 2026-08-25): `MainMemory.ReadPhysical`/`WritePhysical` have no populated-page-count gate.** The real C's `main_memory_read`/`write` gate on a configurable populated-page count (`usim.ini`'s `memory.size`, default 8192 pages) and return `0xffffffff`/fail above it — the C's own comment notes this can happen "during memory probing by the prom". The C# always has all 16384 pages populated and returns plain `0` out of bounds. This can't currently crash (the main-memory dispatch path's max address is within `PHYSICAL_MEM_SIZE`), and the spec's own Phase 5 text sanctioned the return-0 shape — but any microcode that sizes memory by probing will see a different answer than the reference. Belongs on Phase 8's list alongside the `MainMemory`-reconciliation item below.
 - **New (Phase 5's final review, 2026-08-25): `MainMemory`'s pre-existing `Read`/`Write`/`TranslateAddress` use an invented paging scheme unrelated to `Uvmem`'s faithful L1/L2 map.** Two parallel, inconsistent virtual-memory schemes now coexist in the codebase. Reconciling or retiring the old one is Phase 8's job — see its `MachineControl.cs` bullet, which should be expanded to cover this explicitly, not just the constructor wiring.
