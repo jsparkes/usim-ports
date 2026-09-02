@@ -1,3 +1,40 @@
+# Microcode Engine Phase 6 — Dispatch Instructions Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Implement `UCode.Dsp()` as a faithful 1:1 port of the real C reference emulator's `dsp()` (`usim/uexec.c:740-854`), replacing the `NotImplementedException` stub Phase 1 left in place.
+
+**Architecture:** `Dsp()` decodes a DISPATCH-class instruction's fields, handles the DMEM-write special case, rotates `MData` and builds a dispatch-table address from the rotated bits plus (optionally) two page-map bits from `Uvmem.Vtop`, reads the resulting `DMem` word, and — using exactly the same PushSpc/PopSpc/AdvanceLc/Inhibit/Popj machinery `Jmp()` already uses — updates `Npc` accordingly.
+
+**Tech Stack:** C#, .NET 8.0. No new dependencies.
+
+**Spec:** `docs/superpowers/specs/2026-08-21-microcode-engine-design.md` (§ "Phase 6 — Dispatch Instructions")
+
+## Global Constraints
+
+- Faithful 1:1 port of `usim/uexec.c:740-854`'s `dsp()` runtime behavior. This spec section was independently re-verified line-by-line against the real C before this plan was written and found **fully correct as written** — the first section since Phase 3 with no bugs found (unlike Phases 2, 4, 5, and 5B, which each had at least one real spec bug). No corrections needed; implement the spec's code as given.
+- `Dsp()` stays `private`, matching `Alu()`/`Jmp()`'s existing visibility (only reachable through `Step()` in production). Add an `internal void CallDsp() => Dsp();` test-only forwarding wrapper, matching the `CallJmp()`/`CallVm()` precedent from Phases 3 and 5.
+- `Dsp()`'s push/pop/`Inhibit`/`Popj` logic is structurally identical to `Jmp()`'s (same `PushSpc(Npc)`/`PushSpc(Npc-1)`, same `PopSpc()`-with-`AdvanceLc`-on-bit-14, same `0x3FFF` masking) — already faithfully implemented and thoroughly tested in Phase 3. This plan's own tests confirm `Dsp()` wires these up correctly, but do not re-derive `PushSpc`/`PopSpc`/`AdvanceLc`'s own internal correctness from scratch (already established).
+- **Test design note, learned the hard way while drafting this plan**: `Npc = target;` at the end of `Dsp()` is unconditional except for the `if (p && r) return;` early return — meaning `if (n_plus1 && n) Npc--;`'s effect is silently overwritten by the later unconditional assignment unless the call reaches that early return first. Any test of `n_plus1`'s effect must use a `p=1, r=1` scenario (triggering the early return) to actually observe it, not a fall-through scenario.
+
+---
+
+### Task 1: `Dsp()`
+
+**Files:**
+- Modify: `usim-cs/UCode.cs`
+- Create: `usim-cs/UCodeDispatchTests.cs`
+- Modify: `usim-cs/Program.cs` (register the new test suite)
+
+**Interfaces:**
+- Consumes: `Ir()`, `MData`, `Rol32`, `LcByteMode()`, `DMem`, `Uvmem.Vtop`, `MdReg`, `DispatchConstant`, `Npc`, `Inhibit`, `Popj`, `PushSpc`/`PopSpc`, `AdvanceLc` (all Phase 1/3/5).
+- Produces: `Dsp()` becomes fully implemented (no longer throws) — `Step()` (Phase 1) already calls it correctly via `case 2: Dsp(); break;`, no changes needed there. `internal void CallDsp()` test-only wrapper.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `usim-cs/UCodeDispatchTests.cs`:
+
+```csharp
 // UCodeDispatchTests.cs - Tests for UCode's Dispatch instruction class
 // (Phase 6 of the microcode engine port). Covers Dsp()'s DMEM-write special
 // case, the mask/rotate dispatch-address construction, the L2-map-bit
@@ -24,9 +61,6 @@ public static class UCodeDispatchTests
         if (TestNPlus1EnableIshInhibitEarlyReturn()) passed++; else failed++;
         if (TestPushOnly()) passed++; else failed++;
         if (TestPopOnly()) passed++; else failed++;
-        if (TestNonZeroLenMaskMerge()) passed++; else failed++;
-        if (TestNPlus1PushUsesDecrementedNpc()) passed++; else failed++;
-        if (TestDispatchAddrFromOaRegLowMerge()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -296,142 +330,133 @@ public static class UCodeDispatchTests
         }
     }
 
-    private static bool TestNonZeroLenMaskMerge()
-    {
-        Console.WriteLine("Test: Dsp() len>0 merges MData bits into dispAddr via the mask (not just map bits)");
-        try
-        {
-            var ucode = new UCode();
-            ucode.Init();
-
-            // P0 = 0x100000020080: Op(Ir 43,2)=2 (Dispatch), len(Ir 5,3)=4,
-            // dispAddr base(Ir 12,11)=0o40 (=32, binary 100000 -- bits 0-4 all
-            // zero, bit5 set), map/sel/pos all 0. len=4 -> leftMaskIndex=3 ->
-            // mask=0b1111 (4 bits).
-            ucode.P0 = 0x100000020080UL;
-
-            // MData = 0b11111 (31): bits 0-4 all set. Correct merge:
-            // base(0b100000) | (MData & 0b1111) = 0b100000 | 0b1111 = 0b101111
-            // = 0x2F = 0o57. A mask that's one bit too NARROW (3 bits) gives
-            // 0b100000|0b111=0x27 (0o47); one bit too WIDE (5 bits) gives
-            // 0b100000|0b11111=0x3F (0o77) -- both differ from the correct
-            // 0x2F, so this genuinely discriminates an off-by-one mask width
-            // in either direction (the prior version of this test did not).
-            ucode.MData = 0b11111;
-
-            // DMem[0x2F] = 0x234 (n=p=r=0, target=0x234). DMem[0x27] and
-            // DMem[0x3F] stay at their Init()-default zero, so either
-            // off-by-one direction reads a wrong, distinguishable (zero)
-            // result instead.
-            ucode.DMem[0x2F] = 0x234;
-
-            ucode.Npc = 0;
-            ucode.CallDsp();
-
-            Assert(ucode.Npc == 0x234, "len=4 mask (0b1111) merges MData into dispAddr=0x2F, selecting DMem[0x2F]");
-
-            Console.WriteLine("  Non-zero-len mask merge test passed\n");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"  Non-zero-len mask merge test failed: {ex.Message}\n");
-            return false;
-        }
-    }
-
-    private static bool TestNPlus1PushUsesDecrementedNpc()
-    {
-        Console.WriteLine("Test: Dsp() n_plus1=1,p=1,r=0 pushes Npc-1 (post-decrement), the shape used by 47% of real ucadr.mcr dispatch entries");
-        try
-        {
-            var ucode = new UCode();
-            ucode.Init();
-
-            // P0 = 0x100002007000: Op(Ir 43,2)=2 (Dispatch), n_plus1(Ir 25,1)=1,
-            // enable_ish(Ir 24,1)=0, dispAddr base(Ir 12,11)=7, len=0/map=0/sel=0/pos=0
-            // (mask=0, so MData is irrelevant here).
-            ucode.P0 = 0x100002007000UL;
-
-            // DMem[7] = 0xC123: bits14/15 set (n=1,p=1), bit16 clear (r=0),
-            // target = 0xC123 & 0x3FFF = 0x123.
-            ucode.DMem[7] = 0xC123;
-
-            ucode.Npc = 10;
-            ucode.CallDsp();
-
-            // n_plus1&&n fires first: Npc-- (10->9). Then n=1 sets Inhibit.
-            // p&&r is false (r=0), so no early return. p=1 with n=1 takes the
-            // PushSpc(Npc-1) branch: pushes 9-1=8, NOT Npc(=9) and NOT the
-            // original 10. This is the one branch of Dsp()'s push logic that
-            // was previously never exercised by any test.
-            Assert(ucode.SpcPtr == 1, "PushSpc incremented SpcPtr to 1");
-            Assert(ucode.Spc[1] == 8, "PushSpc(Npc-1) pushed 8, not Npc(9) or the original Npc(10)");
-            Assert(ucode.Inhibit == true, "n=1 set Inhibit");
-            Assert(ucode.Npc == 0x123, "fallthrough set Npc=target");
-            Assert(ucode.Popj == false, "fallthrough set Popj=false");
-
-            Console.WriteLine("  n_plus1 PushSpc(Npc-1) test passed\n");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"  n_plus1 PushSpc(Npc-1) test failed: {ex.Message}\n");
-            return false;
-        }
-    }
-
-    private static bool TestDispatchAddrFromOaRegLowMerge()
-    {
-        Console.WriteLine("Test: Step() merges OaRegLow into P0 before Dsp() runs, the only way the real boot PROM supplies a DISPATCH address");
-        try
-        {
-            var ucode = new UCode();
-            ucode.Init();
-            ucode.PromEnabledFlag = true;
-
-            // Template P0 = 0x100000000000: Op(Ir 43,2)=2 (Dispatch), dispAddr
-            // base(Ir 12,11)=0, len=0/map=0/sel=0/pos=0/n_plus1=0/enable_ish=0 --
-            // every other field zero, so the only nonzero dispAddr bits Dsp()
-            // sees must come from an OA-REG-LOW merge, not from the word itself.
-            ucode.Prom[0] = 0x100000000000UL;
-            ucode.Prom[1] = 0UL;
-            ucode.Npc = 0;
-
-            // First Step(): primes P0 with the initial empty P1 (Op=0/ALU,
-            // which never throws), prefetches Prom[0] into P1.
-            ucode.Step();
-
-            // OaRegLow = 9 << 12 = 0x9000: merged into P0's bits 12-22 (Ir(12,11)),
-            // landing dispAddr's base at 9 without touching any other field
-            // (verified: bits0-11 and 23-25 of 0x9000 are all zero).
-            ucode.OaRegLow = 0x9000;
-            ucode.Oal = true;
-
-            // DMem[9] = 0x77 (n=p=r=0, target=0x77). If the OA merge did NOT
-            // reach Dsp(), dispAddr would stay 0, reading DMem[0]'s
-            // Init()-default zero instead, and Npc would end up 0.
-            ucode.DMem[9] = 0x77;
-
-            // Second Step(): promotes Prom[0] (the template) into P0, applies
-            // the Oal merge, then dispatches it for real.
-            ucode.Step();
-
-            Assert(ucode.Npc == 0x77, "OaRegLow's merge into P0 reached Dsp() as dispAddr=9, selecting DMem[9]");
-
-            Console.WriteLine("  OaRegLow dispatch-address merge test passed\n");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"  OaRegLow dispatch-address merge test failed: {ex.Message}\n");
-            return false;
-        }
-    }
-
     private static void Assert(bool condition, string message)
     {
         if (!condition)
             throw new Exception($"Assertion failed: {message}");
     }
 }
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `dotnet build LispMachine.sln`
+Expected: FAIL — `UCode` has no members named `CallDsp` yet, and `Dsp()` still throws unconditionally.
+
+- [ ] **Step 3: Implement `Dsp()` and the `CallDsp()` test wrapper**
+
+In `usim-cs/UCode.cs`, replace the `Dsp()` stub:
+```csharp
+    private void Dsp()
+    {
+        throw new NotImplementedException("Dsp is implemented in Phase 6 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+    }
+```
+with:
+```csharp
+    /// <summary>
+    /// Faithful port of dsp() (usim/uexec.c:740-854). Independently re-verified
+    /// field-by-field against the real C during Phase 6 planning -- no bugs
+    /// found (unlike Phases 2/4/5/5B, which each had at least one). Shares
+    /// PushSpc/PopSpc/AdvanceLc/Inhibit/Popj machinery with Jmp() (Phase 3).
+    /// </summary>
+    private void Dsp()
+    {
+        uint dispAddr = (uint)Ir(12, 11);
+        if (Ir(10, 2) == 2) { DMem[dispAddr] = (uint)AData; return; }
+
+        int pos = (int)Ir(0, 5);
+        if (Ir(10, 2) == 3) pos = LcByteMode();
+
+        MData = (int)Rol32((uint)MData, pos);
+
+        int len = (int)Ir(5, 3);
+        int leftMaskIndex = (len - 1) & 0x1F;
+        int mask = len == 0 ? 0 : unchecked((int)(~0u >> (31 - leftMaskIndex)));
+        dispAddr |= (uint)MData & (uint)mask;
+
+        uint map = (uint)Ir(8, 2);
+        if (map != 0)
+        {
+            Uvmem.Vtop(MdReg, out _, out uint l2MapBits, out _, out _, out _);
+            uint bit19 = (l2MapBits >> 19) & 1, bit18 = (l2MapBits >> 18) & 1;
+            dispAddr |= map switch { 1 => bit18, 2 => bit19, 3 => bit18 | bit19, _ => 0 };
+        }
+
+        dispAddr &= 0x7FF;
+        uint dispWord = DMem[dispAddr];
+        DispatchConstant = (uint)Ir(32, 10);
+
+        uint target = dispWord & 0x3FFF;
+        bool n = ((dispWord >> 14) & 1) != 0, p = ((dispWord >> 15) & 1) != 0, r = ((dispWord >> 16) & 1) != 0;
+
+        if (Ir(25, 1) != 0 && n) Npc--;
+        if (Ir(24, 1) != 0) AdvanceLc(0);
+        if (n) Inhibit = true;
+        if (p && r) return;
+
+        if (p) { if (!n) PushSpc(Npc); else PushSpc(Npc - 1); }
+        if (r)
+        {
+            target = PopSpc();
+            if ((target >> 14 & 1) != 0) target = AdvanceLc(target);
+            target &= 0x3FFF;
+        }
+        Npc = target;
+        Popj = false;
+    }
+
+    /// <summary>
+    /// Test-only forwarding wrapper: Dsp() stays private (matching Alu()/Jmp()'s
+    /// existing visibility), but UCodeDispatchTests needs to exercise its many
+    /// branch combinations directly. Matches the CallJmp()/CallVm() precedent
+    /// from Phases 3 and 5.
+    /// </summary>
+    internal void CallDsp() => Dsp();
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `dotnet build LispMachine.sln` (expect 0 errors), then `dotnet run --project usim-cs -- --test-microcode-dispatch`
+Expected: `Passed: 10`, `Failed: 0` (as of the final-review fix wave, which added two coverage tests and strengthened a third; originally `Passed: 7`).
+
+- [ ] **Step 5: Wire the new test suite into `Program.cs`**
+
+Add next to the existing test-suite cases:
+```csharp
+                case "--test-microcode-dispatch":
+                    UCodeDispatchTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+```
+Add to the usage help text:
+```csharp
+        Console.WriteLine("  --test-microcode-dispatch Run microcode dispatch tests only");
+```
+Add to the master `RunAllTests()` method:
+```csharp
+        UCodeDispatchTests.RunAllTests();
+```
+
+- [ ] **Step 6: Run the full regression suite**
+
+Run: `dotnet run --project usim-cs -- --test-all`
+Expected: all suites report 0 failures. `Byt()`/`MfRead` code 9 (already implemented)/`Dsp()`'s own tests are the only Phase 6-relevant changes; every earlier phase's suite should be unaffected (in practice, the Phase 1 fetch/decode suite WAS affected once `Dsp()` went from stub to real, and was fixed in commit 82893d5).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add usim-cs/UCode.cs usim-cs/UCodeDispatchTests.cs usim-cs/Program.cs
+git commit -m "Add faithful Dsp() dispatch instruction class"
+```
+
+---
+
+## Self-Review Notes
+
+- **Spec coverage:** every construct the spec's "Phase 6" section calls for (`Dsp()`, including the DMEM-write special case, the mask/rotate/map-bit dispatch-address construction, and the shared push/pop/`Inhibit`/`Popj` machinery) is implemented.
+- **No spec corrections needed** — independently re-verified the entire spec section field-by-field against `usim/uexec.c:740-854` before writing this plan and found it fully correct, the first clean pass since Phase 3.
+- **Placeholder scan:** no TBD/TODO markers; every test method has real, hand-derivable assertions rather than smoke-test-only checks. One test (`TestByteModePosOverride`) was specifically redesigned during planning after an initial draft's chosen values accidentally made the raw-`Ir(0,5)`-vs-`LcByteMode()` distinction non-discriminating (both formulas coincidentally gave the same pos for the first set of values tried) — the final values (`pos=19` vs raw `pos=3`) were verified to genuinely differ.
+- **Type consistency:** `Dsp()`'s signature (`private void Dsp()`) is unchanged from the Phase 1 stub, so `Step()`'s call site needs no changes. `CallDsp()` matches the `CallJmp()`/`CallVm()` pattern exactly.
+- **Deliberate deviation flagged:** none beyond the already-established `CallDsp()` test-wrapper precedent — this phase needed no new architectural decisions, unlike Phases 5/5B.
+

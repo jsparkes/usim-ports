@@ -263,6 +263,7 @@ public class UCode
 
         if (Popj)
         {
+            // Same fragment as Jmp()/Dsp() -- see Dsp()'s comment.
             uint target = PopSpc();
             if ((target >> 14 & 1) != 0) target = AdvanceLc(target);
             Npc = target & 0x3FFF;
@@ -564,6 +565,7 @@ public class UCode
         }
         if (r && cond)
         {
+            // Same fragment as Dsp() and Step()'s popj block -- see Dsp()'s comment.
             target = PopSpc();
             if ((target >> 14 & 1) != 0) target = AdvanceLc(target);
             target &= 0x3FFF;
@@ -611,6 +613,9 @@ public class UCode
         {
             Uvmem.Vtop(MdReg, out _, out uint l2MapBits, out _, out _, out _);
             uint bit19 = (l2MapBits >> 19) & 1, bit18 = (l2MapBits >> 18) & 1;
+            // map==3 never appears in either sys/ubin/promh.mcr or sys/ucadr/promh.mcr's
+            // real microcode (only 0/1/2 do) -- this arm is verified against
+            // usim/uexec.c's logic, not against real usage.
             dispAddr |= map switch { 1 => bit18, 2 => bit19, 3 => bit18 | bit19, _ => 0 };
         }
 
@@ -621,6 +626,10 @@ public class UCode
         uint target = dispWord & 0x3FFF;
         bool n = ((dispWord >> 14) & 1) != 0, p = ((dispWord >> 15) & 1) != 0, r = ((dispWord >> 16) & 1) != 0;
 
+        // Unmasked decrement, matching C's raw npc-- on a uint32_t. If Npc is ever 0
+        // here (not reachable from real microcode), this underflows to uint.MaxValue
+        // and the next Prom/IMem access throws IndexOutOfRangeException where C would
+        // silently read out of bounds -- expected/faithful, not a new bug.
         if (Ir(25, 1) != 0 && n) Npc--;
         if (Ir(24, 1) != 0) AdvanceLc(0);
         if (n) Inhibit = true;
@@ -629,6 +638,9 @@ public class UCode
         if (p) { if (!n) PushSpc(Npc); else PushSpc(Npc - 1); }
         if (r)
         {
+            // Same pop+AdvanceLc+mask fragment as Jmp() and Step()'s popj block below --
+            // intentional, faithful triplication matching usim/uexec.c's own repetition;
+            // do not unify (each site's surrounding control flow differs).
             target = PopSpc();
             if ((target >> 14 & 1) != 0) target = AdvanceLc(target);
             target &= 0x3FFF;
