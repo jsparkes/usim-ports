@@ -24,6 +24,7 @@ public static class UCodeDispatchTests
         if (TestNPlus1EnableIshInhibitEarlyReturn()) passed++; else failed++;
         if (TestPushOnly()) passed++; else failed++;
         if (TestPopOnly()) passed++; else failed++;
+        if (TestNonZeroLenMaskMerge()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -289,6 +290,43 @@ public static class UCodeDispatchTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Dsp pop-only tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestNonZeroLenMaskMerge()
+    {
+        Console.WriteLine("Test: Dsp() len>0 merges MData bits into dispAddr via the mask (not just map bits)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // P0 = 0x100000000060: Op(Ir 43,2)=2 (Dispatch), len(Ir 5,3)=3,
+            // pos(Ir 0,5)=0, selector(Ir 10,2)=0 (plain pos path, not
+            // DMEM-write/byte-mode), map(Ir 8,2)=0, dispAddr base(Ir 12,11)=0,
+            // enable_ish/n_plus1 both 0. len=3 -> leftMaskIndex=2 -> mask=0b111.
+            ucode.P0 = 0x100000000060UL;
+            ucode.MData = 0b101; // 5; after mask 0b111 contributes dispAddr=5
+
+            // DMem[0] stays default-zero (Init()) so a broken mask (merging
+            // nothing) would land here and read a wrong, distinguishable
+            // result. DMem[5] is the correct target: dispWord=0x123 with
+            // n=p=r=0 (bits 14/15/16 clear), so target=0x123 falls straight
+            // through to Npc.
+            ucode.DMem[5] = 0x123;
+
+            ucode.Npc = 0;
+            ucode.CallDsp();
+
+            Assert(ucode.Npc == 0x123, "len>0 mask merges MData into dispAddr, selecting DMem[5]");
+
+            Console.WriteLine("  Non-zero-len mask merge test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Non-zero-len mask merge test failed: {ex.Message}\n");
             return false;
         }
     }
