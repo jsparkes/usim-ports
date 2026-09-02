@@ -50,27 +50,34 @@ public static class UCodeFetchDecodeTests
             var ucode = new UCode();
             ucode.Init();
             ucode.PromEnabledFlag = true;
-            ucode.Prom[0] = 0x1111_2222_3333UL;
-            ucode.Prom[1] = 0x4444_5555_6666UL;
+            // Op field (bits 43-44) is forced to 3 (Byte instructions) in both
+            // words — Byt() is the one instruction class still stubbed as of
+            // Phase 6 (Alu()/Jmp()/Dsp() are all real now), so Step()'s
+            // dispatch reliably throws NotImplementedException regardless of
+            // the rest of these otherwise-arbitrary bit patterns. Phase 7
+            // (Byte instructions) will need to revisit this test again once
+            // Byt() stops throwing, the same way Phase 6 just did.
+            ucode.Prom[0] = 0x1911_2222_3333UL;
+            ucode.Prom[1] = 0x5c44_5555_6666UL;
             ucode.Npc = 0;
 
             // First Step(): IncNpc moves the (empty) P1 into P0, then
             // prefetches Prom[0] into P1 for next time; Npc advances to 1.
             // Step() always decodes+dispatches P0 after IncNpc (even on this
             // priming cycle, where P0 is still the initial empty value,
-            // decoding as Op=0/ALU). Alu() and Jmp() are now fully
-            // implemented (Phases 2 and 3), but an all-zero P0 dispatches
-            // ALU code 0 (SETZ), whose WriteDest call reaches the
-            // still-stubbed MfWrite (Phase 4's job) — so this still throws
-            // NotImplementedException, just from a deeper call site than
-            // before. IncNpc's pipeline update happens before the dispatch,
-            // so the exception is swallowed to check it.
+            // decoding as Op=0/ALU). Alu() is fully implemented (Phase 2) and
+            // never throws, so this first call's dispatch completes silently.
+            // IncNpc's pipeline update happens before the dispatch either way.
             try { ucode.Step(); } catch (NotImplementedException) { /* expected: dispatch stub */ }
             Assert(ucode.P0 == 0, "first Step(): P0 is still the initial (empty) P1");
             Assert(ucode.P1 == ucode.Prom[0], "first Step(): P1 prefetched Prom[0]");
             Assert(ucode.Npc == 1, "first Step(): Npc advanced to 1");
 
             // Second Step(): P1 (Prom[0]) becomes P0; P1 prefetches Prom[1].
+            // P0 is now Prom[0], which decodes as Op=3 (Byte instructions) —
+            // still stubbed, so this throws NotImplementedException from
+            // Byt() itself. IncNpc's pipeline update happens before the
+            // dispatch, so the exception is swallowed to check it.
             try { ucode.Step(); } catch (NotImplementedException) { /* expected: dispatch stub */ }
             Assert(ucode.P0 == ucode.Prom[0], "second Step(): P0 is now Prom[0]");
             Assert(ucode.P1 == ucode.Prom[1], "second Step(): P1 prefetched Prom[1]");
