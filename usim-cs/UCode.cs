@@ -585,10 +585,65 @@ public class UCode
     /// </summary>
     internal void CallJmp() => Jmp();
 
+    /// <summary>
+    /// Faithful port of dsp() (usim/uexec.c:740-854). Independently re-verified
+    /// field-by-field against the real C during Phase 6 planning -- no bugs
+    /// found (unlike Phases 2/4/5/5B, which each had at least one). Shares
+    /// PushSpc/PopSpc/AdvanceLc/Inhibit/Popj machinery with Jmp() (Phase 3).
+    /// </summary>
     private void Dsp()
     {
-        throw new NotImplementedException("Dsp is implemented in Phase 6 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+        uint dispAddr = (uint)Ir(12, 11);
+        if (Ir(10, 2) == 2) { DMem[dispAddr] = (uint)AData; return; }
+
+        int pos = (int)Ir(0, 5);
+        if (Ir(10, 2) == 3) pos = LcByteMode();
+
+        MData = (int)Rol32((uint)MData, pos);
+
+        int len = (int)Ir(5, 3);
+        int leftMaskIndex = (len - 1) & 0x1F;
+        int mask = len == 0 ? 0 : unchecked((int)(~0u >> (31 - leftMaskIndex)));
+        dispAddr |= (uint)MData & (uint)mask;
+
+        uint map = (uint)Ir(8, 2);
+        if (map != 0)
+        {
+            Uvmem.Vtop(MdReg, out _, out uint l2MapBits, out _, out _, out _);
+            uint bit19 = (l2MapBits >> 19) & 1, bit18 = (l2MapBits >> 18) & 1;
+            dispAddr |= map switch { 1 => bit18, 2 => bit19, 3 => bit18 | bit19, _ => 0 };
+        }
+
+        dispAddr &= 0x7FF;
+        uint dispWord = DMem[dispAddr];
+        DispatchConstant = (uint)Ir(32, 10);
+
+        uint target = dispWord & 0x3FFF;
+        bool n = ((dispWord >> 14) & 1) != 0, p = ((dispWord >> 15) & 1) != 0, r = ((dispWord >> 16) & 1) != 0;
+
+        if (Ir(25, 1) != 0 && n) Npc--;
+        if (Ir(24, 1) != 0) AdvanceLc(0);
+        if (n) Inhibit = true;
+        if (p && r) return;
+
+        if (p) { if (!n) PushSpc(Npc); else PushSpc(Npc - 1); }
+        if (r)
+        {
+            target = PopSpc();
+            if ((target >> 14 & 1) != 0) target = AdvanceLc(target);
+            target &= 0x3FFF;
+        }
+        Npc = target;
+        Popj = false;
     }
+
+    /// <summary>
+    /// Test-only forwarding wrapper: Dsp() stays private (matching Alu()/Jmp()'s
+    /// existing visibility), but UCodeDispatchTests needs to exercise its many
+    /// branch combinations directly. Matches the CallJmp()/CallVm() precedent
+    /// from Phases 3 and 5.
+    /// </summary>
+    internal void CallDsp() => Dsp();
 
     private void Byt()
     {
