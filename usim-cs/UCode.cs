@@ -838,46 +838,75 @@ public class UCode
     }
 
     /// <summary>
-    /// Set interrupt status register
+    /// Faithful port of set_interrupt_status_reg() (usim/ucode.c:117-123).
+    /// Pending is gated on mask 0xC000 (0140000 octal): bit 15
+    /// (0x8000, Unibus interrupt accepted) OR bit 14 (0x4000, Xbus
+    /// interrupt) -- NOT any nonzero value, which the prior version
+    /// incorrectly used.
     /// </summary>
     public void SetInterruptStatusReg(int newValue)
     {
         InterruptStatusReg = newValue;
-        InterruptPendingFlag = (newValue != 0);
+        InterruptPendingFlag = (newValue & 0xC000) != 0;
     }
 
     /// <summary>
-    /// Assert Unibus interrupt
+    /// Faithful port of assert_unibus_interrupt() (usim/ucode.c:125-154).
+    /// Gated on bit 10 (0x400, 02000 octal: "Enable Unibus Interrupts").
+    /// When enabled, clears the existing vector field (bits 2-9, 0x3FC =
+    /// 01774 octal), sets the accepted bit (0x8000, 0100000 octal), and
+    /// ORs in the new vector masked to that same field. A no-op when
+    /// disabled -- the prior version unconditionally OR'd in
+    /// `1 &lt;&lt; level` and force-set pending, matching neither the gate
+    /// nor the real vector-field semantics.
     /// </summary>
-    public void AssertUnibusInterrupt(int level)
+    public void AssertUnibusInterrupt(int vector)
     {
-        InterruptStatusReg |= (1 << level);
-        InterruptPendingFlag = true;
+        if ((InterruptStatusReg & 0x400) != 0)
+        {
+            SetInterruptStatusReg((InterruptStatusReg & ~0x3FC) | 0x8000 | (vector & 0x3FC));
+        }
     }
 
     /// <summary>
-    /// Deassert Unibus interrupt
+    /// Faithful port of deassert_unibus_interrupt() (usim/ucode.c:156-165).
+    /// Gated on bit 15 (0x8000, "Unibus interrupt accepted"); when set,
+    /// clears only the vector field (0x3FC) and the accepted bit (0x8000)
+    /// -- the prior version unconditionally zeroed the ENTIRE register
+    /// (also wiping the unrelated enable/Xbus bits) with no gate at all.
     /// </summary>
     public void DeassertUnibusInterrupt()
     {
-        InterruptStatusReg = 0;
-        InterruptPendingFlag = false;
+        if ((InterruptStatusReg & 0x8000) != 0)
+        {
+            SetInterruptStatusReg(InterruptStatusReg & ~(0x3FC | 0x8000));
+        }
     }
 
     /// <summary>
-    /// Assert Xbus interrupt
+    /// Faithful port of assert_xbus_interrupt() (usim/ucode.c:167-176).
+    /// Unconditionally ORs in bit 14 (0x4000, 040000 octal, "Xbus
+    /// Interrupt") through SetInterruptStatusReg -- the prior version
+    /// never touched InterruptStatusReg at all, only forcing the pending
+    /// flag directly, bypassing the real register/mask relationship.
     /// </summary>
     public void AssertXbusInterrupt()
     {
-        InterruptPendingFlag = true;
+        SetInterruptStatusReg(InterruptStatusReg | 0x4000);
     }
 
     /// <summary>
-    /// Deassert Xbus interrupt
+    /// Faithful port of deassert_xbus_interrupt() (usim/ucode.c:178-187).
+    /// Gated on bit 14 (0x4000); when set, clears only that bit -- the
+    /// prior version unconditionally forced pending false with no gate
+    /// and never touched InterruptStatusReg.
     /// </summary>
     public void DeassertXbusInterrupt()
     {
-        InterruptPendingFlag = false;
+        if ((InterruptStatusReg & 0x4000) != 0)
+        {
+            SetInterruptStatusReg(InterruptStatusReg & ~0x4000);
+        }
     }
 
     #region ALU Operations
