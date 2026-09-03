@@ -89,6 +89,16 @@ public static class Disassembler
         return $"[JUMP target={target:X4} flags={flags} cond={cond} raw=0x{instruction:X12}]";
     }
 
+    /// <summary>
+    /// Best-effort symbolic hint only: looks up disp_const (Ir(32,10)) in
+    /// DefMics, but this is NOT a guaranteed-correct resolution of what
+    /// the real dispatch instruction actually calls -- that requires the
+    /// runtime DMem (dispatch-memory) table content, which a static
+    /// ulong-instruction-to-string function has no access to. disp_const
+    /// is a plausible, honestly-labeled proxy, not a certainty; the raw
+    /// numeric value is always shown alongside any resolved name so
+    /// nothing is hidden behind an assumed lookup.
+    /// </summary>
     private static string DisassembleDispatch(ulong instruction)
     {
         uint dispAddr = (uint)Ir(instruction, 12, 11);
