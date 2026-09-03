@@ -287,6 +287,9 @@ public class MachineControl
         // A/M/I/D-memory operand names in Disassembler output when
         // present. Both files live under sys/ubin/ and share the same
         // type-dimensioned symbol table.
+        // NOTE: both files are merged into ONE Disassembler.Symbols table here,
+        // a known simplification -- see Disassembler.Symbols's doc comment for
+        // why, and when this would need to be split into two tables.
         string promSymFile = Path.Combine(UsimState.SysDirectory, "ubin", "promh.sym");
         if (File.Exists(promSymFile))
         {

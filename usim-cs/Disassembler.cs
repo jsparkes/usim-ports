@@ -15,6 +15,17 @@ public static class Disassembler
     /// Null until loaded. Established here so MachineControl has
     /// somewhere to assign the loaded table; consumed by a later phase
     /// to resolve symbolic A/M/I/D-memory operand names.
+    ///
+    /// The real C (usim/ucode.c, usim/usim.c) keeps sym_prom and sym_mcr as
+    /// two separate tables, selected by a pc_imem/promdisabled flag -- this
+    /// port merges both promh.sym and ucadr.sym into ONE table here, since
+    /// every current call site (MicrocodeDebugger.cs's two DisassembleInst2
+    /// callers) always passes pcImem=true (always wants mcr/ucadr
+    /// semantics), and no helper yet threads pcImem into symbol lookup at
+    /// all. If a pcImem=false (PROM) lookup path is ever added, or if
+    /// promh.sym and ucadr.sym ever define colliding (type,value) keys with
+    /// different intended names, this merge must be split into two tables
+    /// selected by pcImem.
     /// </summary>
     public static SymbolTable? Symbols { get; set; }
 
