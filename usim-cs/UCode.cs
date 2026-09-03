@@ -657,10 +657,48 @@ public class UCode
     /// </summary>
     internal void CallDsp() => Dsp();
 
+    private uint Msk(int pos)
+    {
+        int widthm1 = (int)Ir(5, 5);
+        int rightMaskIndex = pos;
+        int leftMaskIndex = (rightMaskIndex + widthm1) & 0x1F;
+        uint leftMask = unchecked((uint)(~0u >> (31 - leftMaskIndex)));
+        uint rightMask = unchecked((uint)(~0 << rightMaskIndex));
+        return leftMask & rightMask;
+    }
+
     private void Byt()
     {
-        throw new NotImplementedException("Byt is implemented in Phase 7 (see docs/superpowers/specs/2026-08-21-microcode-engine-design.md)");
+        uint dest = (uint)Ir(14, 12);
+        uint mrSrBits = (uint)Ir(12, 2);
+        int pos = (int)Ir(0, 5);
+        if (Ir(10, 2) == 3) pos = LcByteMode();
+
+        uint mask = Msk((mrSrBits & 2) != 0 ? pos : 0);
+        switch (mrSrBits)
+        {
+            case 0:
+                Out = 0;
+                break;
+            case 1: // LDB
+            case 3: // DPB
+                MData = (int)Rol32((uint)MData, pos);
+                Out = ((uint)MData & mask) | ((uint)AData & ~mask);
+                break;
+            case 2: // SEL-DEP
+                Out = ((uint)MData & mask) | ((uint)AData & ~mask);
+                break;
+        }
+        WriteDest(dest);
     }
+
+    /// <summary>
+    /// Test-only forwarding wrapper: Byt() stays private (matching
+    /// Alu()/Jmp()/Dsp()'s existing visibility), but UCodeByteTests needs to
+    /// exercise its branch combinations directly. Matches the
+    /// CallJmp()/CallDsp()/CallVm() precedent from Phases 3, 6, and 5.
+    /// </summary>
+    internal void CallByt() => Byt();
 
     /// <summary>
     /// VMA-ok state for the current cycle. Set for real by Vm() (Phase 5) from
