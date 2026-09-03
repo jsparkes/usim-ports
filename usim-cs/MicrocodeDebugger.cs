@@ -114,13 +114,7 @@ public class MicrocodeDebugger
     /// </summary>
     private void ExecuteSingleStep()
     {
-        uint pc = _uCode.Npc;
-        bool useImem = true; // Typically use IMEM
-        
-        // Check watch points before execution
         CheckWatchPoints();
-        
-        // Execute one instruction
         _uCode.Step();
     }
     

@@ -206,6 +206,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-microcode-disassembler":
+                    DisassemblerTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-machine-control":
                     MachineControlTests.RunAllTests();
                     Environment.Exit(0);
@@ -275,6 +280,7 @@ public class Program
         Console.WriteLine("  --test-microcode-dispatch Run microcode dispatch tests only");
         Console.WriteLine("  --test-microcode-byte   Run microcode byte tests only");
         Console.WriteLine("  --test-microcode-interrupt Run microcode interrupt tests only");
+        Console.WriteLine("  --test-microcode-disassembler Run microcode disassembler tests only");
         Console.WriteLine("  --test-machine-control  Run MachineControl wiring tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
@@ -558,6 +564,11 @@ public class Program
         // Run MachineControl wiring tests
         Console.WriteLine("Running MachineControl Tests...\n");
         MachineControlTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run microcode disassembler tests
+        Console.WriteLine("Running Microcode Disassembler Tests...\n");
+        DisassemblerTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");
