@@ -150,7 +150,7 @@ public class DebugCommands
         for (int i = 0; i < count; i++)
         {
             _perfCounter.Start("step");
-            _machine.UCode.Step();
+            _machine.Step();
             _perfCounter.Stop("step");
 
             Console.WriteLine($"PC: 0x{_machine.UCode.Npc:X4}");

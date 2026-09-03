@@ -41,7 +41,12 @@ public class MachineControl
     public bool IsRunning => State == PowerState.Running;
     public bool IsStopped { get; private set; }
     private bool _stopRequested;
-    
+
+    // Microcycles run per display-tick/batch before checking Halted again.
+    // A performance-tuning knob, not a faithfulness question -- the real
+    // ucode_run() is a tight loop with no display pump at all.
+    private const int StepsPerTick = 10000;
+
     // Components
     public MainMemory Memory { get; private set; }
     public DiskController DiskController { get; private set; }
@@ -91,7 +96,7 @@ public class MachineControl
             return;
         }
 
-        DisplayBackend = new WpfBackend(Display, Keyboard, Mouse, onTick: () => { })
+        DisplayBackend = new WpfBackend(Display, Keyboard, Mouse, onTick: RunMicrocodeBatch)
         {
             AllowResize = allowResize,
             Scale = scale,
@@ -300,30 +305,39 @@ public class MachineControl
         }
         else
         {
-            // stepsPerTick is a performance-tuning knob (how many
-            // microcycles run between each display refresh/Halted check),
-            // not a faithfulness question -- the real ucode_run() is a
-            // tight `while (!halted) uexec_step();` loop with no display
-            // pump at all. 10000 is a starting point, adjustable later.
-            const int stepsPerTick = 10000;
             while (State == PowerState.Running && !_stopRequested)
             {
-                for (int i = 0; i < stepsPerTick && !UCode.Halted; i++)
-                {
-                    UCode.Step();
-                }
-                if (UCode.Halted)
-                {
-                    State = PowerState.Halted;
-                    Halted?.Invoke();
-                    break;
-                }
+                RunMicrocodeBatch();
+                if (State != PowerState.Running) break; // halted mid-batch, via Halt()
                 Display.Update();
                 System.Threading.Thread.Sleep(16);
             }
         }
 
         Console.WriteLine("Exiting main run loop");
+    }
+
+    /// <summary>
+    /// Runs one batch of microcycles and routes through Halt() if
+    /// UCode.Halted becomes true. This is the real "Halted consumer":
+    /// both the GUI path (via WpfBackend's onTick) and the headless
+    /// Run() loop call this, instead of each duplicating Halt()'s side
+    /// effects (StopTime, the Halted event, UsimState.AutoPowerOff)
+    /// inline and inconsistently.
+    /// </summary>
+    private void RunMicrocodeBatch()
+    {
+        if (State != PowerState.Running) return;
+
+        for (int i = 0; i < StepsPerTick && !UCode.Halted; i++)
+        {
+            UCode.Step();
+        }
+
+        if (UCode.Halted)
+        {
+            Halt("microcode halted");
+        }
     }
 
     /// <summary>
@@ -342,8 +356,7 @@ public class MachineControl
 
         if (UCode.Halted && State != PowerState.Halted)
         {
-            State = PowerState.Halted;
-            Halted?.Invoke();
+            Halt("microcode halted");
         }
     }
     

@@ -106,10 +106,17 @@ public static class UCodeInterruptTests
             var ucode = new UCode();
             ucode.Init();
 
-            // No-op case: accepted bit (0x8000) clear.
-            ucode.SetInterruptStatusReg(0x400); // enable bit only
+            // No-op case: accepted bit (0x8000) clear. Use 0x4400 (enable
+            // bit 0x400 | Xbus bit 0x4000) rather than bare 0x400 so
+            // InterruptPendingFlag is pre-set true (0x4000 is in the
+            // 0xC000 pending mask) while the accepted bit (0x8000) stays
+            // clear -- proving the no-op path leaves InterruptPendingFlag
+            // UNCHANGED, not reset to false, matching the pattern already
+            // used in TestAssertUnibusInterruptGatedByEnableBit's no-op case.
+            ucode.SetInterruptStatusReg(0x4400);
             ucode.DeassertUnibusInterrupt();
-            Assert(ucode.InterruptStatusReg == 0x400, "no-op: status untouched when 0x8000 clear");
+            Assert(ucode.InterruptStatusReg == 0x4400, "no-op: status untouched when 0x8000 clear");
+            Assert(ucode.InterruptPendingFlag == true, "no-op: InterruptPendingFlag untouched (still true from before)");
 
             // Fires case: status has accepted(0x8000) + vector(0x3FC) + enable(0x400).
             // Real C: set_interrupt_status_reg(status & ~(01774 | 0100000))
@@ -162,10 +169,17 @@ public static class UCodeInterruptTests
             var ucode = new UCode();
             ucode.Init();
 
-            // No-op case: bit 0x4000 clear.
-            ucode.SetInterruptStatusReg(0x400);
+            // No-op case: bit 0x4000 clear. Use 0x8400 (enable bit 0x400 |
+            // Unibus-accepted bit 0x8000) rather than bare 0x400 so
+            // InterruptPendingFlag is pre-set true (0x8000 is in the
+            // 0xC000 pending mask) while bit 0x4000 stays clear -- proving
+            // the no-op path leaves InterruptPendingFlag UNCHANGED, not
+            // reset to false, matching the pattern already used in
+            // TestAssertUnibusInterruptGatedByEnableBit's no-op case.
+            ucode.SetInterruptStatusReg(0x8400);
             ucode.DeassertXbusInterrupt();
-            Assert(ucode.InterruptStatusReg == 0x400, "no-op: status untouched when 0x4000 clear");
+            Assert(ucode.InterruptStatusReg == 0x8400, "no-op: status untouched when 0x4000 clear");
+            Assert(ucode.InterruptPendingFlag == true, "no-op: InterruptPendingFlag untouched (still true from before)");
 
             // Fires case: bit 0x4000 set alongside 0x400.
             var ucode2 = new UCode();

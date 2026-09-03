@@ -115,6 +115,10 @@ public class MicrocodeDebugger
     private void ExecuteSingleStep()
     {
         CheckWatchPoints();
+        // This debugger holds only a UCode reference (no MachineControl),
+        // so this single-instruction step intentionally does not
+        // participate in MachineControl's Halted/State/Halt() bookkeeping
+        // -- it is a narrower, lower-level tool.
         _uCode.Step();
     }
     

@@ -11,18 +11,11 @@ public static class Disassembler
 {
     private static ulong Ir(ulong word, int pos, int len) => (word >> pos) & ((1UL << len) - 1);
 
-    // LogiOps real names (UCode.cs LogiOps(), codes 0-15).
-    private static readonly string[] LogicOpNames =
-    {
-        "SETZ", "AND", "ANDCA", "SETM", "ANDCM", "SETA", "XOR", "IOR",
-        "NOR", "EQV", "SETCA", "ORCA", "SETCM", "ORCM", "ORCB", "SETO"
-    };
-
     public static string DisassemblePC(uint pc) => DisassemblePC2(pc, false);
 
     public static string DisassemblePC2(uint pc, bool pcImem)
     {
-        return $"[PC {pc:X4} ({(pcImem ? "IMEM" : "PROM")})]";
+        return $"[PC {pc:X4} ({(pcImem ? "IMEM" : "PROM")}) -- no instruction word available to this overload; use DisassembleInst2]";
     }
 
     public static string DisassembleInst(ulong instruction) => DisassembleInst2(instruction, false);
@@ -47,15 +40,20 @@ public static class Disassembler
         uint dest = (uint)Ir(instruction, 14, 12);
         uint aluop = (uint)Ir(instruction, 3, 6);
 
+        // Real mnemonics ported from usim/udiss.c:308-412's alu_desc() --
+        // verified against that file directly. Case 5 (SETA) prints NO
+        // mnemonic at all in the real disassembler either (not a gap).
+        // Unnamed codes fall back to "ALU-FUNCTION-<octal>", matching
+        // udiss.c's own "ALU-FUNCTION-%o" (octal, not decimal).
         string opName = aluop switch
         {
-            <= 15 => LogicOpNames[aluop],
-            >= 16 and <= 31 => $"ARITH-{Convert.ToString(aluop, 8)}", // usim/uexec.c's arith_ops() names only a couple of these (SUB=026, ADD=031) -- most are genuinely unnamed in the real source
-            32 => "MULTIPLY-STEP",
-            33 => "DIVIDE-STEP",
-            37 => "REMAINDER-CORRECTION",
-            41 => "INITIAL-DIVIDE-STEP",
-            _ => $"ALU-{aluop}",
+            0 => "SETZ", 1 => "AND", 2 => "ANDCA", 3 => "SETM", 4 => "ANDCM",
+            5 => "", 6 => "XOR", 7 => "IOR", 8 => "ANDCB", 9 => "EQV",
+            10 => "SETCA", 11 => "ORCA", 12 => "SETCM", 13 => "ORCM",
+            14 => "ORCB", 15 => "SETO",
+            22 => "SUB", 25 => "ADD", 28 => "INCM", 31 => "LSHM",
+            32 => "MUL", 33 => "DIV", 37 => "DIVRC", 41 => "DIVFS",
+            _ => $"ALU-FUNCTION-{Convert.ToString((int)aluop, 8)}",
         };
 
         return $"[ALU {opName} dest={dest:X3} raw=0x{instruction:X12}]";
@@ -86,29 +84,38 @@ public static class Disassembler
             };
         }
 
-        return $"[JUMP target={target:X4} flags={flags} cond={cond} raw=0x{instruction:X12}]";
+        uint mf = (uint)Ir(instruction, 10, 2);
+        string mfStr = mf == 0 ? "" : $" MF-{Convert.ToString((int)mf, 8)}";
+
+        return $"[JUMP target={target:X4} flags={flags} cond={cond}{mfStr} raw=0x{instruction:X12}]";
     }
 
-    /// <summary>
-    /// Best-effort symbolic hint only: looks up disp_const (Ir(32,10)) in
-    /// DefMics, but this is NOT a guaranteed-correct resolution of what
-    /// the real dispatch instruction actually calls -- that requires the
-    /// runtime DMem (dispatch-memory) table content, which a static
-    /// ulong-instruction-to-string function has no access to. disp_const
-    /// is a plausible, honestly-labeled proxy, not a certainty; the raw
-    /// numeric value is always shown alongside any resolved name so
-    /// nothing is hidden behind an assumed lookup.
-    /// </summary>
     private static string DisassembleDispatch(ulong instruction)
     {
         uint dispAddr = (uint)Ir(instruction, 12, 11);
         uint map = (uint)Ir(instruction, 8, 2);
-        uint sel = (uint)Ir(instruction, 10, 2);
         uint dispConst = (uint)Ir(instruction, 32, 10);
 
-        string dispConstStr = DefMics.Lookup((int)dispConst) is string name ? $"{dispConst}[{name}]" : dispConst.ToString();
+        // Real names ported from usim/udiss.c:632-645's dsp_desc().
+        string mapStr = map switch
+        {
+            1 => " MAP-14",
+            2 => " MAP-15",
+            3 => " MAP-BOTH-14-AND-15",
+            _ => "",
+        };
+        uint mf = (uint)Ir(instruction, 10, 2); // Ir(10,2) -- was already extracted as "sel" in this method; reuse that local instead of re-declaring if it already exists under that name
+        string mfStr = mf == 0 ? "" : $" MF-{Convert.ToString((int)mf, 8)}";
 
-        return $"[DISPATCH addr={dispAddr:X3} map={map} sel={sel} const={dispConstStr} raw=0x{instruction:X12}]";
+        // disp_const is NOT a defmics[]-style function number -- see
+        // usim/udiss.c:600-606's dsp_const_desc(), which prints this
+        // field as a plain address/NUMBER. defmics[] is used only by
+        // usim/unfasl*.c (macrocode FASL decoding), never by the
+        // microcode disassembler -- DefMics.cs is kept for a possible
+        // future unfasl port, not wired into live disassembly output.
+        string dispConstStr = dispConst == 0 ? "" : $" ({Convert.ToString((int)dispConst, 8)})";
+
+        return $"[DISPATCH addr={dispAddr:X3}{mapStr}{mfStr}{dispConstStr} raw=0x{instruction:X12}]";
     }
 
     private static string DisassembleByte(ulong instruction)
@@ -117,17 +124,19 @@ public static class Disassembler
         uint mrSrBits = (uint)Ir(instruction, 12, 2);
         uint widthm1 = (uint)Ir(instruction, 5, 5);
         uint pos = (uint)Ir(instruction, 0, 5);
-        bool byteMode = Ir(instruction, 10, 2) == 3;
 
+        // Real mnemonics ported from usim/udiss.c:664-706's byt_desc().
         string opName = mrSrBits switch
         {
-            0 => "NONE",
             1 => "LDB",
-            2 => "SEL-DEP",
+            2 => "SELECTIVE-DEPOSIT",
             3 => "DPB",
-            _ => "UNKNOWN",
+            _ => "BYTE-OPERATION-0",
         };
 
-        return $"[BYTE {opName} dest={dest:X3} width={widthm1 + 1} pos={pos}{(byteMode ? " byte-mode" : "")} raw=0x{instruction:X12}]";
+        uint mf = (uint)Ir(instruction, 10, 2);
+        string mfStr = mf == 0 ? "" : $" MF-{Convert.ToString((int)mf, 8)}";
+
+        return $"[BYTE {opName} dest={dest:X3} width={widthm1 + 1} pos={pos}{mfStr} raw=0x{instruction:X12}]";
     }
 }

@@ -15,8 +15,9 @@ public static class DisassemblerTests
         int failed = 0;
 
         if (TestAluInstructionNamesLogicOp()) passed++; else failed++;
+        if (TestAluRealArithmeticMnemonics()) passed++; else failed++;
         if (TestJumpInstructionDecodesTargetAndFlags()) passed++; else failed++;
-        if (TestDispatchInstructionDecodesFieldsAndDefMicsLookup()) passed++; else failed++;
+        if (TestDispatchInstructionDecodesFieldsAndMapNaming()) passed++; else failed++;
         if (TestByteInstructionNamesMrSrBits()) passed++; else failed++;
         if (TestDefMicsLookupKnownAndUnknownValues()) passed++; else failed++;
 
@@ -48,6 +49,35 @@ public static class DisassemblerTests
         }
     }
 
+    private static bool TestAluRealArithmeticMnemonics()
+    {
+        Console.WriteLine("Test: ALU arithmetic ops use real usim/udiss.c mnemonics (SUB/ADD), not invented placeholder names");
+        try
+        {
+            // aluop(Ir 3,6)=22 -> SUB; aluop=25 -> ADD. These are the two
+            // most common real arithmetic ops (1233+752 of 5458 real ALU
+            // instructions in sys/ubin/ucadr.mcr use exactly these two).
+            ulong subInstruction = 22UL << 3;
+            ulong addInstruction = 25UL << 3;
+
+            string subResult = Disassembler.DisassembleInst2(subInstruction, false);
+            string addResult = Disassembler.DisassembleInst2(addInstruction, false);
+
+            Assert(subResult.Contains("SUB"), $"aluop=22 names SUB, not a placeholder: {subResult}");
+            Assert(!subResult.Contains("ARITH"), $"aluop=22 does not use the old invented ARITH-* placeholder: {subResult}");
+            Assert(addResult.Contains("ADD"), $"aluop=25 names ADD, not a placeholder: {addResult}");
+            Assert(!addResult.Contains("ARITH"), $"aluop=25 does not use the old invented ARITH-* placeholder: {addResult}");
+
+            Console.WriteLine("  ALU real-arithmetic-mnemonics test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ALU real-arithmetic-mnemonics test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
     private static bool TestJumpInstructionDecodesTargetAndFlags()
     {
         Console.WriteLine("Test: JUMP instruction (Op=1) decodes target and p/r/n flags");
@@ -74,26 +104,31 @@ public static class DisassemblerTests
         }
     }
 
-    private static bool TestDispatchInstructionDecodesFieldsAndDefMicsLookup()
+    private static bool TestDispatchInstructionDecodesFieldsAndMapNaming()
     {
-        Console.WriteLine("Test: DISPATCH instruction (Op=2) decodes dispAddr/map and looks up disp_const in DefMics");
+        Console.WriteLine("Test: DISPATCH instruction (Op=2) decodes dispAddr/map with real names, and prints disp_const as a plain octal number, not a DefMics lookup");
         try
         {
-            // Op(Ir 43,2)=2, dispAddr(Ir 12,11)=7, disp_const(Ir 32,10)=162
-            // (0x92 << 32 -- 162 decimal is (CAR . M-CAR) in the real
-            // defmics[] table, per Step 1's spot-check).
-            ulong instruction = (2UL << 43) | (7UL << 12) | (162UL << 32);
+            // Op(Ir 43,2)=2, dispAddr(Ir 12,11)=7, map(Ir 8,2)=1 (MAP-14),
+            // disp_const(Ir 32,10)=162 (162 decimal = 242 octal). Real-
+            // microcode calibration (Phase 8's final review) found
+            // disp_const is NOT a defmics[]-style function number --
+            // usim/udiss.c's dsp_const_desc() prints it as a plain
+            // address/NUMBER.
+            ulong instruction = (2UL << 43) | (7UL << 12) | (1UL << 8) | (162UL << 32);
             string result = Disassembler.DisassembleInst2(instruction, false);
 
             Assert(result.Contains("DISPATCH"), $"result mentions DISPATCH class: {result}");
-            Assert(result.Contains("(CAR . M-CAR)"), $"result looks up disp_const=162 in DefMics and finds the real name: {result}");
+            Assert(result.Contains("MAP-14"), $"result names map=1 as MAP-14 (usim/udiss.c real name): {result}");
+            Assert(result.Contains("(242)"), $"result prints disp_const as plain octal 242, not a DefMics name: {result}");
+            Assert(!result.Contains("CAR"), $"result does NOT perform a DefMics lookup on disp_const: {result}");
 
-            Console.WriteLine("  DISPATCH field-decode and DefMics-lookup test passed\n");
+            Console.WriteLine("  DISPATCH field-decode and real-naming test passed\n");
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  DISPATCH field-decode and DefMics-lookup test failed: {ex.Message}\n");
+            Console.WriteLine($"  DISPATCH field-decode and real-naming test failed: {ex.Message}\n");
             return false;
         }
     }

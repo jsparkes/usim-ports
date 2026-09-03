@@ -7,8 +7,12 @@ using System.IO;
 namespace Usim;
 
 /// <summary>
-/// Main memory system for CADR simulator
-/// Handles virtual memory, paging, and physical memory management
+/// Main memory system for CADR simulator.
+/// Flat physical memory (Read/Write and their ReadPhysical/WritePhysical
+/// primitives) -- the invented virtual-paging/TranslateAddress scheme
+/// this class used to implement was retired once Task 2 confirmed no
+/// real consumer needed it; virtual-address translation is now handled
+/// faithfully elsewhere, by UCode.Vm() via Uvmem's L1/L2 map.
 /// </summary>
 public class MainMemory
 {
@@ -79,10 +83,11 @@ public class MainMemory
     }
 
     /// <summary>
-    /// Direct physical-memory access, bypassing this class's own (separate,
-    /// invented) virtual-paging TranslateAddress -- the caller (UCode.Vm(),
-    /// via Uvmem's faithful L1/L2 tables) has already resolved the physical
-    /// address itself.
+    /// Direct physical-memory access. The caller (UCode.Vm(), via Uvmem's
+    /// faithful L1/L2 tables) has already resolved the physical address
+    /// itself -- this class no longer performs any address translation
+    /// of its own (the invented virtual-paging TranslateAddress it used
+    /// to have was retired in Task 2; see the class-level doc comment).
     /// </summary>
     public uint ReadPhysical(uint physicalAddress) => physicalAddress < PHYSICAL_MEM_SIZE ? _physicalMemory[physicalAddress] : 0;
     public void WritePhysical(uint physicalAddress, uint value) { if (physicalAddress < PHYSICAL_MEM_SIZE) _physicalMemory[physicalAddress] = value; }

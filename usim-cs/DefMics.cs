@@ -8,6 +8,15 @@
 // has no octal literal syntax, and a naive copy-paste of the source
 // file's `0242`-style literals would silently become decimal 242
 // instead of the intended octal 162.
+//
+// NOT currently used by Disassembler.cs: real-microcode calibration
+// (Phase 8's final review) found disp_const (the DISPATCH field this
+// table was wired to) resolves 0 of 231 real candidate values through
+// this table -- usim/udiss.c's dsp_const_desc() prints disp_const as
+// a plain address/NUMBER, and defmics[] is referenced in the real C
+// only by usim/unfasl*.c (FASL-file macrocode decoding), never by the
+// microcode disassembler. This table is kept in case a future port of
+// unfasl*.c's macrocode-name resolution needs it.
 
 using System.Collections.Generic;
 

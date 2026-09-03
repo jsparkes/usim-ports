@@ -79,6 +79,7 @@ public static class MachineControlTests
 
             Assert(haltedEventFired, "MachineControl.Halted event fired when UCode.Halted was true");
             Assert(mc.State == PowerState.Halted, $"MachineControl.State transitioned to Halted (got {mc.State})");
+            Assert(mc.StopTime > DateTime.MinValue, "Halt() set StopTime (proves routing through Halt(), not a hand-duplicated inline transition)");
 
             Console.WriteLine("  Run-loop-stops-on-Halted test passed\n");
             return true;
@@ -107,6 +108,7 @@ public static class MachineControlTests
             mc.Step();
 
             Assert(mc.State == PowerState.Halted, $"MachineControl.State transitioned to Halted after Step() (got {mc.State})");
+            Assert(mc.StopTime > DateTime.MinValue, "Halt() set StopTime (proves routing through Halt(), not a hand-duplicated inline transition)");
 
             Console.WriteLine("  Single-step Halted-state-transition test passed\n");
             return true;
