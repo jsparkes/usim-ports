@@ -29,8 +29,17 @@ public class MainMemory
     public ulong ReadCount { get; private set; }
     public ulong WriteCount { get; private set; }
 
-    public MainMemory()
+    // Populated-page usage limit, matching usim/main-memory.c's
+    // main_memory_npages -- a usage limit, NOT an allocation-size limit;
+    // _physicalMemory is always allocated at the full PHYSICAL_MEM_SIZE
+    // regardless (matching the real C's static NUMBER_OF_MAX_MAIN_MEMORY_PAGES
+    // allocation). Default 8192 matches usim/ucfg.c:361's default
+    // memory.size=2048 KW x 4.
+    private readonly uint _npages;
+
+    public MainMemory(uint npages = 8192)
     {
+        _npages = npages;
         _physicalMemory = new uint[PHYSICAL_MEM_SIZE];
 
         Initialize();
@@ -83,14 +92,46 @@ public class MainMemory
     }
 
     /// <summary>
-    /// Direct physical-memory access. The caller (UCode.Vm(), via Uvmem's
-    /// faithful L1/L2 tables) has already resolved the physical address
-    /// itself -- this class no longer performs any address translation
-    /// of its own (the invented virtual-paging TranslateAddress it used
-    /// to have was retired in Task 2; see the class-level doc comment).
+    /// Direct physical-memory access, bypassing this class's own Read/Write
+    /// tracing -- the caller (UCode.Vm(), via Uvmem's faithful L1/L2 tables)
+    /// has already resolved the physical address itself. Gated on the
+    /// populated-page usage limit (_npages), matching usim/main-memory.c's
+    /// main_memory_read/write: pn = (paddr>>8)&0x3FFF; if (pn < npages) ...
+    /// else INFO-log at pn==npages ("memory probe?") or WARNING beyond.
     /// </summary>
-    public uint ReadPhysical(uint physicalAddress) => physicalAddress < PHYSICAL_MEM_SIZE ? _physicalMemory[physicalAddress] : 0;
-    public void WritePhysical(uint physicalAddress, uint value) { if (physicalAddress < PHYSICAL_MEM_SIZE) _physicalMemory[physicalAddress] = value; }
+    public uint ReadPhysical(uint physicalAddress)
+    {
+        uint pn = (physicalAddress >> PAGE_SIZE_BITS) & 0x3FFF;
+        if (pn < _npages && physicalAddress < PHYSICAL_MEM_SIZE)
+        {
+            return _physicalMemory[physicalAddress];
+        }
+        LogOutOfRangeAccess(pn, "read");
+        return 0;
+    }
+
+    public void WritePhysical(uint physicalAddress, uint value)
+    {
+        uint pn = (physicalAddress >> PAGE_SIZE_BITS) & 0x3FFF;
+        if (pn < _npages && physicalAddress < PHYSICAL_MEM_SIZE)
+        {
+            _physicalMemory[physicalAddress] = value;
+            return;
+        }
+        LogOutOfRangeAccess(pn, "write");
+    }
+
+    private void LogOutOfRangeAccess(uint pn, string kind)
+    {
+        if (pn == _npages)
+        {
+            TraceLog.Instance.Trace(TraceCategory.Memory, TraceLevel.Info, $"main-memory: {kind} from/to invalid physical page: {pn} (npages: {_npages}), memory probe?");
+        }
+        else
+        {
+            TraceLog.Instance.Trace(TraceCategory.Memory, TraceLevel.Warning, $"main-memory: {kind} from/to invalid physical page: {pn} (npages: {_npages})");
+        }
+    }
 
     /// <summary>
     /// Load memory from file

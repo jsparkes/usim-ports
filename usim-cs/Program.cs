@@ -216,6 +216,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-main-memory":
+                    MainMemoryTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--demo-execution":
                     UCodeTests.DemoInstructionExecution();
                     Environment.Exit(0);
@@ -282,6 +287,7 @@ public class Program
         Console.WriteLine("  --test-microcode-interrupt Run microcode interrupt tests only");
         Console.WriteLine("  --test-microcode-disassembler Run microcode disassembler tests only");
         Console.WriteLine("  --test-machine-control  Run MachineControl wiring tests only");
+        Console.WriteLine("  --test-main-memory      Run MainMemory tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
@@ -490,7 +496,12 @@ public class Program
     private static void RunAllTests()
     {
         Console.WriteLine("=== USIM Complete Test Suite ===\n");
-        
+
+        // Run MainMemory tests
+        Console.WriteLine("Running MainMemory Tests...\n");
+        MainMemoryTests.RunAllTests();
+        Console.WriteLine();
+
         // Run microcode tests
         Console.WriteLine("Running Microcode Tests...\n");
         UCodeTests.RunAllTests();
