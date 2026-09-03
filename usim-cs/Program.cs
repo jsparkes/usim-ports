@@ -221,6 +221,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-symbol-table":
+                    SymbolTableTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--demo-execution":
                     UCodeTests.DemoInstructionExecution();
                     Environment.Exit(0);
@@ -288,6 +293,7 @@ public class Program
         Console.WriteLine("  --test-microcode-disassembler Run microcode disassembler tests only");
         Console.WriteLine("  --test-machine-control  Run MachineControl wiring tests only");
         Console.WriteLine("  --test-main-memory      Run MainMemory tests only");
+        Console.WriteLine("  --test-symbol-table     Run SymbolTable tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
@@ -580,6 +586,11 @@ public class Program
         // Run microcode disassembler tests
         Console.WriteLine("Running Microcode Disassembler Tests...\n");
         DisassemblerTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run symbol table tests
+        Console.WriteLine("Running Symbol Table Tests...\n");
+        SymbolTableTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");

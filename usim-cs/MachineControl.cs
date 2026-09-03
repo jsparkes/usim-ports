@@ -282,7 +282,27 @@ public class MachineControl
             Console.WriteLine($"Mounting disk: {diskImage}");
             DiskController.Mount(0, diskImage);
         }
-        
+
+        // Load PROM/microcode symbols (Phase 8B): resolves symbolic
+        // A/M/I/D-memory operand names in Disassembler output when
+        // present. Both files live under sys/ubin/ and share the same
+        // type-dimensioned symbol table.
+        string promSymFile = Path.Combine(UsimState.SysDirectory, "ubin", "promh.sym");
+        if (File.Exists(promSymFile))
+        {
+            var symbols = new SymbolTable();
+            symbols.LoadFromFile(promSymFile);
+            Disassembler.Symbols = symbols;
+        }
+
+        string ucadrSymFile = Path.Combine(UsimState.SysDirectory, "ubin", "ucadr.sym");
+        if (File.Exists(ucadrSymFile))
+        {
+            var symbols = Disassembler.Symbols ?? new SymbolTable();
+            symbols.LoadFromFile(ucadrSymFile);
+            Disassembler.Symbols = symbols;
+        }
+
         Console.WriteLine("System files loaded");
     }
     

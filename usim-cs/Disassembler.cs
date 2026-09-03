@@ -9,6 +9,15 @@ namespace Usim;
 
 public static class Disassembler
 {
+    /// <summary>
+    /// PROM/microcode symbol table (Phase 8B), loaded by
+    /// MachineControl.LoadSystemFiles() when a .sym file is present.
+    /// Null until loaded. Established here so MachineControl has
+    /// somewhere to assign the loaded table; consumed by a later phase
+    /// to resolve symbolic A/M/I/D-memory operand names.
+    /// </summary>
+    public static SymbolTable? Symbols { get; set; }
+
     private static ulong Ir(ulong word, int pos, int len) => (word >> pos) & ((1UL << len) - 1);
 
     public static string DisassemblePC(uint pc) => DisassemblePC2(pc, false);
