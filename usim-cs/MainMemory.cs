@@ -18,95 +18,66 @@ public class MainMemory
     public const int PHYSICAL_PAGES = 16384;    // Total physical pages
     public const int PHYSICAL_MEM_SIZE = PHYSICAL_PAGES * PAGE_SIZE;
     
-    // Virtual memory configuration
-    public const int VIRTUAL_PAGES = 32768;     // Total virtual pages (32K)
-    public const uint MAP_BITS = 23;            // Bits for map entry
-    
     // Memory arrays
     private readonly uint[] _physicalMemory;
-    private readonly uint[] _pageMap;           // Virtual to physical mapping
-    
+
     // Statistics
     public ulong ReadCount { get; private set; }
     public ulong WriteCount { get; private set; }
-    public ulong PageFaultCount { get; private set; }
-    
+
     public MainMemory()
     {
         _physicalMemory = new uint[PHYSICAL_MEM_SIZE];
-        _pageMap = new uint[VIRTUAL_PAGES];
-        
+
         Initialize();
     }
-    
+
     /// <summary>
     /// Initialize memory system
     /// </summary>
     public void Initialize()
     {
         Array.Clear(_physicalMemory);
-        Array.Clear(_pageMap);
-        
+
         ReadCount = 0;
         WriteCount = 0;
-        PageFaultCount = 0;
-        
-        // Initialize identity mapping for lower pages
-        for (int i = 0; i < 256; i++)
-        {
-            _pageMap[i] = (uint)i;
-        }
     }
-    
+
     /// <summary>
-    /// Read word from virtual address
+    /// Read word from a physical address (thin wrapper over ReadPhysical,
+    /// kept for LoadFromFile/SaveToFile/Dump and the debug examine/deposit
+    /// commands -- the invented virtual-paging TranslateAddress this used
+    /// to go through has been retired; nothing in this codebase needs it,
+    /// and it silently misbehaved past its fake 64K-word identity-mapped
+    /// range).
     /// </summary>
-    public uint Read(uint virtualAddress)
+    public uint Read(uint physicalAddress)
     {
         ReadCount++;
-        
+
         if (TraceLog.Instance.EnabledCategories.HasFlag(TraceCategory.Memory))
         {
-            TraceLog.Instance.Verbose(TraceCategory.Memory, $"Read VA=0x{virtualAddress:X8}");
+            TraceLog.Instance.Verbose(TraceCategory.Memory, $"Read PA=0x{physicalAddress:X8}");
         }
-        
-        uint physicalAddress = TranslateAddress(virtualAddress);
-        if (physicalAddress >= PHYSICAL_MEM_SIZE)
-        {
-            Console.WriteLine($"Memory read out of bounds: VA=0x{virtualAddress:X} PA=0x{physicalAddress:X}");
-            return 0;
-        }
-        
-        return _physicalMemory[physicalAddress];
+
+        return ReadPhysical(physicalAddress);
     }
-    
+
     /// <summary>
-    /// Write word to virtual address
+    /// Write word to a physical address. See Read()'s doc comment.
     /// </summary>
-    public void Write(uint virtualAddress, uint value)
+    public void Write(uint physicalAddress, uint value)
     {
         WriteCount++;
-        
+
         if (TraceLog.Instance.EnabledCategories.HasFlag(TraceCategory.Memory))
         {
-            TraceLog.Instance.Verbose(TraceCategory.Memory, $"Write VA=0x{virtualAddress:X8} value=0x{value:X8}");
+            TraceLog.Instance.Verbose(TraceCategory.Memory, $"Write PA=0x{physicalAddress:X8} value=0x{value:X8}");
         }
-        
-        if (TraceLog.Instance.EnabledCategories.HasFlag(TraceCategory.Memory))
-        {
-            TraceLog.Instance.Verbose(TraceCategory.Memory, $"Write VA=0x{virtualAddress:X8} value=0x{value:X8}");
-        }
-        
-        uint physicalAddress = TranslateAddress(virtualAddress);
-        if (physicalAddress >= PHYSICAL_MEM_SIZE)
-        {
-            Console.WriteLine($"Memory write out of bounds: VA=0x{virtualAddress:X} PA=0x{physicalAddress:X}");
-            return;
-        }
-        
-        _physicalMemory[physicalAddress] = value;
+
+        WritePhysical(physicalAddress, value);
     }
-    
+
     /// <summary>
     /// Direct physical-memory access, bypassing this class's own (separate,
     /// invented) virtual-paging TranslateAddress -- the caller (UCode.Vm(),
@@ -116,43 +87,6 @@ public class MainMemory
     public uint ReadPhysical(uint physicalAddress) => physicalAddress < PHYSICAL_MEM_SIZE ? _physicalMemory[physicalAddress] : 0;
     public void WritePhysical(uint physicalAddress, uint value) { if (physicalAddress < PHYSICAL_MEM_SIZE) _physicalMemory[physicalAddress] = value; }
 
-    /// <summary>
-    /// Translate virtual address to physical address
-    /// </summary>
-    private uint TranslateAddress(uint virtualAddress)
-    {
-        uint page = virtualAddress >> PAGE_SIZE_BITS;
-        uint offset = virtualAddress & ((1u << PAGE_SIZE_BITS) - 1);
-        
-        if (page >= VIRTUAL_PAGES)
-        {
-            PageFaultCount++;
-            return 0; // Invalid page
-        }
-        
-        uint physicalPage = _pageMap[page] & ((1u << PAGE_SIZE_BITS) - 1);
-        return (physicalPage << PAGE_SIZE_BITS) | offset;
-    }
-    
-    /// <summary>
-    /// Set page mapping
-    /// </summary>
-    public void SetPageMap(uint virtualPage, uint physicalPage)
-    {
-        if (virtualPage < VIRTUAL_PAGES)
-        {
-            _pageMap[virtualPage] = physicalPage;
-        }
-    }
-    
-    /// <summary>
-    /// Get page mapping
-    /// </summary>
-    public uint GetPageMap(uint virtualPage)
-    {
-        return virtualPage < VIRTUAL_PAGES ? _pageMap[virtualPage] : 0;
-    }
-    
     /// <summary>
     /// Load memory from file
     /// </summary>
@@ -222,6 +156,5 @@ public class MainMemory
         Console.WriteLine("Memory Statistics:");
         Console.WriteLine($"  Reads:       {ReadCount:N0}");
         Console.WriteLine($"  Writes:      {WriteCount:N0}");
-        Console.WriteLine($"  Page Faults: {PageFaultCount:N0}");
     }
 }

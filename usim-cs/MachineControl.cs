@@ -74,8 +74,8 @@ public class MachineControl
         Mouse = new Mouse();
         Display = new Display();
         IOBus = new IOBus();
-        UCode = new UCode();
-        
+        UCode = new UCode(Memory);
+
         State = PowerState.Off;
         IsStopped = true;
     }
@@ -300,8 +300,24 @@ public class MachineControl
         }
         else
         {
+            // stepsPerTick is a performance-tuning knob (how many
+            // microcycles run between each display refresh/Halted check),
+            // not a faithfulness question -- the real ucode_run() is a
+            // tight `while (!halted) uexec_step();` loop with no display
+            // pump at all. 10000 is a starting point, adjustable later.
+            const int stepsPerTick = 10000;
             while (State == PowerState.Running && !_stopRequested)
             {
+                for (int i = 0; i < stepsPerTick && !UCode.Halted; i++)
+                {
+                    UCode.Step();
+                }
+                if (UCode.Halted)
+                {
+                    State = PowerState.Halted;
+                    Halted?.Invoke();
+                    break;
+                }
                 Display.Update();
                 System.Threading.Thread.Sleep(16);
             }
@@ -309,7 +325,7 @@ public class MachineControl
 
         Console.WriteLine("Exiting main run loop");
     }
-    
+
     /// <summary>
     /// Single step execution
     /// </summary>
@@ -320,9 +336,15 @@ public class MachineControl
             Console.WriteLine("Machine must be running or halted to step");
             return;
         }
-        
+
         // Execute one microcode instruction
         UCode.Step();
+
+        if (UCode.Halted && State != PowerState.Halted)
+        {
+            State = PowerState.Halted;
+            Halted?.Invoke();
+        }
     }
     
     /// <summary>

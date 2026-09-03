@@ -206,6 +206,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-machine-control":
+                    MachineControlTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--demo-execution":
                     UCodeTests.DemoInstructionExecution();
                     Environment.Exit(0);
@@ -270,6 +275,7 @@ public class Program
         Console.WriteLine("  --test-microcode-dispatch Run microcode dispatch tests only");
         Console.WriteLine("  --test-microcode-byte   Run microcode byte tests only");
         Console.WriteLine("  --test-microcode-interrupt Run microcode interrupt tests only");
+        Console.WriteLine("  --test-machine-control  Run MachineControl wiring tests only");
         Console.WriteLine("  --demo-execution        Demo instruction execution");
         Console.WriteLine("  --demo-tracing          Demo instruction tracing");
         Console.WriteLine("  --benchmark             Run performance benchmark");
@@ -547,6 +553,11 @@ public class Program
         // Run microcode interrupt tests
         Console.WriteLine("Running Microcode Interrupt Tests...\n");
         UCodeInterruptTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run MachineControl wiring tests
+        Console.WriteLine("Running MachineControl Tests...\n");
+        MachineControlTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");
