@@ -574,7 +574,7 @@ private uint Msk(int pos)
     int widthm1 = (int)Ir(5, 5);
     int rightMaskIndex = pos;
     int leftMaskIndex = (rightMaskIndex + widthm1) & 0x1F;
-    uint leftMask = unchecked((uint)(~0 >> (31 - leftMaskIndex)));
+    uint leftMask = ~0u >> (31 - leftMaskIndex);
     uint rightMask = unchecked((uint)(~0 << rightMaskIndex));
     return leftMask & rightMask;
 }
@@ -606,6 +606,8 @@ private void Byt()
 }
 ```
 Note the LDB/DPB distinction lives entirely in where `Msk` was built (position 0 for LDB, position `pos` for DPB via the `mrSrBits & 2` test in the mask-construction call) — both cases execute textually identical code after that point, matching the C exactly.
+
+**Verified against `usim/uexec.c:958-1017` (`msk()`/`byt()`) fresh, field by field — one bug found and fixed above.** The real `left_mask` is declared `uint32_t`, so its `>>=` is a logical (zero-filling) shift; a bare `~0` in C# is a signed `int` (value -1), and `>>` on a negative signed `int` is an *arithmetic* (sign-extending) shift, which would leave `leftMask` at `0xFFFFFFFF` for every `leftMaskIndex` — silently breaking the sliding mask. The fix (`~0u`) exactly matches the pattern `Dsp()` already uses correctly (`UCode.cs`'s `~0u >> (31 - leftMaskIndex)`) for the identical trap. `rightMask`'s `<<` has no such issue — left-shift is bit-pattern-identical for signed/unsigned `int`/`uint` in C#, so `~0 << rightMaskIndex` is fine as written. Also confirmed: unlike `Dsp()`'s `len`, `Msk()`'s `widthm1` field has no zero-is-special case in the real C (`msk()` has no such branch) — width is always `widthm1+1 ∈ [1,32]`, so none is needed here either. `Byt()`'s case 1/3 merge (both LDB and DPB execute textually identical bodies in the real C after `mask` is built at a different position) is a faithful simplification, not a deviation.
 
 ## Phase 1 (continued) — `AdvanceLc`/`LcByteMode`
 

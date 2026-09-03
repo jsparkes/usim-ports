@@ -51,12 +51,12 @@ public static class UCodeFetchDecodeTests
             ucode.Init();
             ucode.PromEnabledFlag = true;
             // Op field (bits 43-44) is forced to 3 (Byte instructions) in both
-            // words — Byt() is the one instruction class still stubbed as of
-            // Phase 6 (Alu()/Jmp()/Dsp() are all real now), so Step()'s
-            // dispatch reliably throws NotImplementedException regardless of
-            // the rest of these otherwise-arbitrary bit patterns. Phase 7
-            // (Byte instructions) will need to revisit this test again once
-            // Byt() stops throwing, the same way Phase 6 just did.
+            // words. Byt() is now real (Phase 7): this exact value decodes to
+            // dest=Ir(14,12)=0x888 (bit 11 set), so it takes WriteDest's
+            // A-memory branch (AMem[0x88] = Out), which never touches Npc/
+            // Popj -- confirming the prediction Phase 6's final review made,
+            // and this test's assertions were correctly unaffected once
+            // Byt() landed for real.
             ucode.Prom[0] = 0x1911_2222_3333UL;
             // Also has popj (bit 42) set: harmless here since Prom[1] is only ever
             // prefetched into P1 in this test and never itself promoted into P0/
@@ -78,16 +78,13 @@ public static class UCodeFetchDecodeTests
             Assert(ucode.Npc == 1, "first Step(): Npc advanced to 1");
 
             // Second Step(): P1 (Prom[0]) becomes P0; P1 prefetches Prom[1].
-            // P0 is now Prom[0], which decodes as Op=3 (Byte instructions) --
-            // still stubbed today, so this currently throws
-            // NotImplementedException from Byt() itself. What actually keeps
-            // this assertion valid isn't the throw: it's that Byt() (stubbed
-            // or, later, real) never touches Npc or Popj. Decoding this
-            // exact Prom[0] value's other fields shows a real Byt() would
-            // route to a WriteDest on an A-memory address, which doesn't
-            // touch Npc/Popj either -- so this test is expected to keep
-            // passing unchanged once Phase 7 lands, with the catch simply
-            // going dead rather than needing another revisit.
+            // P0 is now Prom[0], which decodes as Op=3 (Byte instructions).
+            // Byt() runs for real now, routing to WriteDest's A-memory branch
+            // as described above, and never touches Npc/Popj -- so the
+            // try/catch(NotImplementedException) around this Step() call is
+            // now dead code, kept only because removing it isn't worth the
+            // churn (matches the existing defensive-catch pattern already
+            // used elsewhere in this file, e.g. around line 181).
             try { ucode.Step(); } catch (NotImplementedException) { /* expected: dispatch stub */ }
             Assert(ucode.P0 == ucode.Prom[0], "second Step(): P0 is now Prom[0]");
             Assert(ucode.P1 == ucode.Prom[1], "second Step(): P1 prefetched Prom[1]");

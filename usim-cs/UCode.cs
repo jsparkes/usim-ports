@@ -662,7 +662,7 @@ public class UCode
         int widthm1 = (int)Ir(5, 5);
         int rightMaskIndex = pos;
         int leftMaskIndex = (rightMaskIndex + widthm1) & 0x1F;
-        uint leftMask = unchecked((uint)(~0u >> (31 - leftMaskIndex)));
+        uint leftMask = ~0u >> (31 - leftMaskIndex);
         uint rightMask = unchecked((uint)(~0 << rightMaskIndex));
         return leftMask & rightMask;
     }
@@ -678,6 +678,7 @@ public class UCode
         switch (mrSrBits)
         {
             case 0:
+                TraceLog.Instance.Warning(TraceCategory.MicroCode, "mr_sr_bits == 0!");
                 Out = 0;
                 break;
             case 1: // LDB

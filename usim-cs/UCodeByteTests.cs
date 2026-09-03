@@ -20,6 +20,7 @@ public static class UCodeByteTests
         if (TestSelDepMaskAtPosNoRotation()) passed++; else failed++;
         if (TestDpbMaskAtPosWithRotation()) passed++; else failed++;
         if (TestByteModePosOverride()) passed++; else failed++;
+        if (TestByteModeWithLdbRotation()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -35,6 +36,8 @@ public static class UCodeByteTests
             var ucode = new UCode();
             ucode.Init();
 
+            ucode.AMem[0] = 0xDEADBEEF; // sentinel: overwritten by WriteDest(0x800) if it runs
+
             // P0 = 0x180002000000: Op(Ir 43,2)=3 (Byte), mrSrBits(Ir 12,2)=0,
             // dest(Ir 14,12)=0x800 (bit11 set -> WriteDest routes to
             // AMem[dest&0x3FF]=AMem[0]), pos/widthm1 both 0 (irrelevant here).
@@ -45,7 +48,7 @@ public static class UCodeByteTests
             ucode.CallByt();
 
             Assert(ucode.Out == 0, "mrSrBits==0 forces Out=0, ignoring MData/AData entirely");
-            Assert(ucode.AMem[0] == 0, "WriteDest(0x800) wrote Out(0) to AMem[0]");
+            Assert(ucode.AMem[0] == 0, "WriteDest(0x800) overwrote the AMem[0] sentinel with Out(0)");
 
             Console.WriteLine("  mrSrBits==0 test passed\n");
             return true;
@@ -220,6 +223,52 @@ public static class UCodeByteTests
         catch (Exception ex)
         {
             Console.WriteLine($"  byte-mode pos-override test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestByteModeWithLdbRotation()
+    {
+        Console.WriteLine("Test: Byt() byte-mode pos override reaches Rol32() for LDB (mrSrBits=1), the combination real microcode actually uses (35x in sys/ubin/ucadr.mcr, vs. zero uses of the SEL-DEP+byte-mode combination the other byte-mode test covers)");
+        try
+        {
+            var ucode = new UCode();
+            ucode.Init();
+
+            // P0 = 0x180002001d00: Op(Ir 43,2)=3 (Byte), mrSrBits(Ir 12,2)=1
+            // (LDB), dest(Ir 14,12)=0x800, selector(Ir 10,2)=3 (triggers
+            // LcByteMode()), widthm1(Ir 5,5)=8 (width 9), raw pos(Ir 0,5)=0.
+            // With InterruptControl=0/Lc=0 (Init() defaults), LcByteMode()'s
+            // else-branch gives pos=16 (ir4=(P0>>4)&1=0, lc1=(Lc>>1)&1=0,
+            // (ir4^lc1)==0 -> bit4 of pos set -> pos=(P0&0xF=0)|(1<<4)=16).
+            // Since mrSrBits=1 (LDB), the mask is built at position 0
+            // regardless: leftMaskIndex=(0+8)&0x1F=8, mask=0x1FF.
+            ucode.P0 = 0x180002001d00UL;
+
+            // MData=0xABCD0000: rotating LEFT by pos=16 swaps the two
+            // 16-bit halves, giving rotated MData=0x0000ABCD. Masked with
+            // 0x1FF: 0xABCD & 0x1FF = 0x1CD. AData=0xFFFFFFFF proves the
+            // merge's AData contribution outside the mask window survives:
+            // Out = 0x1CD | (0xFFFFFFFF & ~0x1FF=0xFFFFFE00) = 0xFFFFFFCD.
+            ucode.MData = unchecked((int)0xABCD0000);
+            ucode.AData = unchecked((int)0xFFFFFFFF);
+
+            ucode.CallByt();
+
+            // If the byte-mode override were ignored (pos stayed at the raw
+            // Ir(0,5) value of 0), MData would never rotate, giving
+            // Out = (0xABCD0000 & 0x1FF=0)|(0xFFFFFFFF & ~0x1FF=0xFFFFFE00)
+            // = 0xFFFFFE00 -- a clean, visible discriminator from the
+            // correct 0xFFFFFFCD.
+            Assert(ucode.Out == 0xFFFFFFCD, "byte-mode pos (16, via LcByteMode()) reached Rol32() for LDB, not just Msk()");
+            Assert(ucode.AMem[0] == 0xFFFFFFCD, "WriteDest(0x800) wrote Out(0xFFFFFFCD) to AMem[0]");
+
+            Console.WriteLine("  byte-mode LDB rotation test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  byte-mode LDB rotation test failed: {ex.Message}\n");
             return false;
         }
     }
