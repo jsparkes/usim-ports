@@ -55,9 +55,149 @@ public static class Disassembler
         };
     }
 
+    /// <summary>
+    /// Faithful port of usim/udiss.c's type_field()/c_or_d_adr_out()/
+    /// a_or_m_adr_out(). NUMBER type never does a symbol lookup (plain
+    /// octal always). IMem/DMem always print something (symbol name or
+    /// plain octal). AMem/MMem print NOTHING at value 0 (elided
+    /// entirely), otherwise the symbol name or "&lt;octal&gt;@A"/"&lt;octal&gt;@M"
+    /// if no symbol is found.
+    /// </summary>
+    private static string TypeField(SymbolType type, ulong instruction, int pos, int len)
+    {
+        uint val = (uint)Ir(instruction, pos, len);
+        if (type == SymbolType.Number)
+        {
+            return $"{Convert.ToString((int)val, 8)} ";
+        }
+        if (type == SymbolType.AMem || type == SymbolType.MMem)
+        {
+            if (val == 0) return "";
+            string? name = Symbols?.FindByTypeValue(type, val);
+            char suffix = type == SymbolType.AMem ? 'A' : 'M';
+            return name != null ? $"{name} " : $"{Convert.ToString((int)val, 8)}@{suffix} ";
+        }
+        // IMem or DMem.
+        string? lbl = Symbols?.FindByTypeValue(type, val);
+        return lbl != null ? $"{lbl} " : $"{Convert.ToString((int)val, 8)} ";
+    }
+
+    /// <summary>
+    /// Faithful port of usim/udiss.c:26-43's byte_field_out(). The "val"
+    /// parameter there is a sub-extracted value re-sliced at bits 0-9;
+    /// since both real call sites' sub-extractions start at bit 0 of the
+    /// full instruction and byte_field_out only ever reads bits 0-9 of
+    /// its "val", reading pos/len directly from the full instruction
+    /// here is mathematically equivalent -- see this task's plan text.
+    ///
+    /// alwaysReflectMrot corresponds exactly to udiss.c's own
+    /// always_reflect_mrot parameter: DISPATCH's call site
+    /// (udiss.c:623) passes true (always reflects a nonzero pos), while
+    /// BYTE's call site (udiss.c:687) passes false (reflects only when
+    /// the separate mrot-check bit, Ir(instruction,12,2)==1, is set).
+    /// These are NOT interchangeable -- do not hardcode unconditional
+    /// reflection for both call sites.
+    /// </summary>
+    private static string ByteFieldOut(ulong instruction, bool alwaysReflectMrot, bool lengthIsMinusOne)
+    {
+        uint len = (uint)Ir(instruction, 5, 5);
+        if (lengthIsMinusOne) len += 1;
+        uint pos = (uint)Ir(instruction, 0, 5);
+        if (pos != 0)
+        {
+            if (alwaysReflectMrot || Ir(instruction, 12, 2) == 1)
+                pos = 32 - pos;
+        }
+        return $"(Byte-field {Convert.ToString((int)len, 8)} {Convert.ToString((int)pos, 8)}) ";
+    }
+
+    /// <summary>
+    /// Faithful port of usim/udiss.c's m_source_desc(). m=0 -> plain
+    /// MMEM type_field; m=1 -> one of 32 named special-register sources
+    /// (fsource), verbatim from udiss.c:86-156.
+    /// </summary>
+    private static string MSourceDesc(ulong instruction)
+    {
+        if (Ir(instruction, 31, 1) == 0)
+        {
+            return TypeField(SymbolType.MMem, instruction, 26, 6);
+        }
+        uint fsource = (uint)Ir(instruction, 26, 5);
+        string name = fsource switch
+        {
+            0 => "READ-I-ARG", 1 => "MICRO-STACK-PNTR-AND-DATA", 2 => "PDL-BUFFER-POINTER",
+            3 => "PDL-BUFFER-INDEX", 5 => "C-PDL-BUFFER-INDEX", 6 => "C-OPC-BUFFER",
+            7 => "Q-R", 8 => "VMA", 9 => "MEMORY-MAP-DATA", 10 => "MD",
+            11 => "LOCATION-COUNTER", 12 => "MICRO-STACK-PNTR-AND-DATA-POP",
+            20 => "C-PDL-BUFFER-POINTER-POP", 21 => "C-PDL-BUFFER-POINTER",
+            _ => $"FSOURCE-{Convert.ToString((int)fsource, 8)}",
+        };
+        return $"{name} ";
+    }
+
+    /// <summary>
+    /// Faithful port of usim/udiss.c's dest_desc()/dest_desc_1()/
+    /// m_dest_desc()/a_dest_desc()/q_dest_desc(). Bit 25 selects
+    /// A-dest (1) vs M-dest (0) -- independently cross-checked against
+    /// UCode.cs's existing WriteDest(): dest&amp;0x800 (bit11 of a 12-bit
+    /// dest value = bit25 of the full instruction) is the same selector,
+    /// AMem's 10-bit field is dest&amp;0x3FF, MMem's 5-bit field is
+    /// dest&amp;0x1F -- confirmed matching, not a divergence.
+    /// </summary>
+    private static string DestDesc(ulong instruction)
+    {
+        uint topCheck = (uint)Ir(instruction, 14, 11);
+        if (topCheck == 0)
+        {
+            return QDestDesc(instruction);
+        }
+
+        var sb = new System.Text.StringBuilder(" (");
+        if (Ir(instruction, 25, 1) == 0)
+        {
+            sb.Append(MDestDesc(instruction));
+        }
+        else
+        {
+            sb.Append(TypeField(SymbolType.AMem, instruction, 14, 10));
+        }
+        if (Ir(instruction, 43, 2) == 0 && Ir(instruction, 0, 2) == 3)
+        {
+            sb.Append("Q-R");
+        }
+        sb.Append(") ");
+        return sb.ToString();
+    }
+
+    private static string QDestDesc(ulong instruction)
+    {
+        if (Ir(instruction, 43, 2) == 0 && Ir(instruction, 0, 2) == 3)
+        {
+            return " (Q-R) ";
+        }
+        return "";
+    }
+
+    private static string MDestDesc(ulong instruction)
+    {
+        string result = TypeField(SymbolType.MMem, instruction, 14, 5);
+        uint fdest = (uint)Ir(instruction, 19, 5);
+        string name = fdest switch
+        {
+            1 => "LOCATION-COUNTER", 2 => "INTERRUPT-CONTROL", 8 => "C-PDL-BUFFER-POINTER",
+            9 => "C-PDL-BUFFER-POINTER-PUSH", 10 => "C-PDL-BUFFER-INDEX", 11 => "PDL-BUFFER-INDEX",
+            12 => "PDL-BUFFER-POINTER", 13 => "MICRO-STACK-DATA-PUSH", 14 => "OA-REG-LOW",
+            15 => "OA-REG-HI", 16 => "VMA", 17 => "VMA-START-READ", 18 => "VMA-START-WRITE",
+            19 => "VMA-WRITE-MAP", 24 => "MD", 26 => "MD-START-WRITE", 27 => "MD-WRITE-MAP",
+            0 => "",
+            _ => $"FDEST-{Convert.ToString((int)fdest, 8)}",
+        };
+        return name.Length > 0 ? $"{result}{name} " : result;
+    }
+
     private static string DisassembleAlu(ulong instruction)
     {
-        uint dest = (uint)Ir(instruction, 14, 12);
+        string dest = DestDesc(instruction);
         uint aluop = (uint)Ir(instruction, 3, 6);
 
         // Real mnemonics ported from usim/udiss.c:308-412's alu_desc() --
@@ -76,7 +216,42 @@ public static class Disassembler
             _ => $"ALU-FUNCTION-{Convert.ToString((int)aluop, 8)}",
         };
 
-        return $"[ALU {opName} dest={dest:X3} raw=0x{instruction:X12}]";
+        // Faithful port of usim/udiss.c:413-417 -- aluop==026 octal (22
+        // decimal, SUB) uses sub_carry_desc (prints only when carry==0),
+        // every other aluop uses normal_carry_desc (prints only when
+        // carry==1).
+        bool carrySub = aluop == 22;
+        uint carryBit = (uint)Ir(instruction, 2, 1);
+        string carryStr = carrySub
+            ? (carryBit == 0 ? "ALU-CARRY-IN-ZERO " : "")
+            : (carryBit == 1 ? "ALU-CARRY-IN-ONE " : "");
+
+        uint outputSelector = (uint)Ir(instruction, 12, 2);
+        string outputSelectorStr = outputSelector switch
+        {
+            0 => $"OUTPUT-SELECTOR-{Convert.ToString(0, 8)} ",
+            2 => "OUTPUT-SELECTOR-RIGHTSHIFT-1 ",
+            3 => "OUTPUT-SELECTOR-LEFTSHIFT-1 ",
+            _ => "", // case 1: real C prints nothing
+        };
+
+        uint qShift = (uint)Ir(instruction, 0, 2);
+        string qShiftStr = qShift switch
+        {
+            1 => "SHIFT-Q-LEFT ",
+            2 => "SHIFT-Q-RIGHT ",
+            _ => "", // 0 and 3: real C prints nothing
+        };
+
+        string mSource = MSourceDesc(instruction);
+        string aField = TypeField(SymbolType.AMem, instruction, 32, 10);
+
+        uint mf = (uint)Ir(instruction, 10, 2);
+        string mfStr = mf == 0 ? "" : $"MF-{Convert.ToString((int)mf, 8)} ";
+        uint ilong = (uint)Ir(instruction, 45, 1);
+        string ilongStr = ilong == 1 ? "ILONG " : "";
+
+        return $"[ALU{dest} {opName} {carryStr}{outputSelectorStr}{qShiftStr}{mSource}{aField}{mfStr}{ilongStr}raw=0x{instruction:X12}]";
     }
 
     private static string DisassembleJump(ulong instruction)
@@ -99,10 +274,23 @@ public static class Disassembler
         // (existing, pre-Phase-8b) depends on the literal "flags=P " display.
         string cond = TypeJumpCondition(instruction);
 
-        uint mf = (uint)Ir(instruction, 10, 2);
-        string mfStr = mf == 0 ? "" : $" MF-{Convert.ToString((int)mf, 8)}";
+        // Faithful port of usim/udiss.c:572-598's jmp_desc()'s exact call
+        // order after type_jump_condition(): m_source_desc, A-field,
+        // I-field, THEN mf, THEN ilong. (mf/ilong intentionally sit
+        // after these new fields, not before them, to match that real
+        // order -- NOT "after the existing mfStr" textually, which
+        // would put mf ahead of m_source_desc/A-field/I-field and
+        // contradict jmp_desc's real call sequence.)
+        string mSource = MSourceDesc(instruction);
+        string aField = TypeField(SymbolType.AMem, instruction, 32, 10);
+        string iField = TypeField(SymbolType.IMem, instruction, 12, 14);
 
-        return $"[JUMP target={target:X4} flags={flags} cond={cond}{mfStr} raw=0x{instruction:X12}]";
+        uint mf = (uint)Ir(instruction, 10, 2);
+        string mfStr = mf == 0 ? "" : $"MF-{Convert.ToString((int)mf, 8)} ";
+        uint ilong = (uint)Ir(instruction, 45, 1);
+        string ilongStr = ilong == 1 ? "ILONG " : "";
+
+        return $"[JUMP target={target:X4} flags={flags} cond={cond} {mSource}{aField}{iField}{mfStr}{ilongStr}raw=0x{instruction:X12}]";
     }
 
     /// <summary>
@@ -202,12 +390,28 @@ public static class Disassembler
         // future unfasl port, not wired into live disassembly output.
         string dispConstStr = dispConst == 0 ? "" : $" ({Convert.ToString((int)dispConst, 8)})";
 
-        return $"[DISPATCH addr={dispAddr:X3}{mapStr}{mfStr}{dispConstStr} raw=0x{instruction:X12}]";
+        // Faithful port of usim/udiss.c:608-662's dsp_desc()'s remaining
+        // call order (after dsp_const_desc, already ported above as
+        // dispConstStr): byte_field_out (always_reflect_mrot=true here,
+        // matching udiss.c:623's third argument), m_source_desc,
+        // D-field, push_own_address_p, ifetch_p, then the existing
+        // map/mf, then ilong.
+        string byteField = ByteFieldOut(instruction, alwaysReflectMrot: true, lengthIsMinusOne: false);
+        string mSource = MSourceDesc(instruction);
+        string dField = TypeField(SymbolType.DMem, instruction, 12, 11);
+        uint pushOwnAddress = (uint)Ir(instruction, 25, 1);
+        string pushOwnAddressStr = pushOwnAddress == 1 ? "PUSH-OWN-ADDRESS " : "";
+        uint ifetch = (uint)Ir(instruction, 24, 1);
+        string ifetchStr = ifetch == 1 ? "IFETCH " : "";
+        uint ilong = (uint)Ir(instruction, 45, 1);
+        string ilongStr = ilong == 1 ? "ILONG " : "";
+
+        return $"[DISPATCH addr={dispAddr:X3}{dispConstStr} {byteField}{mSource}{dField}{pushOwnAddressStr}{ifetchStr}{mapStr}{mfStr}{ilongStr}raw=0x{instruction:X12}]";
     }
 
     private static string DisassembleByte(ulong instruction)
     {
-        uint dest = (uint)Ir(instruction, 14, 12);
+        string dest = DestDesc(instruction);
         uint mrSrBits = (uint)Ir(instruction, 12, 2);
         uint widthm1 = (uint)Ir(instruction, 5, 5);
         uint pos = (uint)Ir(instruction, 0, 5);
@@ -221,9 +425,20 @@ public static class Disassembler
             _ => "BYTE-OPERATION-0",
         };
 
+        // Faithful port of usim/udiss.c:687's byte_field_out call
+        // (always_reflect_mrot=false, length_is_minus_one=true) --
+        // reflection here depends on the mrot-check bit
+        // (Ir(instruction,12,2)==1), NOT unconditional like DISPATCH's
+        // call.
+        string byteField = ByteFieldOut(instruction, alwaysReflectMrot: false, lengthIsMinusOne: true);
+        string mSource = MSourceDesc(instruction);
+        string aField = TypeField(SymbolType.AMem, instruction, 32, 10);
+
         uint mf = (uint)Ir(instruction, 10, 2);
         string mfStr = mf == 0 ? "" : $" MF-{Convert.ToString((int)mf, 8)}";
+        uint ilong = (uint)Ir(instruction, 45, 1);
+        string ilongStr = ilong == 1 ? "ILONG " : "";
 
-        return $"[BYTE {opName} dest={dest:X3} width={widthm1 + 1} pos={pos}{mfStr} raw=0x{instruction:X12}]";
+        return $"[BYTE{dest} {opName} width={widthm1 + 1} pos={pos} {byteField}{mSource}{aField}{mfStr}{ilongStr}raw=0x{instruction:X12}]";
     }
 }

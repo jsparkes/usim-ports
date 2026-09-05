@@ -23,6 +23,10 @@ public static class DisassemblerTests
         if (TestJumpConditionRealNaming()) passed++; else failed++;
         if (TestJumpCallPopjSelector()) passed++; else failed++;
         if (TestJumpBitTestMode()) passed++; else failed++;
+        if (TestDestDescSymbolLookupAndFallback()) passed++; else failed++;
+        if (TestMSourceDescFsourceNaming()) passed++; else failed++;
+        if (TestMDestDescFdestNaming()) passed++; else failed++;
+        if (TestByteFieldOutReflection()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -253,6 +257,132 @@ public static class DisassemblerTests
         catch (Exception ex)
         {
             Console.WriteLine($"  JUMP bit-test mode test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestDestDescSymbolLookupAndFallback()
+    {
+        Console.WriteLine("Test: ALU dest_desc resolves a symbol name when SymbolTable has one, falls back to octal@A/octal@M otherwise, and elides entirely at value 0");
+        try
+        {
+            var savedSymbols = Disassembler.Symbols;
+            try
+            {
+                var table = new SymbolTable();
+                // Manually seed one AMem symbol at value 6 without needing
+                // a real file (LoadFromFile is tested separately in
+                // SymbolTableTests.cs) -- construct via a tiny temp file.
+                string tempPath = System.IO.Path.GetTempFileName();
+                System.IO.File.WriteAllText(tempPath, "\n-4 \n\n-2 A-C A-MEM 6 (junk)\n-1 \n");
+                table.LoadFromFile(tempPath);
+                System.IO.File.Delete(tempPath);
+                Disassembler.Symbols = table;
+
+                // dest region: bit25=1 (A-dest), A-field at bits14-23 (10
+                // bits) = 6. aluop=0 (SETZ) to keep the ALU-name portion simple.
+                ulong withSymbol = (1UL << 25) | (6UL << 14);
+                string result = Disassembler.DisassembleInst2(withSymbol, false);
+                Assert(result.Contains("A-C"), $"dest=6 (AMem) resolves to the seeded symbol A-C: {result}");
+
+                // No symbol at value 7 -> fallback "7@A".
+                ulong noSymbol = (1UL << 25) | (7UL << 14);
+                string result2 = Disassembler.DisassembleInst2(noSymbol, false);
+                Assert(result2.Contains("7@A"), $"dest=7 (AMem, no symbol) falls back to '7@A': {result2}");
+
+                // dest=0 (A-field value 0) -> elided entirely, no "@A" anywhere.
+                ulong zeroDest = (1UL << 25);
+                string result3 = Disassembler.DisassembleInst2(zeroDest, false);
+                Assert(!result3.Contains("@A"), $"dest field value 0 is elided entirely, not printed as '0@A': {result3}");
+            }
+            finally
+            {
+                Disassembler.Symbols = savedSymbols;
+            }
+
+            Console.WriteLine("  dest_desc symbol-lookup-and-fallback test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  dest_desc symbol-lookup-and-fallback test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMSourceDescFsourceNaming()
+    {
+        Console.WriteLine("Test: m_source_desc names real fsource special registers (e.g. VMA, MD), matching usim/udiss.c exactly");
+        try
+        {
+            // m=1 (bit31 set, fsource mode), fsource(bits26-30)=8 -> "VMA".
+            ulong instruction = (1UL << 31) | (8UL << 26);
+            string result = Disassembler.DisassembleInst2(instruction, false);
+            Assert(result.Contains("VMA"), $"fsource=8 names VMA: {result}");
+
+            // fsource=10 -> "MD".
+            ulong instruction2 = (1UL << 31) | (10UL << 26);
+            string result2 = Disassembler.DisassembleInst2(instruction2, false);
+            Assert(result2.Contains(" MD") || result2.Contains("[MD"), $"fsource=10 names MD: {result2}");
+
+            Console.WriteLine("  m_source_desc fsource-naming test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  m_source_desc fsource-naming test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestMDestDescFdestNaming()
+    {
+        Console.WriteLine("Test: m_dest_desc names real fdest special registers (e.g. INTERRUPT-CONTROL, VMA-WRITE-MAP), matching usim/udiss.c exactly");
+        try
+        {
+            // dest region bit25=0 (M-dest), fdest(bits19-23)=2 -> "INTERRUPT-CONTROL".
+            ulong instruction = 2UL << 19;
+            string result = Disassembler.DisassembleInst2(instruction, false);
+            Assert(result.Contains("INTERRUPT-CONTROL"), $"fdest=2 names INTERRUPT-CONTROL: {result}");
+
+            // fdest=19 -> "VMA-WRITE-MAP".
+            ulong instruction2 = 19UL << 19;
+            string result2 = Disassembler.DisassembleInst2(instruction2, false);
+            Assert(result2.Contains("VMA-WRITE-MAP"), $"fdest=19 names VMA-WRITE-MAP: {result2}");
+
+            Console.WriteLine("  m_dest_desc fdest-naming test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  m_dest_desc fdest-naming test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestByteFieldOutReflection()
+    {
+        Console.WriteLine("Test: DISPATCH's byte_field_out reflects a nonzero pos as 32-pos (matching real udiss.c), leaves pos=0 unreflected");
+        try
+        {
+            // Op=2 (DISPATCH), len(bits5-9)=3, pos(bits0-4)=5 -> reflected
+            // 32-5=27 decimal, printed OCTAL (matching the real
+            // disassembler's "%o" formatting) -- 27 decimal = 33 octal.
+            ulong instruction = (2UL << 43) | (3UL << 5) | 5UL;
+            string result = Disassembler.DisassembleInst2(instruction, false);
+            Assert(result.Contains("33"), $"pos=5 reflects to 32-5=27 decimal = 33 octal in the byte-field display: {result}");
+
+            // pos=0 stays 0 (not reflected to 32).
+            ulong instruction2 = (2UL << 43) | (3UL << 5);
+            string result2 = Disassembler.DisassembleInst2(instruction2, false);
+            Assert(result2.Contains("Byte-field 3 0"), $"pos=0 stays 0, not reflected: {result2}");
+
+            Console.WriteLine("  byte_field_out reflection test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  byte_field_out reflection test failed: {ex.Message}\n");
             return false;
         }
     }
