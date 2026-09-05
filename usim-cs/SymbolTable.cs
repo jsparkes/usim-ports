@@ -132,7 +132,16 @@ public class SymbolTable
             "NUMBER" => SymbolType.Number,
             _ => throw new FormatException($"{filename}: unknown symbol type '{tokens[1]}' for symbol '{name}'"),
         };
-        uint value = Convert.ToUInt32(tokens[2], 8); // real-file addresses are octal
+        // Matches the real C's sscanf("%o") into a signed int, then implicit
+        // conversion to uint32_t when passed to sym_add() -- standard
+        // two's-complement wraparound for a negative octal value. Real files
+        // (e.g. sys/ubin/ucadr.sym) genuinely contain negative NUMBER-typed
+        // symbols like "%MAPPING-TABLE-FLAVOR NUMBER -3" -- Convert.ToUInt32
+        // alone throws on the leading '-' and crashes cold boot.
+        string valueToken = tokens[2];
+        bool negative = valueToken.StartsWith("-");
+        uint magnitude = Convert.ToUInt32(negative ? valueToken.Substring(1) : valueToken, 8);
+        uint value = negative ? unchecked((uint)-(int)magnitude) : magnitude;
         _byTypeAndValue[(type, value)] = name;
     }
 

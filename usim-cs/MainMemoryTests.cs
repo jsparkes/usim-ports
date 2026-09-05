@@ -46,7 +46,7 @@ public static class MainMemoryTests
             Assert(mem.ReadPhysical(lastPopulatedWord) == 0x12345678, "page 8191 (last populated) is writable/readable");
 
             mem.WritePhysical(firstUnpopulatedWord, 0xDEADBEEF);
-            Assert(mem.ReadPhysical(firstUnpopulatedWord) == 0, "page 8192 (first unpopulated) silently ignores the write and reads back 0");
+            Assert(mem.ReadPhysical(firstUnpopulatedWord) == 0xFFFFFFFF, "page 8192 (first unpopulated) silently ignores the write and reads back 0xFFFFFFFF (matching the real C's out-of-range return value)");
 
             Console.WriteLine("  default-npages test passed\n");
             return true;
@@ -92,13 +92,13 @@ public static class MainMemoryTests
 
             // Page 4 (word 1024) is the first unpopulated page.
             mem.WritePhysical(1024, 0xBBBB);
-            Assert(mem.ReadPhysical(1024) == 0, "first word of first unpopulated page silently no-ops");
+            Assert(mem.ReadPhysical(1024) == 0xFFFFFFFF, "first word of first unpopulated page silently no-ops the write and reads back 0xFFFFFFFF");
 
             // Far beyond npages (but still within the 16384-page hard
             // ceiling) must behave identically -- no exception, no
             // corruption of page 3's already-written value.
             mem.WritePhysical(100000, 0xCCCC);
-            Assert(mem.ReadPhysical(100000) == 0, "far-beyond-npages address also silently no-ops");
+            Assert(mem.ReadPhysical(100000) == 0xFFFFFFFF, "far-beyond-npages address also silently no-ops the write and reads back 0xFFFFFFFF");
             Assert(mem.ReadPhysical(1023) == 0xAAAA, "writing far beyond npages didn't corrupt the populated range");
 
             Console.WriteLine("  at-or-beyond-npages test passed\n");
@@ -122,7 +122,7 @@ public static class MainMemoryTests
             Assert(mem.ReadPhysical(255) == 111, "page 0's last word works");
 
             mem.WritePhysical(256, 222); // first word of page 1 -- unpopulated
-            Assert(mem.ReadPhysical(256) == 0, "page 1's first word (unpopulated) silently no-ops");
+            Assert(mem.ReadPhysical(256) == 0xFFFFFFFF, "page 1's first word (unpopulated) silently no-ops the write and reads back 0xFFFFFFFF");
 
             Console.WriteLine("  custom-npages test passed\n");
             return true;

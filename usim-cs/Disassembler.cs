@@ -46,7 +46,7 @@ public static class Disassembler
         if (instruction == 0) return "[NOP]";
 
         uint op = (uint)Ir(instruction, 43, 2);
-        return op switch
+        string result = op switch
         {
             0 => DisassembleAlu(instruction),
             1 => DisassembleJump(instruction),
@@ -54,6 +54,7 @@ public static class Disassembler
             3 => DisassembleByte(instruction),
             _ => $"[UNKNOWN raw=0x{instruction:X12}]",
         };
+        return UinstStrip(result);
     }
 
     /// <summary>
@@ -85,11 +86,15 @@ public static class Disassembler
 
     /// <summary>
     /// Faithful port of usim/udiss.c:26-43's byte_field_out(). The "val"
-    /// parameter there is a sub-extracted value re-sliced at bits 0-9;
-    /// since both real call sites' sub-extractions start at bit 0 of the
-    /// full instruction and byte_field_out only ever reads bits 0-9 of
-    /// its "val", reading pos/len directly from the full instruction
-    /// here is mathematically equivalent -- see this task's plan text.
+    /// parameter there is a sub-extracted value whose WIDTH differs by
+    /// call site: DISPATCH's call (udiss.c's dsp_desc, load_byte(u,000,010))
+    /// passes only an 8-bit val, so byte_field_out's own load_byte(val,005,005)
+    /// length field only ever recovers bits 5-7 of the original instruction --
+    /// bits 8-9 are structurally absent from an 8-bit val (they're the
+    /// unrelated map field for DISPATCH), never read into the length. BYTE's
+    /// call (byt_desc, load_byte(u,000,012)) passes a full 10-bit val, so its
+    /// length field genuinely carries bits 0-9. These widths are NOT
+    /// interchangeable -- valBits must be threaded through per call site.
     ///
     /// alwaysReflectMrot corresponds exactly to udiss.c's own
     /// always_reflect_mrot parameter: DISPATCH's call site
@@ -99,11 +104,21 @@ public static class Disassembler
     /// These are NOT interchangeable -- do not hardcode unconditional
     /// reflection for both call sites.
     /// </summary>
-    private static string ByteFieldOut(ulong instruction, bool alwaysReflectMrot, bool lengthIsMinusOne)
+    private static string ByteFieldOut(ulong instruction, int valBits, bool alwaysReflectMrot, bool lengthIsMinusOne)
     {
-        uint len = (uint)Ir(instruction, 5, 5);
+        // Reproduces the real C's sub-extraction: byte_field_out(u, val,
+        // ...) where val is only valBits wide (8 for DISPATCH's
+        // load_byte(u,0,010), 10 for BYTE's load_byte(u,0,012)). For
+        // DISPATCH, this means bits 8-9 of the instruction (the
+        // unrelated map field) never reach the length computation --
+        // val's own width truncates them away, unlike BYTE's full
+        // 10-bit val which carries bits 0-9 in full. Do not read
+        // Ir(instruction,5,5) directly from the full instruction; it
+        // must go through this truncated sub-extraction first.
+        uint val = (uint)Ir(instruction, 0, valBits);
+        uint len = (val >> 5) & 0x1F;
         if (lengthIsMinusOne) len += 1;
-        uint pos = (uint)Ir(instruction, 0, 5);
+        uint pos = val & 0x1F;
         if (pos != 0)
         {
             if (alwaysReflectMrot || Ir(instruction, 12, 2) == 1)
@@ -134,6 +149,15 @@ public static class Disassembler
         }
         return string.Join(" ", nonEmpty);
     }
+
+    /// <summary>
+    /// Faithful port of usim/udiss.c's uinst_strip() -- the real
+    /// disassembler's one dedicated post-processing pass, removing
+    /// spaces immediately after an opening parenthesis and immediately
+    /// before a closing parenthesis. Applied once to the fully-assembled
+    /// disassembly string.
+    /// </summary>
+    private static string UinstStrip(string s) => s.Replace("( ", "(").Replace(" )", ")");
 
     /// <summary>
     /// Faithful port of usim/udiss.c's m_source_desc(). m=0 -> plain
@@ -422,7 +446,7 @@ public static class Disassembler
         // matching udiss.c:623's third argument), m_source_desc,
         // D-field, push_own_address_p, ifetch_p, then the existing
         // map/mf, then ilong.
-        string byteField = ByteFieldOut(instruction, alwaysReflectMrot: true, lengthIsMinusOne: false);
+        string byteField = ByteFieldOut(instruction, valBits: 8, alwaysReflectMrot: true, lengthIsMinusOne: false);
         string mSource = MSourceDesc(instruction);
         string dField = TypeField(SymbolType.DMem, instruction, 12, 11);
         uint pushOwnAddress = (uint)Ir(instruction, 25, 1);
@@ -457,7 +481,7 @@ public static class Disassembler
         // reflection here depends on the mrot-check bit
         // (Ir(instruction,12,2)==1), NOT unconditional like DISPATCH's
         // call.
-        string byteField = ByteFieldOut(instruction, alwaysReflectMrot: false, lengthIsMinusOne: true);
+        string byteField = ByteFieldOut(instruction, valBits: 10, alwaysReflectMrot: false, lengthIsMinusOne: true);
         string mSource = MSourceDesc(instruction);
         string aField = TypeField(SymbolType.AMem, instruction, 32, 10);
 

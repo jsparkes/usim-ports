@@ -27,6 +27,7 @@ public static class DisassemblerTests
         if (TestMSourceDescFsourceNaming()) passed++; else failed++;
         if (TestMDestDescFdestNaming()) passed++; else failed++;
         if (TestByteFieldOutReflection()) passed++; else failed++;
+        if (TestByteFieldOutDispatchLengthFromRealInstruction()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -383,6 +384,33 @@ public static class DisassemblerTests
         catch (Exception ex)
         {
             Console.WriteLine($"  byte_field_out reflection test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestByteFieldOutDispatchLengthFromRealInstruction()
+    {
+        Console.WriteLine("Test: DISPATCH's byte_field_out length is correctly truncated to 3 bits (not 5), matching a real instruction from sys/ubin/ucadr.mcr");
+        try
+        {
+            // raw=0x3021AA5C02C8, a real DISPATCH instruction with map=2
+            // from sys/ubin/ucadr.mcr. Real C (udiss.c's dsp_desc, whose
+            // byte_field_out sub-extraction is only 8 bits wide) prints
+            // "(Byte-field 6 30)" -- the buggy 5-bit-wide read this fix
+            // corrects would instead print "(Byte-field 26 30)" (map's
+            // bits 8-9 leaking into the length).
+            ulong instruction = 0x3021AA5C02C8UL;
+            string result = Disassembler.DisassembleInst2(instruction, false);
+
+            Assert(result.Contains("Byte-field 6 30"), $"DISPATCH byte-field length correctly truncated to octal 6, not 26 (map bits leaking in): {result}");
+            Assert(!result.Contains("Byte-field 26"), $"the old buggy 5-bit-wide length (26 octal) must not appear: {result}");
+
+            Console.WriteLine("  real-instruction DISPATCH byte-field-length test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  real-instruction DISPATCH byte-field-length test failed: {ex.Message}\n");
             return false;
         }
     }

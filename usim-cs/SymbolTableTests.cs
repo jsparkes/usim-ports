@@ -21,6 +21,7 @@ public static class SymbolTableTests
         if (TestUnknownValueReturnsNull()) passed++; else failed++;
         if (TestMalformedFileWithoutTerminatorThrows()) passed++; else failed++;
         if (TestLoadRealPromhSymFile()) passed++; else failed++;
+        if (TestLoadRealUcadrSymFileWithNegativeValues()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -192,6 +193,33 @@ public static class SymbolTableTests
         catch (Exception ex)
         {
             Console.WriteLine($"  real-promh.sym-load test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestLoadRealUcadrSymFileWithNegativeValues()
+    {
+        Console.WriteLine("Test: loading the real sys/ubin/ucadr.sym succeeds (including its negative-octal-valued NUMBER symbols) and resolves a known real symbol (skipped if the file is absent)");
+        string path = "sys/ubin/ucadr.sym";
+        if (!System.IO.File.Exists(path))
+        {
+            Console.WriteLine("  SKIPPED: sys/ubin/ucadr.sym not present\n");
+            return true;
+        }
+        try
+        {
+            var table = new SymbolTable();
+            table.LoadFromFile(path); // must not throw -- ucadr.sym contains negative NUMBER values like "%MAPPING-TABLE-FLAVOR NUMBER -3"
+
+            // %MAPPING-TABLE-FLAVOR NUMBER -3 -> two's-complement wraparound: 0xFFFFFFFD.
+            Assert(table.FindByTypeValue(SymbolType.Number, 0xFFFFFFFD) == "%MAPPING-TABLE-FLAVOR", $"negative octal value -3 correctly wraps to 0xFFFFFFFD and resolves, got {table.FindByTypeValue(SymbolType.Number, 0xFFFFFFFD)}");
+
+            Console.WriteLine("  real-ucadr.sym-with-negative-values-load test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  real-ucadr.sym-with-negative-values-load test failed: {ex.Message}\n");
             return false;
         }
     }

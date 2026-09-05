@@ -107,7 +107,7 @@ public class MainMemory
             return _physicalMemory[physicalAddress];
         }
         LogOutOfRangeAccess(pn, "read");
-        return 0;
+        return 0xFFFFFFFF;
     }
 
     public void WritePhysical(uint physicalAddress, uint value)
