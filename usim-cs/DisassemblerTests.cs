@@ -20,6 +20,9 @@ public static class DisassemblerTests
         if (TestDispatchInstructionDecodesFieldsAndMapNaming()) passed++; else failed++;
         if (TestByteInstructionNamesMrSrBits()) passed++; else failed++;
         if (TestDefMicsLookupKnownAndUnknownValues()) passed++; else failed++;
+        if (TestJumpConditionRealNaming()) passed++; else failed++;
+        if (TestJumpCallPopjSelector()) passed++; else failed++;
+        if (TestJumpBitTestMode()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -170,6 +173,86 @@ public static class DisassemblerTests
         catch (Exception ex)
         {
             Console.WriteLine($"  DefMics lookup test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestJumpConditionRealNaming()
+    {
+        Console.WriteLine("Test: JUMP condition naming matches usim/udiss.c's type_jump_condition() real vocabulary, not the old placeholder names");
+        try
+        {
+            // Op=1, p=0,r=0 (bits8,9 clear -> "JUMP"), bit5=1 (condition-code
+            // mode), bit6=0, bits0-2=3 (cond=3, no sign bit) -> tem="-EQUAL".
+            // bit7=0 -> append "-XCT-NEXT".
+            ulong instruction = (1UL << 43) | (1UL << 5) | 3UL;
+            string result = Disassembler.DisassembleInst2(instruction, false);
+
+            Assert(result.Contains("JUMP"), $"result mentions the JUMP/CALL/POPJ selector (here: JUMP, p=r=0): {result}");
+            Assert(result.Contains("-EQUAL"), $"result names cond=3 as -EQUAL (real udiss.c vocabulary), not the old M=A placeholder: {result}");
+            Assert(result.Contains("-XCT-NEXT"), $"bit7=0 appends -XCT-NEXT: {result}");
+
+            Console.WriteLine("  JUMP condition real-naming test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  JUMP condition real-naming test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestJumpCallPopjSelector()
+    {
+        Console.WriteLine("Test: JUMP's p/r-bit combination names CALL/POPJ/CALL-POPJ-?? (not just raw p/r flags)");
+        try
+        {
+            // p=1 (bit8), r=0 (bit9) -> "CALL". bit5=1, bits0-2=0, bit6=0 ->
+            // cond=0 -> tem="T" -> prints "JUMP-CONDITION 0" (with (Inverted)
+            // since bit6==0), bit7=0 -> prefixed "-XCT-NEXT".
+            ulong instruction = (1UL << 43) | (1UL << 8) | (1UL << 5);
+            string result = Disassembler.DisassembleInst2(instruction, false);
+
+            Assert(result.Contains("CALL"), $"p=1,r=0 names CALL: {result}");
+            Assert(!result.Contains("CALL-POPJ"), $"p=1,r=0 is plain CALL, not the p&&r CALL-POPJ-?? case: {result}");
+
+            // p=1,r=1 -> "CALL-POPJ-??".
+            ulong instruction2 = (1UL << 43) | (1UL << 8) | (1UL << 9) | (1UL << 5);
+            string result2 = Disassembler.DisassembleInst2(instruction2, false);
+            Assert(result2.Contains("CALL-POPJ-??"), $"p=1,r=1 names CALL-POPJ-??: {result2}");
+
+            Console.WriteLine("  JUMP CALL/POPJ selector test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  JUMP CALL/POPJ selector test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestJumpBitTestMode()
+    {
+        Console.WriteLine("Test: JUMP's bit5=0 rotate/bit-test mode prints -IF-BIT-Set/Clear and the reflected byte-field position");
+        try
+        {
+            // bit5=0 (bit-test mode), bit6=0 (bits14 clear here) -> "Set"
+            // per real udiss.c (bit6==0 -> Set; ==1 -> Clear), bit7=0 ->
+            // "-XCT-NEXT", bits0-4=5 (rot=5, nonzero) -> reflected 32-5=27
+            // decimal, printed OCTAL (matching the real disassembler's
+            // "%o" convention throughout) -- 27 decimal = 33 octal.
+            ulong instruction = (1UL << 43) | 5UL;
+            string result = Disassembler.DisassembleInst2(instruction, false);
+
+            Assert(result.Contains("-IF-BIT-Set"), $"bit6=0 in bit-test mode prints -IF-BIT-Set: {result}");
+            Assert(result.Contains("33"), $"rot=5 is reflected to 32-5=27 decimal = 33 octal in the byte-field display: {result}");
+
+            Console.WriteLine("  JUMP bit-test mode test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  JUMP bit-test mode test failed: {ex.Message}\n");
             return false;
         }
     }

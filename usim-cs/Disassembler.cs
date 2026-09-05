@@ -89,25 +89,92 @@ public static class Disassembler
 
         string flags = (p ? "P" : "") + (r ? "R" : "") + (n ? "N" : "") + (invertSense ? "~" : "");
 
-        string cond;
-        if (Ir(instruction, 5, 1) == 0)
-        {
-            cond = $"ROT{Ir(instruction, 0, 5)}";
-        }
-        else
-        {
-            cond = Ir(instruction, 0, 4) switch
-            {
-                1 => "M<A", 2 => "M<=A", 3 => "M=A", 4 => "PAGE-FAULT",
-                5 => "PAGE-FAULT-OR-INT", 6 => "PAGE-FAULT-OR-INT-OR-CLOCK", 7 => "ALWAYS",
-                _ => "UNKNOWN-COND",
-            };
-        }
+        // Faithful, disassembly-only port of usim/udiss.c:465-570's
+        // type_jump_condition() -- kept as a separate helper below since
+        // it re-slices the same 10 raw bits with a different bit
+        // combination than UCode.CheckJumpCondition()'s execution-time
+        // logic. flags= above (p/r/n/invertSense) is left as-is even
+        // though TypeJumpCondition's own selector/mode text conveys the
+        // same bits in named form -- TestJumpInstructionDecodesTargetAndFlags
+        // (existing, pre-Phase-8b) depends on the literal "flags=P " display.
+        string cond = TypeJumpCondition(instruction);
 
         uint mf = (uint)Ir(instruction, 10, 2);
         string mfStr = mf == 0 ? "" : $" MF-{Convert.ToString((int)mf, 8)}";
 
         return $"[JUMP target={target:X4} flags={flags} cond={cond}{mfStr} raw=0x{instruction:X12}]";
+    }
+
+    /// <summary>
+    /// Faithful, disassembly-only port of usim/udiss.c:465-570's
+    /// type_jump_condition(load_byte(u,0,10)) -- operates on the SAME 10
+    /// raw bits Jmp()/CheckJumpCondition() already read via Ir(), but
+    /// recombines them differently (bit6 as a sign bit over bits0-2,
+    /// not Ir(0,4)'s contiguous 4 bits) specifically so the disassembler
+    /// can print pre-negated mnemonics from a flat 16-entry table. Do
+    /// NOT call UCode.CheckJumpCondition() here -- that's execution
+    /// logic with side effects (it rotates MData) and uses a different
+    /// bit combination for its own condition code.
+    /// </summary>
+    private static string TypeJumpCondition(ulong instruction)
+    {
+        bool p = Ir(instruction, 8, 1) != 0;
+        bool r = Ir(instruction, 9, 1) != 0;
+        string selector = (p, r) switch
+        {
+            (false, false) => "JUMP",
+            (true, false) => "CALL",
+            (false, true) => "POPJ",
+            (true, true) => "CALL-POPJ-??",
+        };
+
+        bool xctNext = Ir(instruction, 7, 1) == 0; // bit7==0 -> "-XCT-NEXT"
+        string modeText;
+
+        if (Ir(instruction, 5, 1) == 0)
+        {
+            // Bit-test/rotate mode.
+            string setClear = Ir(instruction, 6, 1) == 0 ? "Set" : "Clear";
+            uint rot = (uint)Ir(instruction, 0, 5);
+            uint reflected = rot == 0 ? 0 : 32 - rot;
+            // usim/udiss.c:492 prints this with "%o" (octal), matching
+            // the real disassembler's octal convention throughout --
+            // NOT decimal.
+            modeText = $"-IF-BIT-{setClear}{(xctNext ? "-XCT-NEXT" : "")} (Byte-field 1 {Convert.ToString((int)reflected, 8)})";
+        }
+        else
+        {
+            // Condition-code mode: bit6 is a sign bit over bits0-2 --
+            // NOT the same combination as Ir(0,4).
+            bool bit6 = Ir(instruction, 6, 1) != 0;
+            int rawCond = (int)Ir(instruction, 0, 3);
+            int cond = bit6 ? rawCond + 8 : rawCond;
+
+            string[] tem =
+            {
+                "T", "-LESS-THAN", "-LESS-OR-EQUAL", "-EQUAL",
+                "-IF-PAGE-FAULT", "-IF-PAGE-FAULT-OR-INTERRUPT", "-IF-SEQUENCE-BREAK", "NIL",
+                "T", "-GREATER-OR-EQUAL", "-GREATER-THAN", "-NOT-EQUAL",
+                "-IF-NO-PAGE-FAULT", "-IF-NO-PAGE-FAULT-OR-INTERRUPT", "-IF-NO-SEQUENCE-BREAK", "-NEVER",
+            };
+            string t = tem[cond];
+
+            if (t == "T")
+            {
+                string inverted = !bit6 ? "(Inverted)" : "";
+                modeText = $"JUMP-CONDITION {Convert.ToString(rawCond, 8)}{(xctNext ? "-XCT-NEXT" : "")}{inverted}";
+            }
+            else if (t == "NIL")
+            {
+                modeText = xctNext ? "-XCT-NEXT" : "";
+            }
+            else
+            {
+                modeText = $"{t}{(xctNext ? "-XCT-NEXT" : "")}";
+            }
+        }
+
+        return $"{selector}{modeText}";
     }
 
     private static string DisassembleDispatch(ulong instruction)
