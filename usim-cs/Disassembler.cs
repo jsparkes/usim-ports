@@ -4,6 +4,7 @@
 // Byt()), replacing the Phase 1-7 placeholder.
 
 using System;
+using System.Collections.Generic;
 
 namespace Usim;
 
@@ -109,6 +110,29 @@ public static class Disassembler
                 pos = 32 - pos;
         }
         return $"(Byte-field {Convert.ToString((int)len, 8)} {Convert.ToString((int)pos, 8)}) ";
+    }
+
+    /// <summary>
+    /// Joins non-empty tokens with exactly one space, trimming each
+    /// token first -- this makes the join immune to whichever
+    /// leading/trailing-space convention any individual field happens to
+    /// use (some helpers here print a trailing space when non-empty,
+    /// some historically used a leading space, some both), and
+    /// guarantees no double spaces and no zero-separator gluing when
+    /// concatenating a variable-length list of optional fields.
+    /// </summary>
+    private static string JoinTokens(params string[] tokens)
+    {
+        var nonEmpty = new List<string>();
+        foreach (var token in tokens)
+        {
+            string trimmed = token.Trim();
+            if (trimmed.Length > 0)
+            {
+                nonEmpty.Add(trimmed);
+            }
+        }
+        return string.Join(" ", nonEmpty);
     }
 
     /// <summary>
@@ -251,7 +275,8 @@ public static class Disassembler
         uint ilong = (uint)Ir(instruction, 45, 1);
         string ilongStr = ilong == 1 ? "ILONG " : "";
 
-        return $"[ALU{dest} {opName} {carryStr}{outputSelectorStr}{qShiftStr}{mSource}{aField}{mfStr}{ilongStr}raw=0x{instruction:X12}]";
+        string tail = JoinTokens(dest, opName, carryStr, outputSelectorStr, qShiftStr, mSource, aField, mfStr, ilongStr, $"raw=0x{instruction:X12}");
+        return $"[ALU {tail}]";
     }
 
     private static string DisassembleJump(ulong instruction)
@@ -290,7 +315,8 @@ public static class Disassembler
         uint ilong = (uint)Ir(instruction, 45, 1);
         string ilongStr = ilong == 1 ? "ILONG " : "";
 
-        return $"[JUMP target={target:X4} flags={flags} cond={cond} {mSource}{aField}{iField}{mfStr}{ilongStr}raw=0x{instruction:X12}]";
+        string tail = JoinTokens(mSource, aField, iField, mfStr, ilongStr, $"raw=0x{instruction:X12}");
+        return $"[JUMP target={target:X4} flags={flags} cond={cond} {tail}]";
     }
 
     /// <summary>
@@ -406,7 +432,8 @@ public static class Disassembler
         uint ilong = (uint)Ir(instruction, 45, 1);
         string ilongStr = ilong == 1 ? "ILONG " : "";
 
-        return $"[DISPATCH addr={dispAddr:X3}{dispConstStr} {byteField}{mSource}{dField}{pushOwnAddressStr}{ifetchStr}{mapStr}{mfStr}{ilongStr}raw=0x{instruction:X12}]";
+        string tail = JoinTokens(dispConstStr, byteField, mSource, dField, pushOwnAddressStr, ifetchStr, mapStr, mfStr, ilongStr, $"raw=0x{instruction:X12}");
+        return $"[DISPATCH addr={dispAddr:X3} {tail}]";
     }
 
     private static string DisassembleByte(ulong instruction)
@@ -439,6 +466,8 @@ public static class Disassembler
         uint ilong = (uint)Ir(instruction, 45, 1);
         string ilongStr = ilong == 1 ? "ILONG " : "";
 
-        return $"[BYTE{dest} {opName} width={widthm1 + 1} pos={pos} {byteField}{mSource}{aField}{mfStr}{ilongStr}raw=0x{instruction:X12}]";
+        string destAndOp = JoinTokens(dest, opName);
+        string tail = JoinTokens(byteField, mSource, aField, mfStr, ilongStr, $"raw=0x{instruction:X12}");
+        return $"[BYTE {destAndOp} width={widthm1 + 1} pos={pos} {tail}]";
     }
 }
