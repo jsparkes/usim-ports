@@ -136,7 +136,7 @@ public static class Disassembler
             // Bit-test/rotate mode.
             string setClear = Ir(instruction, 6, 1) == 0 ? "Set" : "Clear";
             uint rot = (uint)Ir(instruction, 0, 5);
-            uint reflected = rot == 0 ? 0 : 32 - rot;
+            uint reflected = 32 - rot;
             // usim/udiss.c:492 prints this with "%o" (octal), matching
             // the real disassembler's octal convention throughout --
             // NOT decimal.
@@ -162,7 +162,7 @@ public static class Disassembler
             if (t == "T")
             {
                 string inverted = !bit6 ? "(Inverted)" : "";
-                modeText = $"JUMP-CONDITION {Convert.ToString(rawCond, 8)}{(xctNext ? "-XCT-NEXT" : "")}{inverted}";
+                modeText = $"{(xctNext ? "-XCT-NEXT" : "")} JUMP-CONDITION {Convert.ToString(rawCond, 8)}{inverted}";
             }
             else if (t == "NIL")
             {
