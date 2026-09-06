@@ -46,12 +46,7 @@ Test: Config Manager          ? PASS
 dotnet run --project usim-cs/Usim.csproj -- --test-all
 
 # Run specific tests
-dotnet run --project usim-cs/Usim.csproj -- --test-microcode
 dotnet run --project usim-cs/Usim.csproj -- --test-config
-
-# Run demos
-dotnet run --project usim-cs/Usim.csproj -- --demo-tracing
-dotnet run --project usim-cs/Usim.csproj -- --benchmark
 ```
 
 ---

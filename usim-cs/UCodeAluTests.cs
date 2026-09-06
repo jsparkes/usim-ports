@@ -145,7 +145,8 @@ public static class UCodeAluTests
         {
             // int.MaxValue + 1, no carry-in: unsigned sum wraps to 0x80000000,
             // and the carry-out formula (b > ~a, since ci=false) evaluates
-            // false here (b=1 > ~a=int.MinValue is true), giving carry=0.
+            // true here (b=1 > ~a=int.MinValue), and the macro's polarity
+            // maps that to carry=0.
             var (out1, carry1) = UCode.Add32(int.MaxValue, 1, false);
             Assert(out1 == 0x80000000, $"Add32(MaxValue,1,false).Out == 0x80000000, got 0x{out1:X8}");
             Assert(carry1 == 0, $"Add32(MaxValue,1,false).Carry == 0, got {carry1}");

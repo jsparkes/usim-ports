@@ -230,7 +230,7 @@ public static class UCodeFetchDecodeTests
             Console.WriteLine($"  Opcode class distribution: ALU={opCounts[0]} JUMP={opCounts[1]} DISPATCH={opCounts[2]} BYTE={opCounts[3]}");
 
             // AAddr = Ir(32,10), MAddr = Ir(26,5) -- both independently
-            // hand-verified against the real file for this same 200-word
+            // decoded from the real file for this same 200-word
             // sample (cross-validated by first reproducing this test's
             // own pre-existing Op-class histogram exactly with the same
             // decode script, before trusting its AAddr/MAddr output).
@@ -244,10 +244,10 @@ public static class UCodeFetchDecodeTests
                 if (aaddr == 0) aaddrZero++; else aaddrNonzero++;
                 if (maddr == 0) maddrZero++; else maddrNonzero++;
             }
-            Assert(aaddrZero == 124, $"AAddr==0 count is 124 (hand-verified against the real file), got {aaddrZero}");
-            Assert(aaddrNonzero == 76, $"AAddr!=0 count is 76 (hand-verified against the real file), got {aaddrNonzero}");
-            Assert(maddrZero == 52, $"MAddr==0 count is 52 (hand-verified against the real file), got {maddrZero}");
-            Assert(maddrNonzero == 148, $"MAddr!=0 count is 148 (hand-verified against the real file), got {maddrNonzero}");
+            Assert(aaddrZero == 124, $"AAddr==0 count is 124 (independently decoded from the real file), got {aaddrZero}");
+            Assert(aaddrNonzero == 76, $"AAddr!=0 count is 76 (independently decoded from the real file), got {aaddrNonzero}");
+            Assert(maddrZero == 52, $"MAddr==0 count is 52 (independently decoded from the real file), got {maddrZero}");
+            Assert(maddrNonzero == 148, $"MAddr!=0 count is 148 (independently decoded from the real file), got {maddrNonzero}");
 
             Console.WriteLine("  Real promh.mcr Decode Sanity tests passed\n");
             return TestOutcome.Passed;
