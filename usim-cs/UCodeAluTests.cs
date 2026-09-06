@@ -20,6 +20,10 @@ public static class UCodeAluTests
         if (TestSub32()) passed++; else failed++;
         if (TestAbs32()) passed++; else failed++;
         if (TestRol32()) passed++; else failed++;
+        if (TestAdd32EdgeCases()) passed++; else failed++;
+        if (TestSub32EdgeCases()) passed++; else failed++;
+        if (TestAbs32EdgeCases()) passed++; else failed++;
+        if (TestRol32BoundaryBits()) passed++; else failed++;
         if (TestLogiOps()) passed++; else failed++;
         if (TestArithOps()) passed++; else failed++;
         if (TestDivOps()) passed++; else failed++;
@@ -130,6 +134,121 @@ public static class UCodeAluTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Rol32 tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestAdd32EdgeCases()
+    {
+        Console.WriteLine("Test: Add32 at int.MinValue/int.MaxValue boundaries");
+        try
+        {
+            // int.MaxValue + 1, no carry-in: unsigned sum wraps to 0x80000000,
+            // and the carry-out formula (b > ~a, since ci=false) evaluates
+            // false here (b=1 > ~a=int.MinValue is true), giving carry=0.
+            var (out1, carry1) = UCode.Add32(int.MaxValue, 1, false);
+            Assert(out1 == 0x80000000, $"Add32(MaxValue,1,false).Out == 0x80000000, got 0x{out1:X8}");
+            Assert(carry1 == 0, $"Add32(MaxValue,1,false).Carry == 0, got {carry1}");
+
+            // MinValue + MinValue, no carry-in: unsigned sum wraps to 0
+            // (0x80000000+0x80000000=0x100000000, truncated to 0), carry=1.
+            var (out2, carry2) = UCode.Add32(int.MinValue, int.MinValue, false);
+            Assert(out2 == 0, $"Add32(MinValue,MinValue,false).Out == 0, got 0x{out2:X8}");
+            Assert(carry2 == 1, $"Add32(MinValue,MinValue,false).Carry == 1, got {carry2}");
+
+            // MaxValue + MaxValue with carry-in: 0x7FFFFFFF+0x7FFFFFFF+1 = 0xFFFFFFFF, carry=0.
+            var (out3, carry3) = UCode.Add32(int.MaxValue, int.MaxValue, true);
+            Assert(out3 == 0xFFFFFFFF, $"Add32(MaxValue,MaxValue,true).Out == 0xFFFFFFFF, got 0x{out3:X8}");
+            Assert(carry3 == 0, $"Add32(MaxValue,MaxValue,true).Carry == 0, got {carry3}");
+
+            Console.WriteLine("  Add32 edge-case tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Add32 edge-case tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestSub32EdgeCases()
+    {
+        Console.WriteLine("Test: Sub32 at int.MinValue/int.MaxValue boundaries");
+        try
+        {
+            // MinValue - 1, no carry-in (borrow): 0x80000000-1-1 = 0x7FFFFFFE, carry=1.
+            var (out1, carry1) = UCode.Sub32(int.MinValue, 1, false);
+            Assert(out1 == 0x7FFFFFFE, $"Sub32(MinValue,1,false).Out == 0x7FFFFFFE, got 0x{out1:X8}");
+            Assert(carry1 == 1, $"Sub32(MinValue,1,false).Carry == 1, got {carry1}");
+
+            // 0 - MinValue, no carry-in: 0-0x80000000-1 = 0x7FFFFFFF, carry=0.
+            var (out2, carry2) = UCode.Sub32(0, int.MinValue, false);
+            Assert(out2 == 0x7FFFFFFF, $"Sub32(0,MinValue,false).Out == 0x7FFFFFFF, got 0x{out2:X8}");
+            Assert(carry2 == 0, $"Sub32(0,MinValue,false).Carry == 0, got {carry2}");
+
+            // MaxValue - MinValue, no carry-in: 0x7FFFFFFF-0x80000000-1 = 0xFFFFFFFE, carry=0.
+            var (out3, carry3) = UCode.Sub32(int.MaxValue, int.MinValue, false);
+            Assert(out3 == 0xFFFFFFFE, $"Sub32(MaxValue,MinValue,false).Out == 0xFFFFFFFE, got 0x{out3:X8}");
+            Assert(carry3 == 0, $"Sub32(MaxValue,MinValue,false).Carry == 0, got {carry3}");
+
+            Console.WriteLine("  Sub32 edge-case tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Sub32 edge-case tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestAbs32EdgeCases()
+    {
+        Console.WriteLine("Test: Abs32 at the int.MinValue two's-complement identity (the one value with no positive counterpart)");
+        try
+        {
+            // The classic two's-complement edge case: Abs32(int.MinValue)
+            // returns int.MinValue UNCHANGED, not a positive value --
+            // ~int.MinValue + 1 overflows right back to int.MinValue.
+            // This was previously completely untested.
+            int result1 = UCode.Abs32(int.MinValue);
+            Assert(result1 == int.MinValue, $"Abs32(MinValue) == MinValue (unchanged, not positive), got {result1}");
+
+            int result2 = UCode.Abs32(int.MaxValue);
+            Assert(result2 == int.MaxValue, $"Abs32(MaxValue) == MaxValue, got {result2}");
+
+            Console.WriteLine("  Abs32 edge-case tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Abs32 edge-case tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestRol32BoundaryBits()
+    {
+        Console.WriteLine("Test: Rol32 at the bits=31 boundary (the widest rotate short of the already-tested bits=0 identity)");
+        try
+        {
+            // Rotating bit0 left by 31 moves it all the way to bit31.
+            uint result1 = UCode.Rol32(0x1, 31);
+            Assert(result1 == 0x80000000, $"Rol32(0x1,31) == 0x80000000, got 0x{result1:X8}");
+
+            // Rotating bit31 left by 31 wraps it back down to bit30.
+            uint result2 = UCode.Rol32(0x80000000, 31);
+            Assert(result2 == 0x40000000, $"Rol32(0x80000000,31) == 0x40000000, got 0x{result2:X8}");
+
+            // All-ones is invariant under any rotation.
+            uint result3 = UCode.Rol32(0xFFFFFFFF, 31);
+            Assert(result3 == 0xFFFFFFFF, $"Rol32(0xFFFFFFFF,31) == 0xFFFFFFFF (all-ones invariant), got 0x{result3:X8}");
+
+            Console.WriteLine("  Rol32 boundary-bits test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Rol32 boundary-bits test failed: {ex.Message}\n");
             return false;
         }
     }

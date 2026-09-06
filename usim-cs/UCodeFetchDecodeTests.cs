@@ -228,6 +228,27 @@ public static class UCodeFetchDecodeTests
             Assert(opCounts[3] == 41, $"BYTE class count is exactly 41, got {opCounts[3]}");
 
             Console.WriteLine($"  Opcode class distribution: ALU={opCounts[0]} JUMP={opCounts[1]} DISPATCH={opCounts[2]} BYTE={opCounts[3]}");
+
+            // AAddr = Ir(32,10), MAddr = Ir(26,5) -- both independently
+            // hand-verified against the real file for this same 200-word
+            // sample (cross-validated by first reproducing this test's
+            // own pre-existing Op-class histogram exactly with the same
+            // decode script, before trusting its AAddr/MAddr output).
+            int aaddrZero = 0, aaddrNonzero = 0;
+            int maddrZero = 0, maddrNonzero = 0;
+            for (int i = 0; i < sampleSize; i++)
+            {
+                ulong word = ucode.Prom[i];
+                uint aaddr = (uint)((word >> 32) & 0x3FF);
+                uint maddr = (uint)((word >> 26) & 0x1F);
+                if (aaddr == 0) aaddrZero++; else aaddrNonzero++;
+                if (maddr == 0) maddrZero++; else maddrNonzero++;
+            }
+            Assert(aaddrZero == 124, $"AAddr==0 count is 124 (hand-verified against the real file), got {aaddrZero}");
+            Assert(aaddrNonzero == 76, $"AAddr!=0 count is 76 (hand-verified against the real file), got {aaddrNonzero}");
+            Assert(maddrZero == 52, $"MAddr==0 count is 52 (hand-verified against the real file), got {maddrZero}");
+            Assert(maddrNonzero == 148, $"MAddr!=0 count is 148 (hand-verified against the real file), got {maddrNonzero}");
+
             Console.WriteLine("  Real promh.mcr Decode Sanity tests passed\n");
             return TestOutcome.Passed;
         }

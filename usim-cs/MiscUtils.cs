@@ -196,15 +196,6 @@ public static class MiscUtils
     }
     
     /// <summary>
-    /// Rotate left (circular shift) for 32-bit unsigned integer
-    /// </summary>
-    public static uint Rol32(uint value, int count)
-    {
-        count &= 0x1F; // Mask to 0-31 bits
-        return (value << count) | (value >> (32 - count));
-    }
-    
-    /// <summary>
     /// Rotate right (circular shift) for 32-bit unsigned integer
     /// </summary>
     public static uint Ror32(uint value, int count)

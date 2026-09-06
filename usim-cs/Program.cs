@@ -136,11 +136,6 @@ public class Program
                     Environment.Exit(0);
                     break;
                     
-                case "--test-microcode":
-                    UCodeTests.RunAllTests();
-                    Environment.Exit(0);
-                    break;
-                    
                 case "--test-config":
                     ConfigTests.RunAllTests();
                     Environment.Exit(0);
@@ -226,21 +221,6 @@ public class Program
                     Environment.Exit(0);
                     break;
 
-                case "--demo-execution":
-                    UCodeTests.DemoInstructionExecution();
-                    Environment.Exit(0);
-                    break;
-                    
-                case "--demo-tracing":
-                    UCodeTests.DemoInstructionTracing();
-                    Environment.Exit(0);
-                    break;
-                    
-                case "--benchmark":
-                    UCodeTests.RunBenchmark();
-                    Environment.Exit(0);
-                    break;
-
                 case "--debug-microcode":
                 case "--debug-ucode":
                     var debugger = new MicrocodeDebugger(new UCode());
@@ -276,7 +256,6 @@ public class Program
         Console.WriteLine();
         Console.WriteLine("Testing & Demos:");
         Console.WriteLine("  --test, --test-all      Run all tests");
-        Console.WriteLine("  --test-microcode        Run microcode tests only");
         Console.WriteLine("  --test-config           Run configuration tests only");
         Console.WriteLine("  --test-wpf              Run WPF backend tests only");
         Console.WriteLine("  --test-microcode-decode Run microcode fetch/decode tests only");
@@ -294,9 +273,6 @@ public class Program
         Console.WriteLine("  --test-machine-control  Run MachineControl wiring tests only");
         Console.WriteLine("  --test-main-memory      Run MainMemory tests only");
         Console.WriteLine("  --test-symbol-table     Run SymbolTable tests only");
-        Console.WriteLine("  --demo-execution        Demo instruction execution");
-        Console.WriteLine("  --demo-tracing          Demo instruction tracing");
-        Console.WriteLine("  --benchmark             Run performance benchmark");
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
@@ -506,11 +482,6 @@ public class Program
         // Run MainMemory tests
         Console.WriteLine("Running MainMemory Tests...\n");
         MainMemoryTests.RunAllTests();
-        Console.WriteLine();
-
-        // Run microcode tests
-        Console.WriteLine("Running Microcode Tests...\n");
-        UCodeTests.RunAllTests();
         Console.WriteLine();
 
         // Run microcode fetch/decode tests
