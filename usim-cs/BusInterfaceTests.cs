@@ -113,14 +113,14 @@ public static class BusInterfaceTests
 
             // 0766040 mask is 0x3C01 (bits 0, 10-13). Write all-1s and
             // confirm only masked bits land.
-            bi.Write(0766040, 0xFFFFFFFF);
+            bi.Write(0x3EC20, 0xFFFFFFFF);
             Assert(ucode.InterruptStatusReg == 0x3C01,
                 $"0766040 write masks to 0x3C01, got 0x{ucode.InterruptStatusReg:X}");
 
             ucode.SetInterruptStatusReg(0);
 
             // 0766042 mask is 0x83FC (bits 2-9, 15).
-            bi.Write(0766042, 0xFFFFFFFF);
+            bi.Write(0x3EC22, 0xFFFFFFFF);
             Assert(ucode.InterruptStatusReg == 0x83FC,
                 $"0766042 write masks to 0x83FC, got 0x{ucode.InterruptStatusReg:X}");
 
@@ -128,8 +128,8 @@ public static class BusInterfaceTests
             // corrupting the other register's bits) and their union is
             // exactly what a combined write would produce.
             ucode.SetInterruptStatusReg(0);
-            bi.Write(0766040, 0xFFFFFFFF);
-            bi.Write(0766042, 0xFFFFFFFF);
+            bi.Write(0x3EC20, 0xFFFFFFFF);
+            bi.Write(0x3EC22, 0xFFFFFFFF);
             Assert(ucode.InterruptStatusReg == (0x3C01 | 0x83FC),
                 $"combined writes == 0x{(0x3C01 | 0x83FC):X}, got 0x{ucode.InterruptStatusReg:X}");
 
@@ -152,10 +152,10 @@ public static class BusInterfaceTests
 
             bi.SetXbusNxm();
             bi.SetUnibusMapError();
-            Assert(bi.Read(0766044) == (0x1 | 0x20),
-                $"0766044 read == 0x{(0x1 | 0x20):X}, got 0x{bi.Read(0766044):X}");
+            Assert(bi.Read(0x3EC24) == (0x1 | 0x20),
+                $"0766044 read == 0x{(0x1 | 0x20):X}, got 0x{bi.Read(0x3EC24):X}");
 
-            bi.Write(0766044, 0); // value written is ignored; write always clears
+            bi.Write(0x3EC24, 0); // value written is ignored; write always clears
             Assert(bi.GetBusErrorStatus() == 0, "0766044 write clears bus_error_status");
 
             Console.WriteLine("  Bus-status register test passed\n");
@@ -174,7 +174,7 @@ public static class BusInterfaceTests
         try
         {
             var bi = new BusInterface(new UCode(new MainMemory()));
-            Assert(bi.Read(0766104) == 0, "0766104 reads 0");
+            Assert(bi.Read(0x3EC44) == 0, "0766104 reads 0");
 
             Console.WriteLine("  Debuggee-status test passed\n");
             return true;
@@ -193,12 +193,12 @@ public static class BusInterfaceTests
         {
             var bi = new BusInterface(new UCode(new MainMemory()));
 
-            Assert(bi.Read(0766100) == 0, "0766100 read is a safe default (0)");
-            bi.Write(0766100, 0x1234);
-            bi.Write(0766102, 0x1234);
-            bi.Write(0766110, 0x1234);
-            bi.Write(0766112, 0x1234);
-            bi.Write(0766114, 0x1234);
+            Assert(bi.Read(0x3EC40) == 0, "0766100 read is a safe default (0)");
+            bi.Write(0x3EC40, 0x1234);
+            bi.Write(0x3EC42, 0x1234);
+            bi.Write(0x3EC48, 0x1234);
+            bi.Write(0x3EC4A, 0x1234);
+            bi.Write(0x3EC4C, 0x1234);
 
             Console.WriteLine("  Lashup-only-registers test passed\n");
             return true;
@@ -219,8 +219,8 @@ public static class BusInterfaceTests
 
             bi.SetNxmInhibit(true);
             bi.SetUnibusMapError(); // not gated by inhibit, so this sets bus_error_status
-            bi.Write(0766110, 0x1); // addr17 = true
-            bi.Write(0766114, 0x42); // addr = 0x42
+            bi.Write(0x3EC48, 0x1); // addr17 = true
+            bi.Write(0x3EC4C, 0x42); // addr = 0x42
 
             bi.BusReset();
 
@@ -245,11 +245,11 @@ public static class BusInterfaceTests
         {
             var bi = new BusInterface(new UCode(new MainMemory()));
 
-            Assert(bi.Read(0766200) == 0, "unrecognized read returns 0");
+            Assert(bi.Read(0x3EC80) == 0, "unrecognized read returns 0");
             Assert(bi.IsUnibusNxm(), "unrecognized read sets unibus nxm");
 
             bi.ResetBusErrorStatus();
-            bi.Write(0766200, 0x1234);
+            bi.Write(0x3EC80, 0x1234);
             Assert(bi.IsUnibusNxm(), "unrecognized write sets unibus nxm");
 
             Console.WriteLine("  Default-case test passed\n");

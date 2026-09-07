@@ -76,24 +76,24 @@ public class BusInterface
     {
         switch (uaddr)
         {
-            case 0766040:
+            case 0x3EC20: // 0766040 octal
                 return (uint)_ucode.InterruptStatusReg;
 
             // 0766042 is write-only in the real C -- falls to default below.
 
-            case 0766044:
+            case 0x3EC24: // 0766044 octal
                 TraceLog.Instance.Debug(TraceCategory.Memory,
                     $"bus-interface: read bus status: {Convert.ToString(_busErrorStatus, 8)}");
                 return _busErrorStatus;
 
-            case 0766100:
+            case 0x3EC40: // 0766100 octal
                 // Real C attempts a lashup read of the debuggee's bus; no
                 // debuggee exists here.
                 TraceLog.Instance.Warning(TraceCategory.Memory,
                     "bus-interface: read data -- no debuggee attached (lashup not ported)");
                 return 0;
 
-            case 0766104:
+            case 0x3EC44: // 0766104 octal
                 // Debuggee's mirrored bus-error status (lashup-only). Always
                 // 0 here -- the real, correct answer with no debuggee ever
                 // attached, not a placeholder.
@@ -115,7 +115,7 @@ public class BusInterface
     {
         switch (uaddr)
         {
-            case 0766040:
+            case 0x3EC20: // 0766040 octal
                 // "Writing this location writes into bits 0 and 10-13 (mask
                 // 36001)." Octal 036001 = 0x3C01 -- independently verified
                 // via script; a naive hand-conversion gives the wrong
@@ -123,31 +123,31 @@ public class BusInterface
                 _ucode.SetInterruptStatusReg((_ucode.InterruptStatusReg & ~0x3C01) | ((int)v & 0x3C01));
                 break;
 
-            case 0766042:
+            case 0x3EC22: // 0766042 octal
                 // "Writing this location writes into bits 2-9 and 15 (mask
                 // 101774)." Octal 0101774 = 0x83FC.
                 _ucode.SetInterruptStatusReg((_ucode.InterruptStatusReg & ~0x83FC) | ((int)v & 0x83FC));
                 break;
 
-            case 0766044:
+            case 0x3EC24: // 0766044 octal
                 TraceLog.Instance.Debug(TraceCategory.Memory,
                     "bus-interface: write (clear) bus status");
                 _busErrorStatus = 0;
                 break;
 
-            case 0766100:
+            case 0x3EC40: // 0766100 octal
                 // Real C writes to the debuggee's bus over lashup; no-op here.
                 TraceLog.Instance.Warning(TraceCategory.Memory,
                     $"bus-interface: write data 0x{v:X} -- no debuggee attached (lashup not ported)");
                 break;
 
-            case 0766102:
+            case 0x3EC42: // 0766102 octal
                 // Remote usim command over lashup; no-op here.
                 TraceLog.Instance.Warning(TraceCategory.Memory,
                     $"bus-interface: remote usim command 0x{v:X} -- no debuggee attached (lashup not ported)");
                 break;
 
-            case 0766110:
+            case 0x3EC48: // 0766110 octal
                 // Modifier bits. Only addr17 (bit 0) has any meaning without
                 // lashup (it's part of the debuggee-target-address
                 // computation, itself only consumed by the 0766100 lashup
@@ -160,14 +160,14 @@ public class BusInterface
                     $"bus-interface: write modifier bits 0x{v:X} (addr17={_addr17}) -- reset/timeout-inhibit/mark/ping are lashup-only, no-op");
                 break;
 
-            case 0766112:
+            case 0x3EC4A: // 0766112 octal
                 // Local usim command -- already a log-only no-op in the real
                 // C itself (its cmd/param params are marked unused there).
                 TraceLog.Instance.Debug(TraceCategory.Memory,
                     $"bus-interface: local usim command 0x{v:X}");
                 break;
 
-            case 0766114:
+            case 0x3EC4C: // 0766114 octal
                 _addr = (ushort)v;
                 TraceLog.Instance.Debug(TraceCategory.Memory,
                     $"bus-interface: write address: 0x{v:X}");
