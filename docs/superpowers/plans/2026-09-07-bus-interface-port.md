@@ -800,19 +800,21 @@ Add a new test method and register it in `RunAllTests`:
         Console.WriteLine("Test: 0766040-range Unibus addresses dispatch to BusInterface, not the generic fallback");
         try
         {
-            var busAdaptor = new BusAdaptor(new BusInterface(new UCode(new MainMemory())));
+            var ucode = new UCode(new MainMemory());
+            var busAdaptor = new BusAdaptor(ucode.BusInterface);
             bool promDisabled = false;
 
-            // 0766044 (bus status register): write clears status, read
-            // reflects it. If this still hit the old generic fallback, the
-            // write would be a no-op warning and the read would always
-            // return 0 -- true today regardless, so additionally confirm
-            // NO Unibus-NXM side effect occurs (the old fallback path,
-            // still reachable for genuinely unmapped addresses, always
-            // asserts NXM; real bus-interface register access must not).
-            busAdaptor.Write(UaddrToPaddr(0x3EC24), 0, ref promDisabled); // 0766044 octal
-            uint status = busAdaptor.Read(UaddrToPaddr(0x3EC24)); // 0766044 octal
-            Assert(status == 0, $"0766044 reads back 0 after clear, got 0x{status:X}");
+            // 0766040 (interrupt status register, real write mask 0x3C01):
+            // an all-1s write is only masked to 0x3C01 if this genuinely
+            // reaches BusInterface -- the old generic fallback (still
+            // reachable for real unmapped addresses) never touches UCode
+            // state at all, so InterruptStatusReg would stay at its default
+            // 0 if dispatch weren't wired. Unlike a plain read-back-of-0
+            // check (which both paths satisfy identically), this assertion
+            // actually discriminates the two.
+            busAdaptor.Write(UaddrToPaddr(0x3EC20), 0xFFFFFFFF, ref promDisabled); // 0766040 octal
+            Assert(ucode.InterruptStatusReg == 0x3C01,
+                $"0766040 write reaches BusInterface and masks to 0x3C01, got 0x{ucode.InterruptStatusReg:X}");
 
             Console.WriteLine("  Bus-interface real-dispatch test passed\n");
             return true;
