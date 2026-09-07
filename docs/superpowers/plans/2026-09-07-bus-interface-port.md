@@ -17,6 +17,7 @@
 - Every octal literal and bitmask must already be independently re-verified via script before use (this plan's own masks were: `0x3C01`, `0x83FC`, `0x1`, `0x8`, `0x20` — see spec's "Bit masks" section for the derivation, including one hand-conversion error the spec's own self-review caught and fixed).
 - `SetXbusNxm()`/`SetUnibusNxm()` check `nxm_inhibited` and no-op if set; `SetUnibusMapError()` does **not** check it — this asymmetry is in the real C and must not be "fixed."
 - Use `TraceCategory.Memory` for all of `BusInterface`'s logging (matching `BusAdaptor.cs`'s existing convention for this exact address space — do not add a new `TraceCategory` enum value for this).
+- **C# has no octal integer-literal syntax.** A C-style "leading zero" literal like `0766044` is parsed as the plain decimal integer `766044`, not octal — this bit Task 1's first attempt (found by task review, fixed in a fix round: commit `d2daeee`) and was caught again in this plan's own Task 2 text before dispatch. Every real Unibus register address in this plan must be written as its verified hex equivalent (`0x3EC20`-`0x3EC4C` for the 9 real registers, `0x3EC80` for the test-only "unrecognized address" case), with the octal address noted in a comment/string for readability only.
 
 ---
 
@@ -809,8 +810,8 @@ Add a new test method and register it in `RunAllTests`:
             // NO Unibus-NXM side effect occurs (the old fallback path,
             // still reachable for genuinely unmapped addresses, always
             // asserts NXM; real bus-interface register access must not).
-            busAdaptor.Write(UaddrToPaddr(0766044), 0, ref promDisabled);
-            uint status = busAdaptor.Read(UaddrToPaddr(0766044));
+            busAdaptor.Write(UaddrToPaddr(0x3EC24), 0, ref promDisabled); // 0766044 octal
+            uint status = busAdaptor.Read(UaddrToPaddr(0x3EC24)); // 0766044 octal
             Assert(status == 0, $"0766044 reads back 0 after clear, got 0x{status:X}");
 
             Console.WriteLine("  Bus-interface real-dispatch test passed\n");
