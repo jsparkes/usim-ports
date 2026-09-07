@@ -3,9 +3,11 @@
 // memory" range (physical page number <= 0x3BFB) for real; this class handles
 // everything above that -- the boot PROM's disk-control and diagnostic-register
 // accesses, plus non-fatal placeholders for every other device bus-adaptor.c
-// would route to (TV, color TV, tape, Unibus Map DMA, IOB, unibus-mapping,
-// bus-interface). NOT a full device-emulation port -- see the Phase 5B spec
-// section for what's deliberately out of scope and why.
+// would route to (TV, color TV, tape, Unibus Map DMA, IOB, unibus-mapping).
+// The bus-interface range (0766040-0766136 octal) routes to the real
+// BusInterface (Phase 4's own faithful port), not a placeholder. NOT a full
+// device-emulation port -- see the Phase 5B spec section for what's
+// deliberately out of scope and why.
 
 using System;
 
@@ -13,6 +15,13 @@ namespace Usim;
 
 public class BusAdaptor
 {
+    private readonly BusInterface _busInterface;
+
+    public BusAdaptor(BusInterface busInterface)
+    {
+        _busInterface = busInterface;
+    }
+
     // XBus I/O absolute physical-address ranges (usim/bus-adaptor.c's
     // bus_adaptor_xbusio_rw). All boundaries re-derived by direct octal-to-hex
     // computation (Python `0o`/`hex()`), not manual digit counting.
@@ -41,8 +50,8 @@ public class BusAdaptor
     private const uint DiagnosticLo = 0x3EC00;      // 0766000-0766036 octal
     private const uint DiagnosticHi = 0x3EC1E;
     private const uint DiagnosticModeRegister = 0x3EC0A; // 0766012 octal
-    private const uint BusInterfaceLo = 0x3EC20;    // 0766040-0766136 octal -- already a
-    private const uint BusInterfaceHi = 0x3EC5E;    // separately-deferred subsystem (Phase 4 ruling)
+    private const uint BusInterfaceLo = 0x3EC20;    // 0766040-0766136 octal -- routed to
+    private const uint BusInterfaceHi = 0x3EC5E;    // BusInterface (Phase 4's own faithful port)
     private const uint UnibusMappingLo = 0x3EC60;   // 0766140-0766176 octal
     private const uint UnibusMappingHi = 0x3EC7E;
     private const uint TapeControllerLo = 0x3F550;  // 0772520-0772532 octal
@@ -130,6 +139,10 @@ public class BusAdaptor
             // default; the boot PROM's early boot never reads these back.
             return 0;
         }
+        if (uaddr >= BusInterfaceLo && uaddr <= BusInterfaceHi)
+        {
+            return _busInterface.Read(uaddr);
+        }
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: read un-ported Unibus uaddr 0x{uaddr:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
         return 0;
@@ -150,6 +163,11 @@ public class BusAdaptor
             // Global Constraints in the Phase 5B plan for why.
             return;
         }
+        if (uaddr >= BusInterfaceLo && uaddr <= BusInterfaceHi)
+        {
+            _busInterface.Write(uaddr, v);
+            return;
+        }
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: write un-ported Unibus uaddr 0x{uaddr:X} v=0x{v:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
     }
@@ -158,7 +176,6 @@ public class BusAdaptor
     {
         if (uaddr >= UnibusMapLo && uaddr <= UnibusMapHi) return "Unibus Map DMA";
         if (uaddr >= IobLo && uaddr <= IobHi) return "IOB";
-        if (uaddr >= BusInterfaceLo && uaddr <= BusInterfaceHi) return "bus-interface (already separately deferred, Phase 4)";
         if (uaddr >= UnibusMappingLo && uaddr <= UnibusMappingHi) return "unibus-mapping";
         if (uaddr >= TapeControllerLo && uaddr <= TapeControllerHi) return "tape controller";
         return "unmapped Unibus";

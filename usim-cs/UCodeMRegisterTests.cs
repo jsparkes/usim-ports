@@ -295,9 +295,11 @@ public static class UCodeMRegisterTests
             Assert(ucode.InterruptControl == (0xFu << 26), $"code2: InterruptControl set verbatim, got 0x{ucode.InterruptControl:X}");
             Assert(ucode.Lc == (0xFu << 26), $"code2: Lc bits 26-29 mirror InterruptControl, got 0x{ucode.Lc:X}");
 
-            // Bit 28 (bus reset) does not throw -- it's a deferred, different-subsystem no-op.
+            // Bit 28 (bus reset) now calls the real BusInterface.BusReset().
+            ucode.BusInterface.SetXbusNxm(); // dirty the state so the reset is observable
             ucode.MfWrite(2 << 5, unchecked((int)(1u << 28)));
-            Assert(true, "code2 bit28 (bus reset) does not throw");
+            Assert(ucode.BusInterface.GetBusErrorStatus() == 0,
+                "code2 bit28 calls BusInterface.BusReset(), clearing bus_error_status");
 
             Console.WriteLine("  MfWrite INTERRUPT-CONTROL tests passed\n");
             return true;

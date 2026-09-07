@@ -17,6 +17,7 @@ public static class MachineControlTests
         if (TestUCodeAndMemorySharedInstance()) passed++; else failed++;
         if (TestRunLoopStopsOnHalted()) passed++; else failed++;
         if (TestSingleStepTransitionsToHaltedState()) passed++; else failed++;
+        if (TestPowerOnCallsBusReset()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -116,6 +117,29 @@ public static class MachineControlTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Single-step Halted-state-transition test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestPowerOnCallsBusReset()
+    {
+        Console.WriteLine("Test: PowerOn() resets the bus interface's error status");
+        try
+        {
+            var mc = new MachineControl();
+            mc.UCode.BusInterface.SetXbusNxm(); // dirty the state before PowerOn
+
+            mc.PowerOn(BootMode.Cold);
+
+            Assert(mc.UCode.BusInterface.GetBusErrorStatus() == 0,
+                "bus_error_status is 0 after PowerOn (BusReset was called)");
+
+            Console.WriteLine("  PowerOn-calls-BusReset test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  PowerOn-calls-BusReset test failed: {ex.Message}\n");
             return false;
         }
     }

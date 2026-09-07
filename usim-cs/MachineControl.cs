@@ -125,7 +125,8 @@ public class MachineControl
         
         // Initialize components
         InitializeComponents();
-        
+        UCode.BusInterface.BusReset();
+
         // Register I/O devices
         RegisterIODevices();
         
