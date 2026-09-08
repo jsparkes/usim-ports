@@ -35,6 +35,7 @@ public class UCode
 
     private readonly MainMemory _mainMemory;
     public Uvmem Uvmem { get; }
+    public BusInterface BusInterface { get; }
     public BusAdaptor BusAdaptor { get; }
 
     public UCode() : this(new MainMemory()) { }
@@ -43,7 +44,8 @@ public class UCode
     {
         _mainMemory = mainMemory;
         Uvmem = new Uvmem();
-        BusAdaptor = new BusAdaptor();
+        BusInterface = new BusInterface(this);
+        BusAdaptor = new BusAdaptor(BusInterface);
     }
 
     // Machine cycles counter
@@ -413,6 +415,7 @@ public class UCode
                 if ((InterruptControl & (1 << 28)) != 0)
                 {
                     TraceLog.Instance.Info(TraceCategory.MicroCode, "usim: ic.bus reset");
+                    BusInterface.BusReset();
                 }
                 Lc = (Lc & ~(0xFu << 26)) | (InterruptControl & (0xFu << 26));
                 return;

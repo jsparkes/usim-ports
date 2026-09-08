@@ -21,6 +21,7 @@ public static class BusAdaptorTests
         if (TestDiagnosticModeRegisterWrite()) passed++; else failed++;
         if (TestDiagnosticOtherRegistersNoThrow()) passed++; else failed++;
         if (TestPlaceholderPathsDoNotThrow()) passed++; else failed++;
+        if (TestBusInterfaceRangeDispatchesForReal()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -33,7 +34,7 @@ public static class BusAdaptorTests
         Console.WriteLine("Test: disk-controller status register (offset 0) satisfies the boot PROM's poll");
         try
         {
-            var busAdaptor = new BusAdaptor();
+            var busAdaptor = new BusAdaptor(new BusInterface(new UCode(new MainMemory())));
 
             // Disk control range is paddr 0x3DFFFC-0x3DFFFF (017377774-017377777 octal);
             // offset 0 (status) is at 0x3DFFFC.
@@ -56,7 +57,7 @@ public static class BusAdaptorTests
         Console.WriteLine("Test: disk-controller other offsets read 0; writes are a no-op (not a working disk)");
         try
         {
-            var busAdaptor = new BusAdaptor();
+            var busAdaptor = new BusAdaptor(new BusInterface(new UCode(new MainMemory())));
             bool promDisabled = false;
 
             // Offsets 1 (memory address), 2 (disk address), 3 (ECC) -- no real disk
@@ -86,7 +87,7 @@ public static class BusAdaptorTests
         Console.WriteLine("Test: diagnostic-interface mode register (Unibus 0766012) sets PromDisabled");
         try
         {
-            var busAdaptor = new BusAdaptor();
+            var busAdaptor = new BusAdaptor(new BusInterface(new UCode(new MainMemory())));
             bool promDisabled = false;
 
             // Unibus uaddr 0766012 octal = 0x3EC0A. Bit 5 set -> promDisabled = true.
@@ -114,7 +115,7 @@ public static class BusAdaptorTests
         Console.WriteLine("Test: other diagnostic-interface registers are a no-op, not the real C's fatal errx()");
         try
         {
-            var busAdaptor = new BusAdaptor();
+            var busAdaptor = new BusAdaptor(new BusInterface(new UCode(new MainMemory())));
             bool promDisabled = false;
 
             // DEBUG-IR (0766000-0766004), clock control (0766006, real C errx()s if v!=1),
@@ -141,7 +142,7 @@ public static class BusAdaptorTests
         Console.WriteLine("Test: every un-implemented device path is non-fatal (TV, color TV, Unibus Map, IOB, tape, unmapped)");
         try
         {
-            var busAdaptor = new BusAdaptor();
+            var busAdaptor = new BusAdaptor(new BusInterface(new UCode(new MainMemory())));
             bool promDisabled = false;
 
             // Main TV screen (XBus I/O, 0x3C0000-0x3C7FFF).
@@ -169,6 +170,37 @@ public static class BusAdaptorTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Placeholder-paths tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestBusInterfaceRangeDispatchesForReal()
+    {
+        Console.WriteLine("Test: 0766040-range Unibus addresses dispatch to BusInterface, not the generic fallback");
+        try
+        {
+            var ucode = new UCode(new MainMemory());
+            var busAdaptor = new BusAdaptor(ucode.BusInterface);
+            bool promDisabled = false;
+
+            // 0766040 (interrupt status register, real write mask 0x3C01):
+            // an all-1s write is only masked to 0x3C01 if this genuinely
+            // reaches BusInterface -- the old generic fallback (still
+            // reachable for real unmapped addresses) never touches UCode
+            // state at all, so InterruptStatusReg would stay at its default
+            // 0 if dispatch weren't wired. Unlike a plain read-back-of-0
+            // check (which both paths satisfy identically), this assertion
+            // actually discriminates the two.
+            busAdaptor.Write(UaddrToPaddr(0x3EC20), 0xFFFFFFFF, ref promDisabled); // 0766040 octal
+            Assert(ucode.InterruptStatusReg == 0x3C01,
+                $"0766040 write reaches BusInterface and masks to 0x3C01, got 0x{ucode.InterruptStatusReg:X}");
+
+            Console.WriteLine("  Bus-interface real-dispatch test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Bus-interface real-dispatch test failed: {ex.Message}\n");
             return false;
         }
     }
