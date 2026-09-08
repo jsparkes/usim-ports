@@ -175,6 +175,7 @@ public static class BusInterfaceTests
         {
             var bi = new BusInterface(new UCode(new MainMemory()));
             Assert(bi.Read(0x3EC44) == 0, "0766104 reads 0");
+            Assert(!bi.IsUnibusNxm(), "no lashup-register access falls to the NXM-asserting default arm");
 
             Console.WriteLine("  Debuggee-status test passed\n");
             return true;
@@ -199,6 +200,7 @@ public static class BusInterfaceTests
             bi.Write(0x3EC48, 0x1234);
             bi.Write(0x3EC4A, 0x1234);
             bi.Write(0x3EC4C, 0x1234);
+            Assert(!bi.IsUnibusNxm(), "no lashup-register access falls to the NXM-asserting default arm");
 
             Console.WriteLine("  Lashup-only-registers test passed\n");
             return true;
