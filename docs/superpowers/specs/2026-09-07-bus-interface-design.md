@@ -13,10 +13,14 @@ alternate write path, and — for the real hardware — a remote-debugger link
 ("lashup") to a second, physical CADR machine acting as a debuggee.
 
 Today, `BusAdaptor.cs` routes this entire address range to a generic
-"unmapped Unibus" fallback that logs a warning and spuriously asserts
-Unibus NXM on every access (`BusAdaptor.cs`'s `DescribeUnibus` already
-labels this range "bus-interface (already separately deferred, Phase 4)").
-This is the first real consumer of that deferred range.
+"unmapped Unibus" fallback that logs a warning and returns 0 on every access
+(`BusAdaptor.cs`'s `DescribeUnibus` already labels this range "bus-interface
+(already separately deferred, Phase 4)") — **corrected during this spec's
+final review: the fallback does not assert Unibus NXM today; it never has,
+for this or any other still-un-ported range.** (An earlier draft of this
+paragraph claimed it did.) This is the first real consumer of that deferred
+range, and the first place in this codebase where a bus-error-status NXM
+assertion becomes real for any address range at all.
 
 ## Decisions
 
@@ -192,3 +196,21 @@ Updates to existing tests:
   each is its own future spec, decomposed from the combined "Phase 5B
   placeholders" scope per the brainstorming discussion that preceded this
   document.
+- **Wiring `BusInterface`'s `SetXbusNxm`/`SetUnibusNxm`/`SetUnibusMapError`
+  into `BusAdaptor.cs`'s OTHER placeholder fallback paths** (disk-control,
+  diagnostic spy-registers, and the still-fully-unported TV/color-TV/tape/
+  Unibus-Map-DMA/IOB/unibus-mapping ranges) — found by this spec's final
+  review, ruled out of scope. The real C asserts these exact bus errors from
+  those exact call sites (`usim/bus-adaptor.c:150,191,253,259,416`,
+  `usim/colortv.c:111,195`, `usim/diagnostic-interface.c:245,327`,
+  `usim/tape-controller.c:377,417,423,512,517,525,531`, `usim/tv.c:279,333`,
+  `usim/unibus-mapping.c:81`), and now that `BusInterface` exists and is
+  injected into `BusAdaptor`, its three setters are only ever exercised by
+  `BusInterface`'s own tests. **Ruling:** this task ported `bus-interface.c`
+  itself, not `bus-adaptor.c`'s fidelity for devices that remain fully
+  unported placeholders — asserting real NXM errors on paths whose owning
+  device isn't real yet is premature and belongs with each device's own
+  future faithful port (disk, tape, TV, unibus-mapping), not this spec.
+  Cost if wrong: low and easily fixed later — the setters already exist and
+  are already correct; wiring them in is a small, mechanical follow-up once
+  a given device's own port lands, not a design change.
