@@ -74,12 +74,15 @@ public class MachineControl
     public MachineControl()
     {
         Memory = new MainMemory();
-        DiskController = new DiskController();
         Keyboard = new Keyboard();
         Mouse = new Mouse();
         Display = new Display();
         IOBus = new IOBus();
         UCode = new UCode(Memory);
+        // Standalone only for now -- not yet wired into the bus/config system
+        // (see docs/superpowers/specs/2026-09-08-disk-subsystem-design.md);
+        // that wiring is a separate, later task.
+        DiskController = new DiskController(Memory, UCode);
 
         State = PowerState.Off;
         IsStopped = true;
@@ -233,7 +236,8 @@ public class MachineControl
         
         UCode.Init();
         Memory.Initialize();
-        DiskController.Initialize();
+        // DiskController resets itself in its constructor -- no Initialize()
+        // to call here (see this task's rewrite of DiskController/DiskUnit).
         Keyboard.Initialize();
         Mouse.Initialize();
         Display.Initialize();
@@ -277,11 +281,22 @@ public class MachineControl
         }
         
         // Mount disk images
+        // NOTE: config-driven disk-unit setup (type name, per-unit config
+        // parsing) is not wired up yet -- that's a later task, see
+        // docs/superpowers/specs/2026-09-08-disk-subsystem-design.md. This
+        // just preserves the prior best-effort "disk.img" convenience path.
         string diskImage = Path.Combine(UsimState.SysDirectory, "disk.img");
         if (File.Exists(diskImage))
         {
             Console.WriteLine($"Mounting disk: {diskImage}");
-            DiskController.Mount(0, diskImage);
+            try
+            {
+                DiskController.ConfigureUnit(0, "T-300", diskImage);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Console.WriteLine($"Could not mount {diskImage}: {ex.Message}");
+            }
         }
 
         // Load PROM/microcode symbols (Phase 8B): resolves symbolic
@@ -486,10 +501,7 @@ public class MachineControl
         
         Memory.PrintStatistics();
         Console.WriteLine();
-        
-        DiskController.PrintStatistics();
-        Console.WriteLine();
-        
+
         IOBus.PrintStatistics();
         Console.WriteLine();
         

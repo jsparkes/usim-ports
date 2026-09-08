@@ -226,6 +226,16 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-disk-unit":
+                    DiskUnitTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-disk-controller":
+                    DiskControllerTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--debug-microcode":
                 case "--debug-ucode":
                     var debugger = new MicrocodeDebugger(new UCode());
@@ -279,6 +289,8 @@ public class Program
         Console.WriteLine("  --test-machine-control  Run MachineControl wiring tests only");
         Console.WriteLine("  --test-main-memory      Run MainMemory tests only");
         Console.WriteLine("  --test-symbol-table     Run SymbolTable tests only");
+        Console.WriteLine("  --test-disk-unit        Run DiskUnit tests only");
+        Console.WriteLine("  --test-disk-controller  Run DiskController tests only");
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
@@ -573,6 +585,16 @@ public class Program
         // Run symbol table tests
         Console.WriteLine("Running Symbol Table Tests...\n");
         SymbolTableTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run DiskUnit tests
+        Console.WriteLine("Running DiskUnit Tests...\n");
+        DiskUnitTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run DiskController tests
+        Console.WriteLine("Running DiskController Tests...\n");
+        DiskControllerTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");
