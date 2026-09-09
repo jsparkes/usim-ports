@@ -280,24 +280,8 @@ public class MachineControl
             UCode.LoadPromFromFile(promFile);
         }
         
-        // Mount disk images
-        // NOTE: config-driven disk-unit setup (type name, per-unit config
-        // parsing) is not wired up yet -- that's a later task, see
-        // docs/superpowers/specs/2026-09-08-disk-subsystem-design.md. This
-        // just preserves the prior best-effort "disk.img" convenience path.
-        string diskImage = Path.Combine(UsimState.SysDirectory, "disk.img");
-        if (File.Exists(diskImage))
-        {
-            Console.WriteLine($"Mounting disk: {diskImage}");
-            try
-            {
-                DiskController.ConfigureUnit(0, "T-300", diskImage);
-            }
-            catch (InvalidOperationException ex)
-            {
-                Console.WriteLine($"Could not mount {diskImage}: {ex.Message}");
-            }
-        }
+        // Disk unit configuration is wired from real [disk] config in a later task
+        // (see docs/superpowers/plans/2026-09-08-disk-subsystem-port.md, Task 4).
 
         // Load PROM/microcode symbols (Phase 8B): resolves symbolic
         // A/M/I/D-memory operand names in Disassembler output when

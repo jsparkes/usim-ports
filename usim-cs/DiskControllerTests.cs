@@ -22,6 +22,7 @@ public static class DiskControllerTests
         if (TestReadOnlyWriteSetsHasFaultNoTransfer()) passed++; else failed++;
         if (TestFullReadWriteTransferThroughMemory()) passed++; else failed++;
         if (TestNonexistentMemoryError()) passed++; else failed++;
+        if (TestLastMemoryAddressSetBeforeCcwReadFails()) passed++; else failed++;
         if (TestInterruptAssertAndDeassert()) passed++; else failed++;
         if (TestStartOnOfflineUnitIsSilentNoOp()) passed++; else failed++;
 
@@ -415,6 +416,41 @@ public static class DiskControllerTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Nonexistent-memory-error test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static bool TestLastMemoryAddressSetBeforeCcwReadFails()
+    {
+        Console.WriteLine("Test: LastMemoryAddress is set to the CCW address itself before the very first CCW read is attempted, even when that read then fails");
+        var (dc, mem, ucode, path) = MakeController();
+        try
+        {
+            // MainMemory defaults to 8192 populated pages; a clp whose page
+            // number is >= npages makes the very first
+            // _mainMemory.TryReadWord(currentClp, ...) call inside
+            // PerformXfer fail, before any data transfer is attempted.
+            uint invalidClp = 8192 * 256; // page 8192, one past the last populated page
+
+            dc.Write(1, invalidClp);
+            dc.Write(2, EncodeDa(0, 1, 1, 1));
+            dc.Write(0, 0x9); // write -- fails at the first CCW fetch, never reaches a data page
+            dc.Write(3, 0);
+
+            Assert(dc.GetUnitForTest(0).LastMemoryAddress == invalidClp,
+                $"LastMemoryAddress holds the failing CCW address itself, got 0x{dc.GetUnitForTest(0).LastMemoryAddress:X}, expected 0x{invalidClp:X}");
+            Assert((dc.Read(0) & (1u << 20)) != 0, "nonexistent-memory-error bit set for the failed CCW fetch");
+
+            Console.WriteLine("  LastMemoryAddress-CCW-fetch-stage test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  LastMemoryAddress-CCW-fetch-stage test failed: {ex.Message}\n");
             return false;
         }
         finally
