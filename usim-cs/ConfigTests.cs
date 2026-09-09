@@ -306,6 +306,11 @@ public static class ConfigTests
     private static bool TestApplyConfigurationParsesDiskUnits()
     {
         Console.WriteLine("Test: ApplyConfiguration parses the [disk] section into UsimState.DiskUnits");
+        // UsimState.DiskUnits is process-wide static state. MachineControlTests'
+        // PowerOn() now genuinely consumes it (Task 4's wiring), so this test must
+        // restore whatever was there before it, or the fake, unopenable paths set
+        // below leak into every later suite in a --test-all run.
+        var savedDiskUnits = UsimState.DiskUnits;
         try
         {
             var parser = new ConfigParser();
@@ -336,6 +341,10 @@ public static class ConfigTests
         {
             Console.WriteLine($"  ApplyConfiguration disk-units test failed: {ex.Message}\n");
             return false;
+        }
+        finally
+        {
+            UsimState.DiskUnits = savedDiskUnits;
         }
     }
 

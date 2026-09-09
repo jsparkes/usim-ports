@@ -74,15 +74,13 @@ public class MachineControl
     public MachineControl()
     {
         Memory = new MainMemory();
+        UCode = new UCode(Memory);
+        DiskController = new DiskController(Memory, UCode);
+        UCode.BusAdaptor.WireDiskController(DiskController);
         Keyboard = new Keyboard();
         Mouse = new Mouse();
         Display = new Display();
         IOBus = new IOBus();
-        UCode = new UCode(Memory);
-        // Standalone only for now -- not yet wired into the bus/config system
-        // (see docs/superpowers/specs/2026-09-08-disk-subsystem-design.md);
-        // that wiring is a separate, later task.
-        DiskController = new DiskController(Memory, UCode);
 
         State = PowerState.Off;
         IsStopped = true;
@@ -280,8 +278,13 @@ public class MachineControl
             UCode.LoadPromFromFile(promFile);
         }
         
-        // Disk unit configuration is wired from real [disk] config in a later task
-        // (see docs/superpowers/plans/2026-09-08-disk-subsystem-port.md, Task 4).
+        // Configure disk units from [disk] config (UsimState.DiskUnits,
+        // populated by Program.ApplyConfiguration)
+        foreach (var (unit, typeName, filename) in UsimState.DiskUnits)
+        {
+            Console.WriteLine($"Configuring disk unit {unit}: {typeName},{filename}");
+            DiskController.ConfigureUnit(unit, typeName, filename);
+        }
 
         // Load PROM/microcode symbols (Phase 8B): resolves symbolic
         // A/M/I/D-memory operand names in Disassembler output when

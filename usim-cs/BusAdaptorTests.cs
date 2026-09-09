@@ -22,6 +22,7 @@ public static class BusAdaptorTests
         if (TestDiagnosticOtherRegistersNoThrow()) passed++; else failed++;
         if (TestPlaceholderPathsDoNotThrow()) passed++; else failed++;
         if (TestBusInterfaceRangeDispatchesForReal()) passed++; else failed++;
+        if (TestDiskControlDispatchesToRealController()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -31,16 +32,22 @@ public static class BusAdaptorTests
 
     private static bool TestDiskControlStatusRead()
     {
-        Console.WriteLine("Test: disk-controller status register (offset 0) satisfies the boot PROM's poll");
+        Console.WriteLine("Test: disk-controller status register (offset 0) reflects real state, not a fake always-ready stub");
         try
         {
-            var busAdaptor = new BusAdaptor(new BusInterface(new UCode(new MainMemory())));
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var diskController = new DiskController(mainMemory, ucode);
+            ucode.BusAdaptor.WireDiskController(diskController);
 
-            // Disk control range is paddr 0x3DFFFC-0x3DFFFF (017377774-017377777 octal);
-            // offset 0 (status) is at 0x3DFFFC.
-            uint status = busAdaptor.Read(0x3DFFFC);
-            Assert((status & 1) != 0, $"bit0 (not_active/ready) must be set, got 0x{status:X}");
-            Assert((status & (1u << 9)) == 0, $"bit9 (!online) must be clear (i.e. online), got 0x{status:X}");
+            // With no unit configured, a real DiskController correctly reports
+            // not-active (bit0=1) AND offline (bit9=1) -- unlike the old stub,
+            // which faked "ready, online" unconditionally. This matches real
+            // hardware with no disk attached (an intended, documented behavior
+            // change -- see this plan's Global Constraints).
+            uint status = ucode.BusAdaptor.Read(0x3DFFFC);
+            Assert((status & 1) != 0, $"bit0 (not_active) set with no disk configured, got 0x{status:X}");
+            Assert((status & (1u << 9)) != 0, $"bit9 (!online) set with no disk configured, got 0x{status:X}");
 
             Console.WriteLine("  Disk-control status tests passed\n");
             return true;
@@ -57,7 +64,11 @@ public static class BusAdaptorTests
         Console.WriteLine("Test: disk-controller other offsets read 0; writes are a no-op (not a working disk)");
         try
         {
-            var busAdaptor = new BusAdaptor(new BusInterface(new UCode(new MainMemory())));
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var diskController = new DiskController(mainMemory, ucode);
+            ucode.BusAdaptor.WireDiskController(diskController);
+            var busAdaptor = ucode.BusAdaptor;
             bool promDisabled = false;
 
             // Offsets 1 (memory address), 2 (disk address), 3 (ECC) -- no real disk
@@ -67,7 +78,7 @@ public static class BusAdaptorTests
             Assert(busAdaptor.Read(0x3DFFFF) == 0, "offset 3 (ECC) reads 0");
 
             // Writes to any disk-control offset (command/CLP/DA) must not throw.
-            busAdaptor.Write(0x3DFFFC, 0x16, ref promDisabled); // command register, "reset" value
+            busAdaptor.Write(0x3DFFFC, 0xE, ref promDisabled); // command register, "reset" value
             busAdaptor.Write(0x3DFFFD, 0, ref promDisabled);
             busAdaptor.Write(0x3DFFFE, 0x1234, ref promDisabled);
             Assert(promDisabled == false, "disk-control writes never touch promDisabled");
@@ -201,6 +212,36 @@ public static class BusAdaptorTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Bus-interface real-dispatch test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestDiskControlDispatchesToRealController()
+    {
+        Console.WriteLine("Test: disk-control range dispatches to the real DiskController, not a stub");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var diskController = new DiskController(mainMemory, ucode);
+            ucode.BusAdaptor.WireDiskController(diskController);
+            bool promDisabled = false;
+
+            // Writing 0xE (reset) then reading offset 0 must return exactly 0
+            // even though EncodeStatus() would normally set bit0 -- the old
+            // stub had no concept of a reset condition and could never
+            // produce this.
+            ucode.BusAdaptor.Write(0x3DFFFC, 0xE, ref promDisabled);
+            uint statusDuringReset = ucode.BusAdaptor.Read(0x3DFFFC);
+            Assert(statusDuringReset == 0, $"reset condition forces status to 0, got 0x{statusDuringReset:X}");
+            Assert(!promDisabled, "disk-control writes never touch promDisabled");
+
+            Console.WriteLine("  Disk-control real-dispatch test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Disk-control real-dispatch test failed: {ex.Message}\n");
             return false;
         }
     }

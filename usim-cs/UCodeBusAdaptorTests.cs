@@ -54,7 +54,9 @@ public static class UCodeBusAdaptorTests
         Console.WriteLine("Test: Vm() read of a mapped disk-control address returns BusAdaptor's real status");
         try
         {
-            var ucode = new UCode();
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            ucode.BusAdaptor.WireDiskController(new DiskController(mainMemory, ucode));
             ucode.Init();
 
             // Map vaddr 0x00008000 to physical page number 0x3DFFFC's page (i.e.
@@ -73,7 +75,12 @@ public static class UCodeBusAdaptorTests
 
             uint v = 0xDEADBEEF;
             ucode.CallVm(false, vaddr, ref v);
-            Assert((v & 1) != 0, $"disk-control status bit0 (ready) reaches Vm()'s caller, got 0x{v:X}");
+            // bit0 (not_active) is 1 for a real, freshly-reset DiskController with
+            // no unit configured -- same value the old always-ready stub returned,
+            // so this assertion still discriminates "reaches BusAdaptor's real
+            // status register" from "reads back 0/garbage", just via a different
+            // (now real) code path.
+            Assert((v & 1) != 0, $"disk-control status bit0 (not_active) reaches Vm()'s caller, got 0x{v:X}");
             Assert(ucode.VmaOk == true, "mapped with access permission -> VmaOk true");
 
             Console.WriteLine("  Vm-reads-real-disk-status tests passed\n");

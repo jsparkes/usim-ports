@@ -16,10 +16,16 @@ namespace Usim;
 public class BusAdaptor
 {
     private readonly BusInterface _busInterface;
+    private DiskController? _diskController;
 
     public BusAdaptor(BusInterface busInterface)
     {
         _busInterface = busInterface;
+    }
+
+    public void WireDiskController(DiskController diskController)
+    {
+        _diskController = diskController;
     }
 
     // XBus I/O absolute physical-address ranges (usim/bus-adaptor.c's
@@ -91,15 +97,7 @@ public class BusAdaptor
         if (paddr >= DiskControlLo && paddr <= DiskControlHi)
         {
             uint offset = paddr - DiskControlLo;
-            // Faithful port of encode_status() (usim/disk-controller.c:174-219) for
-            // the two bits the boot PROM's DISK-RECALIBRATE polls: bit0=not_active
-            // (ready/idle)=1, bit9=!online=0 (i.e. online). Every other status bit
-            // (seek_error, read_only, has_fault, attention, interrupt_request, any
-            // real error condition) defaults to 0 -- this is not a real disk, just
-            // "no errors, ready, online". Offsets 1 (memory address), 2 (disk
-            // address), 3 (ECC, "no ECC errors in usim, so this always returns 0")
-            // have no real disk state to report either.
-            return offset == 0 ? 1u : 0u;
+            return _diskController!.Read(offset);
         }
         if (paddr == KnownBenignOverrunPaddr) return 0; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
@@ -111,9 +109,8 @@ public class BusAdaptor
     {
         if (paddr >= DiskControlLo && paddr <= DiskControlHi)
         {
-            // Command/CLP/DA writes: a no-op. This is NOT a working disk -- no real
-            // transfer happens. Tracked as a deliberate, out-of-scope gap in the
-            // Phase 5B spec section, not silently implied to work.
+            uint offset = paddr - DiskControlLo;
+            _diskController!.Write(offset, v);
             return;
         }
         if (paddr == KnownBenignOverrunPaddr) return; // see the constant's comment
