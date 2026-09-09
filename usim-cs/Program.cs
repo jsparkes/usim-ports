@@ -2,6 +2,7 @@
 // Converted from usim.c
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -348,7 +349,7 @@ public class Program
     /// <summary>
     /// Apply configuration settings
     /// </summary>
-    private static void ApplyConfiguration(ConfigParser config)
+    internal static void ApplyConfiguration(ConfigParser config)
     {
         UsimState.SysDirectory = config.GetString("Paths", "sys-directory", "./sys");
         UsimState.FsRootDirectory = config.GetString("Paths", "fs-root-directory", "./fs");
@@ -359,6 +360,32 @@ public class Program
         UsimState.AutoBoot = config.GetBool("Execution", "auto-boot", false);
         UsimState.AutoPowerOff = config.GetBool("Execution", "auto-power-off", false);
         UsimState.VerboseDumpStateFlag = config.GetBool("Debug", "verbose-dump", false);
+
+        var diskUnits = new List<(uint, string, string)>();
+        for (uint i = 0; i < DiskController.NUMBER_OF_DISK_UNITS; i++)
+        {
+            string line = config.GetString("disk", $"disk{i}", "");
+            if (string.IsNullOrEmpty(line)) continue;
+
+            string typeName;
+            string filename;
+            string[] parts = line.Split(',', 2);
+            if (parts.Length == 1)
+            {
+                // Real C's one-token fallback (usim/disk-unit.c:236-241):
+                // a bare filename with no comma defaults the type to T-300.
+                typeName = "T-300";
+                filename = parts[0].Trim();
+            }
+            else
+            {
+                typeName = parts[0].Trim();
+                filename = parts[1].Trim();
+            }
+
+            diskUnits.Add((i, typeName, filename));
+        }
+        UsimState.DiskUnits = diskUnits.ToArray();
     }
     
     /// <summary>

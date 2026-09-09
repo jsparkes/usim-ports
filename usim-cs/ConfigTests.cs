@@ -29,6 +29,7 @@ public static class ConfigTests
         if (TestPathExpansion()) passed++; else failed++;
         if (TestSectionOperations()) passed++; else failed++;
         if (TestConfigManager()) passed++; else failed++;
+        if (TestApplyConfigurationParsesDiskUnits()) passed++; else failed++;
         
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -302,6 +303,42 @@ public static class ConfigTests
         }
     }
     
+    private static bool TestApplyConfigurationParsesDiskUnits()
+    {
+        Console.WriteLine("Test: ApplyConfiguration parses the [disk] section into UsimState.DiskUnits");
+        try
+        {
+            var parser = new ConfigParser();
+            // Simulate a loaded config with a [disk] section, two units configured,
+            // one bare-filename (no comma, type defaults to T-300), rest absent.
+            parser.SetString("disk", "disk0", "T-80,/path/to/unit0.img");
+            parser.SetString("disk", "disk3", "/path/to/unit3-bare.img");
+
+            Program.ApplyConfiguration(parser);
+
+            Assert(UsimState.DiskUnits.Length == 2, $"exactly 2 units configured, got {UsimState.DiskUnits.Length}");
+
+            var unit0 = Array.Find(UsimState.DiskUnits, u => u.Unit == 0);
+            Assert(unit0.TypeName == "T-80", $"unit 0 type is T-80, got {unit0.TypeName}");
+            Assert(unit0.Filename == "/path/to/unit0.img", $"unit 0 filename correct, got {unit0.Filename}");
+
+            var unit3 = Array.Find(UsimState.DiskUnits, u => u.Unit == 3);
+            Assert(unit3.TypeName == "T-300", $"unit 3 (bare filename) defaults to T-300, got {unit3.TypeName}");
+            Assert(unit3.Filename == "/path/to/unit3-bare.img", $"unit 3 filename correct, got {unit3.Filename}");
+
+            Assert(Array.Find(UsimState.DiskUnits, u => u.Unit == 1).Filename == null,
+                "unit 1 (never configured) is absent from the array");
+
+            Console.WriteLine("  ApplyConfiguration disk-units test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ApplyConfiguration disk-units test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
     private static void Assert(bool condition, string message)
     {
         if (!condition)
