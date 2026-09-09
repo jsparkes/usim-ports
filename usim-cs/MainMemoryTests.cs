@@ -18,6 +18,9 @@ public static class MainMemoryTests
         if (TestReadWriteWithinPopulatedRangeWork()) passed++; else failed++;
         if (TestReadWriteAtOrBeyondNpagesFail()) passed++; else failed++;
         if (TestCustomNpagesGatesCorrectly()) passed++; else failed++;
+        if (TestReadWritePageRoundTrip()) passed++; else failed++;
+        if (TestPageMethodsOutOfRange()) passed++; else failed++;
+        if (TestTryReadWordDiscriminates()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -130,6 +133,77 @@ public static class MainMemoryTests
         catch (Exception ex)
         {
             Console.WriteLine($"  custom-npages test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestReadWritePageRoundTrip()
+    {
+        Console.WriteLine("Test: ReadPage/WritePage round-trip a real 256-word buffer");
+        try
+        {
+            var mem = new MainMemory();
+            var buffer = new uint[256];
+            for (int i = 0; i < 256; i++) buffer[i] = (uint)(0x1000 + i);
+
+            Assert(mem.WritePage(0x1200, buffer), "WritePage succeeds for a populated page");
+
+            var readBack = new uint[256];
+            Assert(mem.ReadPage(0x1200, readBack), "ReadPage succeeds for a populated page");
+            for (int i = 0; i < 256; i++)
+                Assert(readBack[i] == buffer[i], $"word {i} round-trips, got 0x{readBack[i]:X}");
+
+            Console.WriteLine("  ReadPage/WritePage round-trip test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ReadPage/WritePage round-trip test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestPageMethodsOutOfRange()
+    {
+        Console.WriteLine("Test: ReadPage/WritePage return false for an unpopulated page");
+        try
+        {
+            var mem = new MainMemory(npages: 1); // only page 0 populated
+            var buffer = new uint[256];
+
+            Assert(!mem.ReadPage(0x100, buffer), "ReadPage fails for page 1 when npages=1");
+            Assert(!mem.WritePage(0x100, buffer), "WritePage fails for page 1 when npages=1");
+
+            Console.WriteLine("  Page-methods out-of-range test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Page-methods out-of-range test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestTryReadWordDiscriminates()
+    {
+        Console.WriteLine("Test: TryReadWord's bool return discriminates in-range from out-of-range");
+        try
+        {
+            var mem = new MainMemory(npages: 1);
+            mem.WritePhysical(0x42, 0xABCD1234);
+
+            Assert(mem.TryReadWord(0x42, out uint inRange), "TryReadWord returns true for a populated page");
+            Assert(inRange == 0xABCD1234, $"in-range value correct, got 0x{inRange:X}");
+
+            Assert(!mem.TryReadWord(0x100, out uint outOfRange), "TryReadWord returns false for page 1 when npages=1");
+            Assert(outOfRange == 0xFFFFFFFF, $"out-of-range sentinel value, got 0x{outOfRange:X}");
+
+            Console.WriteLine("  TryReadWord discrimination test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  TryReadWord discrimination test failed: {ex.Message}\n");
             return false;
         }
     }

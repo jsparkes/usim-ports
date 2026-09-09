@@ -2,6 +2,7 @@
 // Converted from usim.c
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -226,6 +227,16 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-disk-unit":
+                    DiskUnitTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-disk-controller":
+                    DiskControllerTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--debug-microcode":
                 case "--debug-ucode":
                     var debugger = new MicrocodeDebugger(new UCode());
@@ -279,6 +290,8 @@ public class Program
         Console.WriteLine("  --test-machine-control  Run MachineControl wiring tests only");
         Console.WriteLine("  --test-main-memory      Run MainMemory tests only");
         Console.WriteLine("  --test-symbol-table     Run SymbolTable tests only");
+        Console.WriteLine("  --test-disk-unit        Run DiskUnit tests only");
+        Console.WriteLine("  --test-disk-controller  Run DiskController tests only");
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
@@ -336,7 +349,7 @@ public class Program
     /// <summary>
     /// Apply configuration settings
     /// </summary>
-    private static void ApplyConfiguration(ConfigParser config)
+    internal static void ApplyConfiguration(ConfigParser config)
     {
         UsimState.SysDirectory = config.GetString("Paths", "sys-directory", "./sys");
         UsimState.FsRootDirectory = config.GetString("Paths", "fs-root-directory", "./fs");
@@ -347,6 +360,32 @@ public class Program
         UsimState.AutoBoot = config.GetBool("Execution", "auto-boot", false);
         UsimState.AutoPowerOff = config.GetBool("Execution", "auto-power-off", false);
         UsimState.VerboseDumpStateFlag = config.GetBool("Debug", "verbose-dump", false);
+
+        var diskUnits = new List<(uint, string, string)>();
+        for (uint i = 0; i < DiskController.NUMBER_OF_DISK_UNITS; i++)
+        {
+            string line = config.GetString("disk", $"disk{i}", "");
+            if (string.IsNullOrEmpty(line)) continue;
+
+            string typeName;
+            string filename;
+            string[] parts = line.Split(',', 2);
+            if (parts.Length == 1)
+            {
+                // Real C's one-token fallback (usim/disk-unit.c:236-241):
+                // a bare filename with no comma defaults the type to T-300.
+                typeName = "T-300";
+                filename = parts[0].Trim();
+            }
+            else
+            {
+                typeName = parts[0].Trim();
+                filename = parts[1].Trim();
+            }
+
+            diskUnits.Add((i, typeName, filename));
+        }
+        UsimState.DiskUnits = diskUnits.ToArray();
     }
     
     /// <summary>
@@ -573,6 +612,16 @@ public class Program
         // Run symbol table tests
         Console.WriteLine("Running Symbol Table Tests...\n");
         SymbolTableTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run DiskUnit tests
+        Console.WriteLine("Running DiskUnit Tests...\n");
+        DiskUnitTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run DiskController tests
+        Console.WriteLine("Running DiskController Tests...\n");
+        DiskControllerTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");

@@ -1,6 +1,8 @@
 // UsimConstants.cs - Core constants and system definitions
 // Converted from usim.h
 
+using System;
+
 namespace Usim;
 
 /// <summary>
@@ -46,4 +48,6 @@ public static class UsimState
     public static bool Headless { get; set; }
     public static bool AutoBoot { get; set; }
     public static bool AutoPowerOff { get; set; }
+
+    public static (uint Unit, string TypeName, string Filename)[] DiskUnits { get; set; } = Array.Empty<(uint, string, string)>();
 }

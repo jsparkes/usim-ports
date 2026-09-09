@@ -121,6 +121,61 @@ public class MainMemory
         LogOutOfRangeAccess(pn, "write");
     }
 
+    /// <summary>
+    /// Faithful port of main_memory_read_page (usim/main-memory.c:123-139) --
+    /// the real C's DMA-style page transfer used by the disk controller.
+    /// Unlike ReadPhysical/WritePhysical, indexes by the masked page number
+    /// only (never the raw physicalAddress), so no separate upper-bound check
+    /// is needed: pn is already masked to 14 bits (max 16383), and
+    /// pn*PAGE_SIZE+PAGE_SIZE can never exceed PHYSICAL_MEM_SIZE.
+    /// </summary>
+    public bool ReadPage(uint physicalAddress, uint[] buffer)
+    {
+        uint pn = (physicalAddress >> PAGE_SIZE_BITS) & 0x3FFF;
+        if (pn < _npages)
+        {
+            Array.Copy(_physicalMemory, (int)(pn * PAGE_SIZE), buffer, 0, PAGE_SIZE);
+            return true;
+        }
+        LogOutOfRangeAccess(pn, "read page");
+        return false;
+    }
+
+    /// <summary>
+    /// Faithful port of main_memory_write_page (usim/main-memory.c:141-155).
+    /// </summary>
+    public bool WritePage(uint physicalAddress, uint[] buffer)
+    {
+        uint pn = (physicalAddress >> PAGE_SIZE_BITS) & 0x3FFF;
+        if (pn < _npages)
+        {
+            Array.Copy(buffer, 0, _physicalMemory, (int)(pn * PAGE_SIZE), PAGE_SIZE);
+            return true;
+        }
+        LogOutOfRangeAccess(pn, "write page");
+        return false;
+    }
+
+    /// <summary>
+    /// Faithful port of main_memory_read (usim/main-memory.c:59-89), with a
+    /// real bool success/failure -- unlike ReadPhysical's 0xFFFFFFFF-sentinel
+    /// convention, needed here because the disk controller's channel-command-word
+    /// read must tell "out of range" apart from "the word happens to be all-ones",
+    /// which the sentinel convention cannot.
+    /// </summary>
+    public bool TryReadWord(uint physicalAddress, out uint value)
+    {
+        uint pn = (physicalAddress >> PAGE_SIZE_BITS) & 0x3FFF;
+        if (pn < _npages && physicalAddress < PHYSICAL_MEM_SIZE)
+        {
+            value = _physicalMemory[physicalAddress];
+            return true;
+        }
+        LogOutOfRangeAccess(pn, "read");
+        value = 0xFFFFFFFF;
+        return false;
+    }
+
     private void LogOutOfRangeAccess(uint pn, string kind)
     {
         if (pn == _npages)

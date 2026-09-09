@@ -154,21 +154,6 @@ public class ConfigManager
     }
     
     /// <summary>
-    /// Get disk configuration
-    /// </summary>
-    public DiskConfig GetDiskConfig()
-    {
-        return new DiskConfig
-        {
-            DiskImage = _config.GetPath("Disk", "disk_image", "./disk.img"),
-            DiskSize = _config.GetHex("Disk", "disk_size", 0x40000000),
-            ReadOnly = _config.GetBool("Disk", "read_only", false),
-            CacheSize = _config.GetInt("Disk", "cache_size", 4096),
-            EnableDma = _config.GetBool("Disk", "enable_dma", true)
-        };
-    }
-    
-    /// <summary>
     /// Get keyboard configuration
     /// </summary>
     public KeyboardConfig GetKeyboardConfig()
@@ -317,15 +302,6 @@ public class MicrocodeConfig
     public string PromFile { get; set; } = "";
     public string MicrocodeFile { get; set; } = "";
     public string DispatchRomFile { get; set; } = "";
-}
-
-public class DiskConfig
-{
-    public string DiskImage { get; set; } = "";
-    public uint DiskSize { get; set; }
-    public bool ReadOnly { get; set; }
-    public int CacheSize { get; set; }
-    public bool EnableDma { get; set; }
 }
 
 public class KeyboardConfig

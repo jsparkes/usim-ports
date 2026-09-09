@@ -74,12 +74,13 @@ public class MachineControl
     public MachineControl()
     {
         Memory = new MainMemory();
-        DiskController = new DiskController();
+        UCode = new UCode(Memory);
+        DiskController = new DiskController(Memory, UCode);
+        UCode.BusAdaptor.WireDiskController(DiskController);
         Keyboard = new Keyboard();
         Mouse = new Mouse();
         Display = new Display();
         IOBus = new IOBus();
-        UCode = new UCode(Memory);
 
         State = PowerState.Off;
         IsStopped = true;
@@ -233,7 +234,8 @@ public class MachineControl
         
         UCode.Init();
         Memory.Initialize();
-        DiskController.Initialize();
+        // DiskController resets itself in its constructor -- no Initialize()
+        // to call here (see this task's rewrite of DiskController/DiskUnit).
         Keyboard.Initialize();
         Mouse.Initialize();
         Display.Initialize();
@@ -276,12 +278,19 @@ public class MachineControl
             UCode.LoadPromFromFile(promFile);
         }
         
-        // Mount disk images
-        string diskImage = Path.Combine(UsimState.SysDirectory, "disk.img");
-        if (File.Exists(diskImage))
+        // Configure disk units from [disk] config (UsimState.DiskUnits,
+        // populated by Program.ApplyConfiguration)
+        if (UsimState.DiskUnits.Length == 0)
         {
-            Console.WriteLine($"Mounting disk: {diskImage}");
-            DiskController.Mount(0, diskImage);
+            Console.WriteLine("No disk units configured");
+        }
+        else
+        {
+            foreach (var (unit, typeName, filename) in UsimState.DiskUnits)
+            {
+                Console.WriteLine($"Configuring disk unit {unit}: {typeName},{filename}");
+                DiskController.ConfigureUnit(unit, typeName, filename);
+            }
         }
 
         // Load PROM/microcode symbols (Phase 8B): resolves symbolic
@@ -486,10 +495,7 @@ public class MachineControl
         
         Memory.PrintStatistics();
         Console.WriteLine();
-        
-        DiskController.PrintStatistics();
-        Console.WriteLine();
-        
+
         IOBus.PrintStatistics();
         Console.WriteLine();
         
