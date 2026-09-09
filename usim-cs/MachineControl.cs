@@ -280,10 +280,17 @@ public class MachineControl
         
         // Configure disk units from [disk] config (UsimState.DiskUnits,
         // populated by Program.ApplyConfiguration)
-        foreach (var (unit, typeName, filename) in UsimState.DiskUnits)
+        if (UsimState.DiskUnits.Length == 0)
         {
-            Console.WriteLine($"Configuring disk unit {unit}: {typeName},{filename}");
-            DiskController.ConfigureUnit(unit, typeName, filename);
+            Console.WriteLine("No disk units configured");
+        }
+        else
+        {
+            foreach (var (unit, typeName, filename) in UsimState.DiskUnits)
+            {
+                Console.WriteLine($"Configuring disk unit {unit}: {typeName},{filename}");
+                DiskController.ConfigureUnit(unit, typeName, filename);
+            }
         }
 
         // Load PROM/microcode symbols (Phase 8B): resolves symbolic

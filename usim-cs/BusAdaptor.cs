@@ -97,7 +97,13 @@ public class BusAdaptor
         if (paddr >= DiskControlLo && paddr <= DiskControlHi)
         {
             uint offset = paddr - DiskControlLo;
-            return _diskController!.Read(offset);
+            if (_diskController == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: disk-control read at offset {offset} with no DiskController wired");
+                return 0;
+            }
+            return _diskController.Read(offset);
         }
         if (paddr == KnownBenignOverrunPaddr) return 0; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
@@ -110,7 +116,13 @@ public class BusAdaptor
         if (paddr >= DiskControlLo && paddr <= DiskControlHi)
         {
             uint offset = paddr - DiskControlLo;
-            _diskController!.Write(offset, v);
+            if (_diskController == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: disk-control write at offset {offset} with no DiskController wired");
+                return;
+            }
+            _diskController.Write(offset, v);
             return;
         }
         if (paddr == KnownBenignOverrunPaddr) return; // see the constant's comment
