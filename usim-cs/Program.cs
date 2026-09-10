@@ -187,6 +187,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-unibus-mapping":
+                    UnibusMappingTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-microcode-bus-adaptor":
                     UCodeBusAdaptorTests.RunAllTests();
                     Environment.Exit(0);
@@ -282,6 +287,7 @@ public class Program
         Console.WriteLine("  --test-microcode-vm     Run microcode virtual memory tests only");
         Console.WriteLine("  --test-bus-adaptor      Run bus adaptor tests only");
         Console.WriteLine("  --test-bus-interface    Run bus interface tests only");
+        Console.WriteLine("  --test-unibus-mapping   Run Unibus mapping register tests only");
         Console.WriteLine("  --test-microcode-bus-adaptor Run UCode/BusAdaptor wiring tests only");
         Console.WriteLine("  --test-microcode-dispatch Run microcode dispatch tests only");
         Console.WriteLine("  --test-microcode-byte   Run microcode byte tests only");
@@ -577,6 +583,11 @@ public class Program
         // Run bus interface tests
         Console.WriteLine("Running Bus Interface Tests...\n");
         BusInterfaceTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Unibus mapping tests
+        Console.WriteLine("Running Unibus Mapping Tests...\n");
+        UnibusMappingTests.RunAllTests();
         Console.WriteLine();
 
         // Run UCode/BusAdaptor wiring tests
