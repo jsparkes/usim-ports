@@ -2,12 +2,13 @@
 // XBus-I/O and Unibus device routing. UCode.Vm() already handles the "xbus main
 // memory" range (physical page number <= 0x3BFB) for real; this class handles
 // everything above that -- the boot PROM's disk-control and diagnostic-register
-// accesses, plus non-fatal placeholders for every other device bus-adaptor.c
-// would route to (TV, color TV, tape, Unibus Map DMA, IOB, unibus-mapping).
-// The bus-interface range (0766040-0766136 octal) routes to the real
-// BusInterface (Phase 4's own faithful port), not a placeholder. NOT a full
-// device-emulation port -- see the Phase 5B spec section for what's
-// deliberately out of scope and why.
+// accesses, the real Unibus Map DMA-translation path (to main memory, Xbus I/O,
+// or the diagnostic MD-register backdoor) and its unibus-mapping register file,
+// plus non-fatal placeholders for every other device bus-adaptor.c would route
+// to (TV, color TV, tape, IOB). The bus-interface range (0766040-0766136 octal)
+// routes to the real BusInterface (Phase 4's own faithful port), not a
+// placeholder. NOT a full device-emulation port -- see the Phase 5B spec
+// section for what's deliberately out of scope and why.
 
 using System;
 
@@ -16,11 +17,17 @@ namespace Usim;
 public class BusAdaptor
 {
     private readonly BusInterface _busInterface;
+    private readonly MainMemory _mainMemory;
+    private readonly UCode _ucode;
+    private readonly UnibusMapping _unibusMapping;
     private DiskController? _diskController;
 
-    public BusAdaptor(BusInterface busInterface)
+    public BusAdaptor(BusInterface busInterface, MainMemory mainMemory, UCode ucode)
     {
         _busInterface = busInterface;
+        _mainMemory = mainMemory;
+        _ucode = ucode;
+        _unibusMapping = new UnibusMapping(busInterface);
     }
 
     public void WireDiskController(DiskController diskController)
@@ -139,6 +146,143 @@ public class BusAdaptor
         return "unmapped XBus I/O";
     }
 
+    /// <summary>
+    /// Faithful port of the Unibus-Map-handling branch of bus_adaptor_unibus_rw
+    /// (usim/bus-adaptor.c:210-367), read side. "Selected mapping register" is
+    /// recomputed from pageNo on every call, matching the real C.
+    /// </summary>
+    private uint UnibusMapDmaRead(uint uaddr)
+    {
+        uint pageNo = (uaddr - UnibusMapLo) / 0x400;
+        ushort mappingRegister = _unibusMapping.GetRegister(pageNo);
+        bool mapValid = (mappingRegister & 0x8000) != 0;
+        uint xbusPageNumber = (uint)(mappingRegister & 0x3FFF);
+        uint paddr = (xbusPageNumber << 8) | ((uaddr >> 2) & 0xFF);
+
+        if (!mapValid)
+        {
+            _busInterface.SetUnibusMapError();
+            return 0;
+        }
+
+        bool hiword = ((uaddr >> 1) & 1) != 0;
+
+        // "An additional feature is that writing an Xbus address of 17400000
+        // or higher through the Unibus map writes into CADR's MD register."
+        if (xbusPageNumber >= 0x3E00)
+        {
+            return hiword ? (_ucode.MdReg >> 16) & 0xFFFF : _ucode.MdReg & 0xFFFF;
+        }
+
+        if (hiword)
+        {
+            // High half returns the value buffered by the low-half read below --
+            // no new Xbus transfer.
+            return _unibusMapping.GetBuffer(pageNo);
+        }
+
+        uint v32 = XbusRead(paddr);
+        _unibusMapping.SetBuffer(pageNo, (ushort)((v32 >> 16) & 0xFFFF));
+        return v32 & 0xFFFF;
+    }
+
+    /// <summary>Write side of UnibusMapDmaRead's port.</summary>
+    private void UnibusMapDmaWrite(uint uaddr, uint v)
+    {
+        uint pageNo = (uaddr - UnibusMapLo) / 0x400;
+        ushort mappingRegister = _unibusMapping.GetRegister(pageNo);
+        bool mapValid = (mappingRegister & 0x8000) != 0;
+        bool writePermit = (mappingRegister & 0x4000) != 0;
+        uint xbusPageNumber = (uint)(mappingRegister & 0x3FFF);
+        uint paddr = (xbusPageNumber << 8) | ((uaddr >> 2) & 0xFF);
+
+        if (!mapValid)
+        {
+            _busInterface.SetUnibusMapError();
+            return;
+        }
+        if (!writePermit)
+        {
+            _busInterface.SetUnibusMapError();
+            return;
+        }
+
+        bool hiword = ((uaddr >> 1) & 1) != 0;
+
+        if (xbusPageNumber >= 0x3E00)
+        {
+            uint v32;
+            if (hiword)
+            {
+                v32 = _ucode.MdReg & 0x0000FFFFu;
+                v32 |= (v << 16) & 0xFFFF0000u;
+            }
+            else
+            {
+                v32 = _ucode.MdReg & 0xFFFF0000u;
+                v32 |= v & 0x0000FFFFu;
+            }
+            _ucode.MdReg = v32;
+            return;
+        }
+
+        if (hiword)
+        {
+            // High half completes the transfer, combining the cached low half
+            // (from the write below, on a prior call) with this high half.
+            ushort cachedLo = _unibusMapping.GetBuffer(pageNo);
+            uint v32 = ((v << 16) & 0xFFFF0000u) | cachedLo;
+            XbusWrite(paddr, v32);
+        }
+        else
+        {
+            // Low half: cache it, no transfer yet.
+            _unibusMapping.SetBuffer(pageNo, (ushort)v);
+        }
+    }
+
+    /// <summary>
+    /// Faithful port of bus_adaptor_xbus_rw (usim/bus-adaptor.c:164-193), read
+    /// side, split into a Read/Write pair per this file's existing
+    /// ReadXbusIo/WriteXbusIo and ReadUnibus/WriteUnibus convention (the real
+    /// C uses one bool-flagged function; this codebase doesn't).
+    /// </summary>
+    private uint XbusRead(uint paddr)
+    {
+        uint pn = (paddr >> 8) & 0x3FFF;
+        if (pn <= 0x3BFB)
+        {
+            return _mainMemory.ReadPhysical(paddr);
+        }
+        if (pn >= 0x3C00 && pn <= 0x3DFF)
+        {
+            return ReadXbusIo(paddr);
+        }
+        TraceLog.Instance.Warning(TraceCategory.Memory,
+            $"BusAdaptor: xbus read unknown paddr 0x{paddr:X}");
+        _busInterface.SetXbusNxm();
+        return 0;
+    }
+
+    /// <summary>Write side of XbusRead's port.</summary>
+    private void XbusWrite(uint paddr, uint v)
+    {
+        uint pn = (paddr >> 8) & 0x3FFF;
+        if (pn <= 0x3BFB)
+        {
+            _mainMemory.WritePhysical(paddr, v);
+            return;
+        }
+        if (pn >= 0x3C00 && pn <= 0x3DFF)
+        {
+            WriteXbusIo(paddr, v);
+            return;
+        }
+        TraceLog.Instance.Warning(TraceCategory.Memory,
+            $"BusAdaptor: xbus write unknown paddr 0x{paddr:X} v=0x{v:X}");
+        _busInterface.SetXbusNxm();
+    }
+
     private uint ReadUnibus(uint uaddr)
     {
         if (uaddr >= DiagnosticLo && uaddr <= DiagnosticHi)
@@ -151,6 +295,14 @@ public class BusAdaptor
         if (uaddr >= BusInterfaceLo && uaddr <= BusInterfaceHi)
         {
             return _busInterface.Read(uaddr);
+        }
+        if (uaddr >= UnibusMappingLo && uaddr <= UnibusMappingHi)
+        {
+            return _unibusMapping.Read(uaddr);
+        }
+        if (uaddr >= UnibusMapLo && uaddr <= UnibusMapHi)
+        {
+            return UnibusMapDmaRead(uaddr);
         }
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: read un-ported Unibus uaddr 0x{uaddr:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
@@ -177,15 +329,23 @@ public class BusAdaptor
             _busInterface.Write(uaddr, v);
             return;
         }
+        if (uaddr >= UnibusMappingLo && uaddr <= UnibusMappingHi)
+        {
+            _unibusMapping.Write(uaddr, v);
+            return;
+        }
+        if (uaddr >= UnibusMapLo && uaddr <= UnibusMapHi)
+        {
+            UnibusMapDmaWrite(uaddr, v);
+            return;
+        }
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: write un-ported Unibus uaddr 0x{uaddr:X} v=0x{v:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
     }
 
     private static string DescribeUnibus(uint uaddr)
     {
-        if (uaddr >= UnibusMapLo && uaddr <= UnibusMapHi) return "Unibus Map DMA";
         if (uaddr >= IobLo && uaddr <= IobHi) return "IOB";
-        if (uaddr >= UnibusMappingLo && uaddr <= UnibusMappingHi) return "unibus-mapping";
         if (uaddr >= TapeControllerLo && uaddr <= TapeControllerHi) return "tape controller";
         return "unmapped Unibus";
     }

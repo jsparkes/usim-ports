@@ -45,7 +45,7 @@ public class UCode
         _mainMemory = mainMemory;
         Uvmem = new Uvmem();
         BusInterface = new BusInterface(this);
-        BusAdaptor = new BusAdaptor(BusInterface);
+        BusAdaptor = new BusAdaptor(BusInterface, mainMemory, this);
     }
 
     // Machine cycles counter
