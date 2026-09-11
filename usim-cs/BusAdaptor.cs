@@ -65,8 +65,8 @@ public class BusAdaptor
     private const uint DiagnosticModeRegister = 0x3EC0A; // 0766012 octal
     private const uint BusInterfaceLo = 0x3EC20;    // 0766040-0766136 octal -- routed to
     private const uint BusInterfaceHi = 0x3EC5E;    // BusInterface (Phase 4's own faithful port)
-    private const uint UnibusMappingLo = 0x3EC60;   // 0766140-0766176 octal
-    private const uint UnibusMappingHi = 0x3EC7E;
+    internal const uint UnibusMappingLo = 0x3EC60;  // 0766140-0766176 octal
+    internal const uint UnibusMappingHi = 0x3EC7E;
     private const uint TapeControllerLo = 0x3F550;  // 0772520-0772532 octal
     private const uint TapeControllerHi = 0x3F55A;
 
@@ -171,6 +171,8 @@ public class BusAdaptor
         // or higher through the Unibus map writes into CADR's MD register."
         if (xbusPageNumber >= 0x3E00)
         {
+            TraceLog.Instance.Debug(TraceCategory.Memory,
+                $"BusAdaptor: unibus-map DMA read via MD-register backdoor, page {pageNo} reg=0x{mappingRegister:X} (xbus page 0x{xbusPageNumber:X}, {(hiword ? "hi" : "lo")} half), MdReg=0x{_ucode.MdReg:X}");
             return hiword ? (_ucode.MdReg >> 16) & 0xFFFF : _ucode.MdReg & 0xFFFF;
         }
 
@@ -183,6 +185,8 @@ public class BusAdaptor
 
         uint v32 = XbusRead(paddr);
         _unibusMapping.SetBuffer(pageNo, (ushort)((v32 >> 16) & 0xFFFF));
+        TraceLog.Instance.Debug(TraceCategory.Memory,
+            $"BusAdaptor: unibus-map DMA read, page {pageNo} reg=0x{mappingRegister:X} -> xbus paddr 0x{paddr:X}, value 0x{v32:X}");
         return v32 & 0xFFFF;
     }
 
@@ -223,6 +227,8 @@ public class BusAdaptor
                 v32 |= v & 0x0000FFFFu;
             }
             _ucode.MdReg = v32;
+            TraceLog.Instance.Debug(TraceCategory.Memory,
+                $"BusAdaptor: unibus-map DMA write via MD-register backdoor, page {pageNo} reg=0x{mappingRegister:X} (xbus page 0x{xbusPageNumber:X}, {(hiword ? "hi" : "lo")} half) -> MdReg=0x{_ucode.MdReg:X}");
             return;
         }
 
@@ -232,6 +238,8 @@ public class BusAdaptor
             // (from the write below, on a prior call) with this high half.
             ushort cachedLo = _unibusMapping.GetBuffer(pageNo);
             uint v32 = ((v << 16) & 0xFFFF0000u) | cachedLo;
+            TraceLog.Instance.Debug(TraceCategory.Memory,
+                $"BusAdaptor: unibus-map DMA write, page {pageNo} reg=0x{mappingRegister:X} -> xbus paddr 0x{paddr:X}, value 0x{v32:X}");
             XbusWrite(paddr, v32);
         }
         else

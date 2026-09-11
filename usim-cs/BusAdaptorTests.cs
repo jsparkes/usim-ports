@@ -28,6 +28,8 @@ public static class BusAdaptorTests
         if (TestUnibusMapDmaWriteToMainMemory()) passed++; else failed++;
         if (TestUnibusMapDmaReadFromMainMemory()) passed++; else failed++;
         if (TestUnibusMapMdRegisterBackdoor()) passed++; else failed++;
+        if (TestUnibusMapDmaToXbusIoDevice()) passed++; else failed++;
+        if (TestUnibusMapDmaToUnmappedXbusSetsNxm()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -302,6 +304,16 @@ public static class BusAdaptorTests
             Assert(ucode.BusInterface.IsUnibusMapError(), "write without permit sets Unibus Map Error");
             Assert(mainMemory.ReadPhysical(0) == 0xDEADBEEF, "no transfer happened -- sentinel untouched");
 
+            // Low-half writes only buffer -- they never call XbusWrite regardless
+            // of write-permit, so the assertion above holds trivially even if the
+            // write-permit check were completely broken. The high-half write is
+            // the one that actually completes a transfer, so it's the only write
+            // that can discriminate a working permit check from a broken one.
+            ucode.BusInterface.ResetBusErrorStatus();
+            busAdaptor.Write(UaddrToPaddr(0xC402), 0x2222, ref promDisabled); // page 1 high half
+            Assert(ucode.BusInterface.IsUnibusMapError(), "high-half write without permit also sets Unibus Map Error");
+            Assert(mainMemory.ReadPhysical(0) == 0xDEADBEEF, "high-half write without permit still doesn't transfer -- sentinel untouched");
+
             Console.WriteLine("  Write-without-permit test passed\n");
             return true;
         }
@@ -400,6 +412,8 @@ public static class BusAdaptorTests
                 $"MdReg set directly, got 0x{ucode.MdReg:X}");
             Assert(mainMemory.ReadPhysical(0x500) == 0xDEADBEEF,
                 "main memory untouched by the MD-register backdoor path");
+            Assert(!ucode.BusInterface.IsXbusNxm(),
+                "backdoor path never falls through to the generic Xbus dispatcher (which would set NXM for paddr 0x3E0000)");
 
             uint loRead = busAdaptor.Read(UaddrToPaddr(pageBase));
             uint hiRead = busAdaptor.Read(UaddrToPaddr(pageBase + 2));
@@ -411,6 +425,83 @@ public static class BusAdaptorTests
         catch (Exception ex)
         {
             Console.WriteLine($"  MD-register-backdoor test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestUnibusMapDmaToXbusIoDevice()
+    {
+        Console.WriteLine("Test: a Unibus-Map DMA transfer targeting the Xbus-I/O range dispatches to the real device path");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var busAdaptor = ucode.BusAdaptor;
+            var diskController = new DiskController(mainMemory, ucode);
+            busAdaptor.WireDiskController(diskController);
+            bool promDisabled = false;
+
+            // Configure page 4: MAP_VALID + WRITE_PERMIT, xbus page 0x3DFF --
+            // this lands squarely in the Xbus-I/O device range (0x3C00-0x3DFF),
+            // specifically at BusAdaptor's own DiskControlLo constant (0x3DFFFC)
+            // when combined with the right uaddr low bits.
+            busAdaptor.Write(UaddrToPaddr(0x3EC68), 0xFDFF, ref promDisabled); // register 4 = 0x3EC60 + 2*4
+
+            // Page 4 spans uaddr 0xD000-0xD3FF. Pick uaddr 0xD3F0 so that
+            // (uaddr>>2)&0xFF == 0xFC, making paddr = (0x3DFF<<8)|0xFC =
+            // 0x3DFFFC -- exactly DiskControlLo, offset 0 (status register),
+            // the same register TestDiskControlDispatchesToRealController
+            // already reaches directly (so its known-good behavior gives us
+            // something concrete to check).
+            uint pageOffsetUaddr = 0xD3F0;
+            uint status = busAdaptor.Read(UaddrToPaddr(pageOffsetUaddr));
+
+            // With no disk unit configured, the real DiskController reports
+            // not-active (bit0=1) and offline (bit9=1) -- confirms this
+            // reached the real disk-control dispatch, not a generic fallback
+            // or the MD-register backdoor (which would never touch DiskController
+            // state at all).
+            Assert((status & 1) != 0, $"bit0 (not_active) set, reached real DiskController, got 0x{status:X}");
+            Assert((status & (1u << 9)) != 0, $"bit9 (!online) set, reached real DiskController, got 0x{status:X}");
+
+            Console.WriteLine("  DMA-to-Xbus-I/O-device test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  DMA-to-Xbus-I/O-device test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestUnibusMapDmaToUnmappedXbusSetsNxm()
+    {
+        Console.WriteLine("Test: a Unibus-Map DMA transfer targeting neither main memory nor Xbus I/O sets Xbus NXM");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var busAdaptor = ucode.BusAdaptor;
+            bool promDisabled = false;
+
+            // Configure page 5: MAP_VALID + WRITE_PERMIT, xbus page 0x3BFC --
+            // the small real gap between main memory's end (0x3BFB) and
+            // Xbus-I/O's start (0x3C00), handled by uvmem in the real hardware
+            // and NXM here (matches the real C's own else branch in
+            // bus_adaptor_xbus_rw).
+            busAdaptor.Write(UaddrToPaddr(0x3EC6A), 0xFBFC, ref promDisabled); // register 5 = 0x3EC60 + 2*5
+
+            uint pageBase = 0xC000 + (5 * 0x400); // page 5's Unibus range start
+            uint status = busAdaptor.Read(UaddrToPaddr(pageBase));
+            Assert(status == 0, $"unmapped Xbus target read returns 0, got 0x{status:X}");
+            Assert(ucode.BusInterface.IsXbusNxm(), "unmapped Xbus target read sets Xbus NXM");
+
+            Console.WriteLine("  DMA-to-unmapped-Xbus test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  DMA-to-unmapped-Xbus test failed: {ex.Message}\n");
             return false;
         }
     }

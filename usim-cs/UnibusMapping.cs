@@ -25,18 +25,18 @@ public class UnibusMapping
     /// <summary>
     /// Faithful port of unibus_mapping_read (usim/unibus-mapping.c:85-89, via
     /// unibus_mapping_rw at :19-83). uaddr is the Unibus word address --
-    /// BusAdaptor already range-gates to 0x3EC60..0x3EC7E before calling this,
-    /// and every address in that exact range is one of the 16 registers, so
-    /// the real C's default case (odd uaddr, or genuinely out of range) is not
-    /// reachable via that call path -- ported faithfully anyway, matching this
-    /// project's established practice for real-but-practically-unreachable
-    /// fallback cases.
+    /// BusAdaptor already range-gates to BusAdaptor.UnibusMappingLo..
+    /// UnibusMappingHi before calling this, and every address in that exact
+    /// range is one of the 16 registers, so the real C's default case (odd
+    /// uaddr, or genuinely out of range) is not reachable via that call path
+    /// -- ported faithfully anyway, matching this project's established
+    /// practice for real-but-practically-unreachable fallback cases.
     /// </summary>
     public uint Read(uint uaddr)
     {
-        if (uaddr >= 0x3EC60 && uaddr <= 0x3EC7E && (uaddr & 1) == 0)
+        if (uaddr >= BusAdaptor.UnibusMappingLo && uaddr <= BusAdaptor.UnibusMappingHi && (uaddr & 1) == 0)
         {
-            uint pageNo = (uaddr - 0x3EC60) / 2;
+            uint pageNo = (uaddr - BusAdaptor.UnibusMappingLo) / 2;
             return _registers[pageNo];
         }
         TraceLog.Instance.Warning(TraceCategory.Memory,
@@ -48,9 +48,9 @@ public class UnibusMapping
     /// <summary>Faithful port of unibus_mapping_write (usim/unibus-mapping.c:91-95).</summary>
     public void Write(uint uaddr, uint v)
     {
-        if (uaddr >= 0x3EC60 && uaddr <= 0x3EC7E && (uaddr & 1) == 0)
+        if (uaddr >= BusAdaptor.UnibusMappingLo && uaddr <= BusAdaptor.UnibusMappingHi && (uaddr & 1) == 0)
         {
-            uint pageNo = (uaddr - 0x3EC60) / 2;
+            uint pageNo = (uaddr - BusAdaptor.UnibusMappingLo) / 2;
             _registers[pageNo] = (ushort)v;
             return;
         }
