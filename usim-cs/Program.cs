@@ -373,6 +373,24 @@ public class Program
         UsimState.AutoPowerOff = config.GetBool("Execution", "auto-power-off", false);
         UsimState.VerboseDumpStateFlag = config.GetBool("Debug", "verbose-dump", false);
 
+        string monitor = config.GetString("usim", "monitor", "cpt");
+        switch (monitor)
+        {
+            case "cpt":
+                UsimState.TvWidth = 768;
+                UsimState.TvHeight = 896;
+                break;
+            case "other":
+                UsimState.TvWidth = 768;
+                UsimState.TvHeight = 963;
+                break;
+            default:
+                Console.WriteLine($"Warning: unknown monitor type '{monitor}', using cpt");
+                UsimState.TvWidth = 768;
+                UsimState.TvHeight = 896;
+                break;
+        }
+
         var diskUnits = new List<(uint, string, string)>();
         for (uint i = 0; i < DiskController.NUMBER_OF_DISK_UNITS; i++)
         {
