@@ -451,15 +451,6 @@ public class Program
         var bootMode = UsimState.WarmBootFlag ? BootMode.Warm : BootMode.Cold;
         _machine.PowerOn(bootMode);
 
-        // Draw test pattern to show display is working (must run after
-        // PowerOn(), since PowerOn -> InitializeComponents() -> Display.Initialize()
-        // clears video memory and would otherwise erase this)
-        if (!UsimState.Headless)
-        {
-            _machine.Display.DrawTestPattern();
-            _machine.Display.Update();
-        }
-
         if (UsimState.AutoBoot)
         {
             Console.WriteLine("Auto-boot enabled");

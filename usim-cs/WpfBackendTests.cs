@@ -20,7 +20,7 @@ public static class WpfBackendTests
         if (TestKeyTranslation()) passed++; else failed++;
         if (TestModifierState()) passed++; else failed++;
         if (TestBeepWavBuilder()) passed++; else failed++;
-        if (TestDisplayByteOrder()) passed++; else failed++;
+        if (TestTvFrameBufferByteOrder()) passed++; else failed++;
         if (TestMouseDefaults()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
@@ -105,31 +105,34 @@ public static class WpfBackendTests
         }
     }
 
-    private static bool TestDisplayByteOrder()
+    private static bool TestTvFrameBufferByteOrder()
     {
-        Console.WriteLine("Test: Display Frame Buffer Byte Order");
+        Console.WriteLine("Test: Tv frame buffer byte order and LSB-first bit unpacking");
         try
         {
-            var display = new Display { Mode = DisplayMode.Color };
-            // Pixel (0,0) = color index 1 (Blue: R=0, G=0, B=170) in the
-            // top 4 bits of the first video memory word.
-            display.WriteVideoMemory(display.VideoMemoryBase, 0x10000000u);
-            display.Update();
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var tv = new Tv(ucode, 768, 896);
 
-            byte b = display.FrameBuffer[0];
-            byte g = display.FrameBuffer[1];
-            byte r = display.FrameBuffer[2];
-            byte a = display.FrameBuffer[3];
+            // Bit 0 set -> pixel 0 must be foreground (white, BGRA32 full
+            // alpha) -- the OLD invented code's MSB-first bug would have
+            // put this bit at pixel 31, not pixel 0.
+            tv.ScreenWrite(0, 0x00000001);
 
-            Assert(b == 170 && g == 0 && r == 0 && a == 255,
-                $"Frame buffer is B,G,R,A order (got B={b},G={g},R={r},A={a})");
+            byte b = tv.FrameBuffer[0];
+            byte g = tv.FrameBuffer[1];
+            byte r = tv.FrameBuffer[2];
+            byte a = tv.FrameBuffer[3];
 
-            Console.WriteLine("  Display Frame Buffer Byte Order tests passed\n");
+            Assert(b == 0xFF && g == 0xFF && r == 0xFF && a == 0xFF,
+                $"pixel 0 (bit 0, set) is foreground/white BGRA, got B={b:X2},G={g:X2},R={r:X2},A={a:X2}");
+
+            Console.WriteLine("  Tv frame buffer byte order test passed\n");
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  Display Frame Buffer Byte Order tests failed: {ex.Message}\n");
+            Console.WriteLine($"  Tv frame buffer byte order test failed: {ex.Message}\n");
             return false;
         }
     }
@@ -140,8 +143,8 @@ public static class WpfBackendTests
         try
         {
             var mouse = new Mouse();
-            Assert(mouse.MaxX == Display.WIDTH, "MaxX defaults to Display.WIDTH");
-            Assert(mouse.MaxY == Display.HEIGHT, "MaxY defaults to Display.HEIGHT");
+            Assert(mouse.MaxX == 768, "MaxX defaults to 768 (the cpt monitor's real width)");
+            Assert(mouse.MaxY == 896, "MaxY defaults to 896 (the cpt monitor's real height)");
 
             Console.WriteLine("  Mouse Default Bounds tests passed\n");
             return true;

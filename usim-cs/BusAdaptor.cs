@@ -21,6 +21,7 @@ public class BusAdaptor
     private readonly UCode _ucode;
     private readonly UnibusMapping _unibusMapping;
     private DiskController? _diskController;
+    private Tv? _tv;
 
     public BusAdaptor(BusInterface busInterface, MainMemory mainMemory, UCode ucode)
     {
@@ -33,6 +34,11 @@ public class BusAdaptor
     public void WireDiskController(DiskController diskController)
     {
         _diskController = diskController;
+    }
+
+    public void WireTv(Tv tv)
+    {
+        _tv = tv;
     }
 
     // XBus I/O absolute physical-address ranges (usim/bus-adaptor.c's
@@ -112,6 +118,28 @@ public class BusAdaptor
             }
             return _diskController.Read(offset);
         }
+        if (paddr >= TvScreenLo && paddr <= TvScreenHi)
+        {
+            uint offset = paddr - TvScreenLo;
+            if (_tv == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: TV screen read at offset {offset} with no Tv wired");
+                return 0;
+            }
+            return _tv.ScreenRead(offset);
+        }
+        if (paddr >= TvControlLo && paddr <= TvControlHi)
+        {
+            uint offset = paddr - TvControlLo;
+            if (_tv == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: TV control read at offset {offset} with no Tv wired");
+                return 0;
+            }
+            return _tv.ControlRead(offset);
+        }
         if (paddr == KnownBenignOverrunPaddr) return 0; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: read un-ported XBus-I/O paddr 0x{paddr:X} ({DescribeXbusIo(paddr)} -- not implemented, Phase 5B scope)");
@@ -132,6 +160,30 @@ public class BusAdaptor
             _diskController.Write(offset, v);
             return;
         }
+        if (paddr >= TvScreenLo && paddr <= TvScreenHi)
+        {
+            uint offset = paddr - TvScreenLo;
+            if (_tv == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: TV screen write at offset {offset} with no Tv wired");
+                return;
+            }
+            _tv.ScreenWrite(offset, v);
+            return;
+        }
+        if (paddr >= TvControlLo && paddr <= TvControlHi)
+        {
+            uint offset = paddr - TvControlLo;
+            if (_tv == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: TV control write at offset {offset} with no Tv wired");
+                return;
+            }
+            _tv.ControlWrite(offset, v);
+            return;
+        }
         if (paddr == KnownBenignOverrunPaddr) return; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: write un-ported XBus-I/O paddr 0x{paddr:X} v=0x{v:X} ({DescribeXbusIo(paddr)} -- not implemented, Phase 5B scope)");
@@ -139,10 +191,8 @@ public class BusAdaptor
 
     private static string DescribeXbusIo(uint paddr)
     {
-        if (paddr >= TvScreenLo && paddr <= TvScreenHi) return "main TV screen";
         if (paddr >= ColorTvScreenLo && paddr <= ColorTvScreenHi) return "color TV screen";
         if (paddr >= ColorTvControlLo && paddr <= ColorTvControlHi) return "color TV control";
-        if (paddr >= TvControlLo && paddr <= TvControlHi) return "main TV control";
         return "unmapped XBus I/O";
     }
 

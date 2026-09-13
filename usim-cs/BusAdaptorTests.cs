@@ -30,6 +30,7 @@ public static class BusAdaptorTests
         if (TestUnibusMapMdRegisterBackdoor()) passed++; else failed++;
         if (TestUnibusMapDmaToXbusIoDevice()) passed++; else failed++;
         if (TestUnibusMapDmaToUnmappedXbusSetsNxm()) passed++; else failed++;
+        if (TestTvRangeDispatchesToRealTv()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -502,6 +503,42 @@ public static class BusAdaptorTests
         catch (Exception ex)
         {
             Console.WriteLine($"  DMA-to-unmapped-Xbus test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestTvRangeDispatchesToRealTv()
+    {
+        Console.WriteLine("Test: TV screen/control ranges dispatch to a real, wired Tv, not the generic placeholder");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var busAdaptor = ucode.BusAdaptor;
+            var tv = new Tv(ucode, 768, 896);
+            busAdaptor.WireTv(tv);
+
+            bool promDisabled = false;
+
+            // Write a control-register mode value, confirm it round-trips
+            // through BusAdaptor -- the old generic placeholder always
+            // returned 0 regardless of what was "written" (a no-op), so a
+            // nonzero round-trip only happens through the real Tv path.
+            // TvControlLo = 0x3DFFF0 (offset 0, mode register); this is
+            // already a physical XBus-I/O paddr, not a Unibus uaddr, so
+            // (unlike the bus-interface/Unibus-Map-DMA tests elsewhere in
+            // this file) no UaddrToPaddr conversion applies here.
+            busAdaptor.Write(0x3DFFF0, 0xC, ref promDisabled);
+            uint mode = busAdaptor.Read(0x3DFFF0);
+            Assert(mode == 0xC, $"TV control register round-trips through real Tv, got 0x{mode:X}");
+            Assert(promDisabled == false, "TV control writes never touch promDisabled");
+
+            Console.WriteLine("  TV real-dispatch test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  TV real-dispatch test failed: {ex.Message}\n");
             return false;
         }
     }
