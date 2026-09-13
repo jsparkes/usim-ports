@@ -373,7 +373,7 @@ public class Program
         UsimState.AutoPowerOff = config.GetBool("Execution", "auto-power-off", false);
         UsimState.VerboseDumpStateFlag = config.GetBool("Debug", "verbose-dump", false);
 
-        string monitor = config.GetString("usim", "monitor", "cpt");
+        string monitor = config.GetString("usim", "monitor", "other");
         switch (monitor)
         {
             case "cpt":

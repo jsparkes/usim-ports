@@ -90,10 +90,22 @@ public class Tv
         switch (offset)
         {
             case 0:
-                return _mode;
+                {
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"tv: read mode: 0x{_mode:X}");
+                    return _mode;
+                }
 
             case 1:
-                return IsSyncPromEnabled() ? 0u : _syncRam[_syncPtr];
+                {
+                    uint v = IsSyncPromEnabled() ? 0u : _syncRam[_syncPtr];
+                    if (!IsSyncPromEnabled())
+                        TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                            $"tv: read sync_ram[0x{_syncPtr:X}] = 0x{v:X}");
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"tv: read sync data: 0x{v:X}");
+                    return v;
+                }
 
             default:
                 TraceLog.Instance.Warning(TraceCategory.Display,
@@ -110,6 +122,8 @@ public class Tv
         {
             case 0:
                 {
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"tv: write mode: 0x{v:X} [old:0x{_mode:X}]");
                     bool wasBow = IsBlackOnWhite();
                     _mode = v;
                     bool isBow = IsBlackOnWhite();
@@ -130,17 +144,25 @@ public class Tv
                 break;
 
             case 1:
+                TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                    $"tv: write sync data: 0x{v:X}");
                 if (!IsSyncPromEnabled())
                 {
                     _syncRam[_syncPtr] = (byte)(v & 0xFF);
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"tv: write sync_ram[0x{_syncPtr:X}] = 0x{_syncRam[_syncPtr]:X}");
                 }
                 break;
 
             case 2:
+                TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                    $"tv: write sync pointer: 0x{v:X}");
                 _syncPtr = v & 0x0FFF;
                 break;
 
             case 3:
+                TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                    $"tv: write vert spacing: 0x{v:X}");
                 _vertSpacing = v;
                 break;
 

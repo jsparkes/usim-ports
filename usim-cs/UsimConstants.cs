@@ -52,5 +52,5 @@ public static class UsimState
     public static (uint Unit, string TypeName, string Filename)[] DiskUnits { get; set; } = Array.Empty<(uint, string, string)>();
 
     public static uint TvWidth { get; set; } = 768;
-    public static uint TvHeight { get; set; } = 896;
+    public static uint TvHeight { get; set; } = 963;
 }

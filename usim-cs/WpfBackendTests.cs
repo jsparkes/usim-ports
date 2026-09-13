@@ -144,7 +144,7 @@ public static class WpfBackendTests
         {
             var mouse = new Mouse();
             Assert(mouse.MaxX == 768, "MaxX defaults to 768 (the cpt monitor's real width)");
-            Assert(mouse.MaxY == 896, "MaxY defaults to 896 (the cpt monitor's real height)");
+            Assert(mouse.MaxY == 963, "MaxY defaults to 963 (the other monitor's real height, the actual system default)");
 
             Console.WriteLine("  Mouse Default Bounds tests passed\n");
             return true;
