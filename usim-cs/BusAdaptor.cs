@@ -22,6 +22,7 @@ public class BusAdaptor
     private readonly UnibusMapping _unibusMapping;
     private DiskController? _diskController;
     private Tv? _tv;
+    private ColorTv? _colorTv;
 
     public BusAdaptor(BusInterface busInterface, MainMemory mainMemory, UCode ucode)
     {
@@ -39,6 +40,11 @@ public class BusAdaptor
     public void WireTv(Tv tv)
     {
         _tv = tv;
+    }
+
+    public void WireColorTv(ColorTv colorTv)
+    {
+        _colorTv = colorTv;
     }
 
     // XBus I/O absolute physical-address ranges (usim/bus-adaptor.c's
@@ -140,6 +146,28 @@ public class BusAdaptor
             }
             return _tv.ControlRead(offset);
         }
+        if (UsimState.ColorTvEnabled && paddr >= ColorTvScreenLo && paddr <= ColorTvScreenHi)
+        {
+            uint offset = paddr - ColorTvScreenLo;
+            if (_colorTv == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: color TV screen read at offset {offset} with no ColorTv wired");
+                return 0;
+            }
+            return _colorTv.ScreenRead(offset);
+        }
+        if (UsimState.ColorTvEnabled && paddr >= ColorTvControlLo && paddr <= ColorTvControlHi)
+        {
+            uint offset = paddr - ColorTvControlLo;
+            if (_colorTv == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: color TV control read at offset {offset} with no ColorTv wired");
+                return 0;
+            }
+            return _colorTv.ControlRead(offset);
+        }
         if (paddr == KnownBenignOverrunPaddr) return 0; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: read un-ported XBus-I/O paddr 0x{paddr:X} ({DescribeXbusIo(paddr)} -- not implemented, Phase 5B scope)");
@@ -182,6 +210,30 @@ public class BusAdaptor
                 return;
             }
             _tv.ControlWrite(offset, v);
+            return;
+        }
+        if (UsimState.ColorTvEnabled && paddr >= ColorTvScreenLo && paddr <= ColorTvScreenHi)
+        {
+            uint offset = paddr - ColorTvScreenLo;
+            if (_colorTv == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: color TV screen write at offset {offset} with no ColorTv wired");
+                return;
+            }
+            _colorTv.ScreenWrite(offset, v);
+            return;
+        }
+        if (UsimState.ColorTvEnabled && paddr >= ColorTvControlLo && paddr <= ColorTvControlHi)
+        {
+            uint offset = paddr - ColorTvControlLo;
+            if (_colorTv == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: color TV control write at offset {offset} with no ColorTv wired");
+                return;
+            }
+            _colorTv.ControlWrite(offset, v);
             return;
         }
         if (paddr == KnownBenignOverrunPaddr) return; // see the constant's comment

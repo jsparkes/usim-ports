@@ -31,6 +31,7 @@ public static class BusAdaptorTests
         if (TestUnibusMapDmaToXbusIoDevice()) passed++; else failed++;
         if (TestUnibusMapDmaToUnmappedXbusSetsNxm()) passed++; else failed++;
         if (TestTvRangeDispatchesToRealTv()) passed++; else failed++;
+        if (TestColorTvRangeDispatchesToRealColorTvOnlyWhenEnabled()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -540,6 +541,48 @@ public static class BusAdaptorTests
         {
             Console.WriteLine($"  TV real-dispatch test failed: {ex.Message}\n");
             return false;
+        }
+    }
+
+    private static bool TestColorTvRangeDispatchesToRealColorTvOnlyWhenEnabled()
+    {
+        Console.WriteLine("Test: color TV screen/control ranges dispatch to a real, wired ColorTv only when UsimState.ColorTvEnabled is true");
+        var saved = UsimState.ColorTvEnabled;
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var busAdaptor = ucode.BusAdaptor;
+            var colorTv = new ColorTv(ucode);
+            busAdaptor.WireColorTv(colorTv);
+
+            bool promDisabled = false;
+
+            // ColorTvControlLo = 0x3DFFE8 (offset 0, mode register).
+            UsimState.ColorTvEnabled = false;
+            busAdaptor.Write(0x3DFFE8, 0x1F, ref promDisabled);
+            uint modeWhenDisabled = busAdaptor.Read(0x3DFFE8);
+            Assert(modeWhenDisabled == 0,
+                $"disabled: falls through to the generic placeholder (always reads 0), got 0x{modeWhenDisabled:X}");
+
+            UsimState.ColorTvEnabled = true;
+            busAdaptor.Write(0x3DFFE8, 0x1F, ref promDisabled);
+            uint modeWhenEnabled = busAdaptor.Read(0x3DFFE8);
+            Assert(modeWhenEnabled == 0x1F,
+                $"enabled: round-trips through the real ColorTv, got 0x{modeWhenEnabled:X}");
+            Assert(promDisabled == false, "color TV control writes never touch promDisabled");
+
+            Console.WriteLine("  Color TV real-dispatch (enabled-gated) test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Color TV real-dispatch (enabled-gated) test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            UsimState.ColorTvEnabled = saved;
         }
     }
 

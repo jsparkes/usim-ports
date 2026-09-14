@@ -53,6 +53,7 @@ public class MachineControl
     public Keyboard Keyboard { get; private set; }
     public Mouse Mouse { get; private set; }
     public Tv Tv { get; private set; }
+    public ColorTv ColorTv { get; private set; }
     public IOBus IOBus { get; private set; }
     public UCode UCode { get; private set; }
     
@@ -83,6 +84,8 @@ public class MachineControl
         UCode.BusAdaptor.WireTv(Tv);
         Mouse.MaxX = (int)Tv.Width;
         Mouse.MaxY = (int)Tv.Height;
+        ColorTv = new ColorTv(UCode);
+        UCode.BusAdaptor.WireColorTv(ColorTv);
         IOBus = new IOBus();
 
         State = PowerState.Off;
@@ -100,7 +103,7 @@ public class MachineControl
             return;
         }
 
-        DisplayBackend = new WpfBackend(Tv, Keyboard, Mouse, onTick: RunMicrocodeBatch)
+        DisplayBackend = new WpfBackend(Tv, ColorTv, Keyboard, Mouse, onTick: RunMicrocodeBatch)
         {
             AllowResize = allowResize,
             Scale = scale,
@@ -223,6 +226,7 @@ public class MachineControl
         Keyboard.Initialize();
         Mouse.Initialize();
         Tv.Reset();
+        ColorTv.Reset();
         IOBus.Reset();
         
         Console.WriteLine("Machine reset complete");
@@ -242,6 +246,7 @@ public class MachineControl
         Keyboard.Initialize();
         Mouse.Initialize();
         Tv.Reset();
+        ColorTv.Reset();
         IOBus.Initialize();
         
         Console.WriteLine("Components initialized");
@@ -346,6 +351,7 @@ public class MachineControl
                 RunMicrocodeBatch();
                 if (State != PowerState.Running) break; // halted mid-batch, via Halt()
                 Tv.Tick();
+                ColorTv.Tick();
                 System.Threading.Thread.Sleep(16);
             }
         }
