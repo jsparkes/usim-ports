@@ -187,6 +187,16 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-tv":
+                    TvTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-unibus-mapping":
+                    UnibusMappingTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-microcode-bus-adaptor":
                     UCodeBusAdaptorTests.RunAllTests();
                     Environment.Exit(0);
@@ -282,6 +292,8 @@ public class Program
         Console.WriteLine("  --test-microcode-vm     Run microcode virtual memory tests only");
         Console.WriteLine("  --test-bus-adaptor      Run bus adaptor tests only");
         Console.WriteLine("  --test-bus-interface    Run bus interface tests only");
+        Console.WriteLine("  --test-tv               Run TV tests only");
+        Console.WriteLine("  --test-unibus-mapping   Run Unibus mapping register tests only");
         Console.WriteLine("  --test-microcode-bus-adaptor Run UCode/BusAdaptor wiring tests only");
         Console.WriteLine("  --test-microcode-dispatch Run microcode dispatch tests only");
         Console.WriteLine("  --test-microcode-byte   Run microcode byte tests only");
@@ -361,6 +373,24 @@ public class Program
         UsimState.AutoPowerOff = config.GetBool("Execution", "auto-power-off", false);
         UsimState.VerboseDumpStateFlag = config.GetBool("Debug", "verbose-dump", false);
 
+        string monitor = config.GetString("usim", "monitor", "other");
+        switch (monitor)
+        {
+            case "cpt":
+                UsimState.TvWidth = 768;
+                UsimState.TvHeight = 896;
+                break;
+            case "other":
+                UsimState.TvWidth = 768;
+                UsimState.TvHeight = 963;
+                break;
+            default:
+                Console.WriteLine($"Warning: unknown monitor type '{monitor}', using cpt");
+                UsimState.TvWidth = 768;
+                UsimState.TvHeight = 896;
+                break;
+        }
+
         var diskUnits = new List<(uint, string, string)>();
         for (uint i = 0; i < DiskController.NUMBER_OF_DISK_UNITS; i++)
         {
@@ -420,15 +450,6 @@ public class Program
         // Power on the machine
         var bootMode = UsimState.WarmBootFlag ? BootMode.Warm : BootMode.Cold;
         _machine.PowerOn(bootMode);
-
-        // Draw test pattern to show display is working (must run after
-        // PowerOn(), since PowerOn -> InitializeComponents() -> Display.Initialize()
-        // clears video memory and would otherwise erase this)
-        if (!UsimState.Headless)
-        {
-            _machine.Display.DrawTestPattern();
-            _machine.Display.Update();
-        }
 
         if (UsimState.AutoBoot)
         {
@@ -577,6 +598,16 @@ public class Program
         // Run bus interface tests
         Console.WriteLine("Running Bus Interface Tests...\n");
         BusInterfaceTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run TV tests
+        Console.WriteLine("Running TV Tests...\n");
+        TvTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Unibus mapping tests
+        Console.WriteLine("Running Unibus Mapping Tests...\n");
+        UnibusMappingTests.RunAllTests();
         Console.WriteLine();
 
         // Run UCode/BusAdaptor wiring tests

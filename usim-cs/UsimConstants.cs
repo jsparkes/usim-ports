@@ -37,10 +37,10 @@ public static class UsimState
     public static string StateFilename { get; set; } = string.Empty;
     public static string SysDirectory { get; set; } = string.Empty;
     public static string FsRootDirectory { get; set; } = string.Empty;
-    
+
     public static string WindowTitle { get; set; } = string.Empty;
     public static bool ApplyNewWindowTitle { get; set; }
-    
+
     public static bool ColorTvEnabled { get; set; }
     public static bool VerboseDumpStateFlag { get; set; }
     public static bool WarmBootFlag { get; set; }
@@ -50,4 +50,7 @@ public static class UsimState
     public static bool AutoPowerOff { get; set; }
 
     public static (uint Unit, string TypeName, string Filename)[] DiskUnits { get; set; } = Array.Empty<(uint, string, string)>();
+
+    public static uint TvWidth { get; set; } = 768;
+    public static uint TvHeight { get; set; } = 963;
 }

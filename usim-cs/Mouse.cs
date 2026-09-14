@@ -34,9 +34,13 @@ public class Mouse
     public MouseButtons Buttons { get; private set; }
     private MouseButtons _lastButtons;
     
-    // Display bounds
-    public int MaxX { get; set; } = Display.WIDTH;
-    public int MaxY { get; set; } = Display.HEIGHT;
+    // Display bounds -- hardcoded to the other monitor's real dimensions (the
+    // actual real-system default monitor type) as a reasonable standalone
+    // default; MachineControl overrides both to the actual configured Tv's
+    // dimensions once both exist (see this plan's Global Constraints for why
+    // Mouse itself must not depend on Tv).
+    public int MaxX { get; set; } = 768;
+    public int MaxY { get; set; } = 963;
     
     // Raw hardware registers (CADR mouse interface)
     public ushort MouseX { get; private set; }

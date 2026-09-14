@@ -30,6 +30,7 @@ public static class ConfigTests
         if (TestSectionOperations()) passed++; else failed++;
         if (TestConfigManager()) passed++; else failed++;
         if (TestApplyConfigurationParsesDiskUnits()) passed++; else failed++;
+        if (TestApplyConfigurationParsesMonitorType()) passed++; else failed++;
         
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -345,6 +346,46 @@ public static class ConfigTests
         finally
         {
             UsimState.DiskUnits = savedDiskUnits;
+        }
+    }
+
+    private static bool TestApplyConfigurationParsesMonitorType()
+    {
+        Console.WriteLine("Test: ApplyConfiguration parses the monitor type into UsimState.TvWidth/TvHeight");
+        // UsimState.TvWidth/TvHeight are process-wide static state, same as
+        // UsimState.DiskUnits above -- save/restore so this test can't leak
+        // into any test that runs after it in the same process.
+        var savedWidth = UsimState.TvWidth;
+        var savedHeight = UsimState.TvHeight;
+        try
+        {
+            var parser = new ConfigParser();
+            parser.SetString("usim", "monitor", "other");
+
+            Program.ApplyConfiguration(parser);
+
+            Assert(UsimState.TvWidth == 768, $"TvWidth is 768 for 'other', got {UsimState.TvWidth}");
+            Assert(UsimState.TvHeight == 963, $"TvHeight is 963 for 'other', got {UsimState.TvHeight}");
+
+            var parser2 = new ConfigParser();
+            parser2.SetString("usim", "monitor", "not-a-real-monitor");
+            Program.ApplyConfiguration(parser2);
+
+            Assert(UsimState.TvWidth == 768 && UsimState.TvHeight == 896,
+                $"an unrecognized monitor value falls back to cpt's dimensions (768x896), got {UsimState.TvWidth}x{UsimState.TvHeight}");
+
+            Console.WriteLine("  ApplyConfiguration monitor-type test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ApplyConfiguration monitor-type test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            UsimState.TvWidth = savedWidth;
+            UsimState.TvHeight = savedHeight;
         }
     }
 

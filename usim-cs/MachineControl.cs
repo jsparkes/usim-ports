@@ -52,7 +52,7 @@ public class MachineControl
     public DiskController DiskController { get; private set; }
     public Keyboard Keyboard { get; private set; }
     public Mouse Mouse { get; private set; }
-    public Display Display { get; private set; }
+    public Tv Tv { get; private set; }
     public IOBus IOBus { get; private set; }
     public UCode UCode { get; private set; }
     
@@ -79,7 +79,10 @@ public class MachineControl
         UCode.BusAdaptor.WireDiskController(DiskController);
         Keyboard = new Keyboard();
         Mouse = new Mouse();
-        Display = new Display();
+        Tv = new Tv(UCode, UsimState.TvWidth, UsimState.TvHeight);
+        UCode.BusAdaptor.WireTv(Tv);
+        Mouse.MaxX = (int)Tv.Width;
+        Mouse.MaxY = (int)Tv.Height;
         IOBus = new IOBus();
 
         State = PowerState.Off;
@@ -97,7 +100,7 @@ public class MachineControl
             return;
         }
 
-        DisplayBackend = new WpfBackend(Display, Keyboard, Mouse, onTick: RunMicrocodeBatch)
+        DisplayBackend = new WpfBackend(Tv, Keyboard, Mouse, onTick: RunMicrocodeBatch)
         {
             AllowResize = allowResize,
             Scale = scale,
@@ -219,7 +222,7 @@ public class MachineControl
         Memory.Initialize();
         Keyboard.Initialize();
         Mouse.Initialize();
-        Display.Initialize();
+        Tv.Reset();
         IOBus.Reset();
         
         Console.WriteLine("Machine reset complete");
@@ -238,7 +241,7 @@ public class MachineControl
         // to call here (see this task's rewrite of DiskController/DiskUnit).
         Keyboard.Initialize();
         Mouse.Initialize();
-        Display.Initialize();
+        Tv.Reset();
         IOBus.Initialize();
         
         Console.WriteLine("Components initialized");
@@ -342,7 +345,7 @@ public class MachineControl
             {
                 RunMicrocodeBatch();
                 if (State != PowerState.Running) break; // halted mid-batch, via Halt()
-                Display.Update();
+                Tv.Tick();
                 System.Threading.Thread.Sleep(16);
             }
         }
@@ -499,8 +502,7 @@ public class MachineControl
         IOBus.PrintStatistics();
         Console.WriteLine();
         
-        Console.WriteLine($"Display:    {Display.WIDTH}x{Display.HEIGHT} @ {Display.CurrentFPS:F1} FPS");
-        Console.WriteLine($"Frames:     {Display.FrameCount:N0}");
+        Console.WriteLine($"Display:    {Tv.Width}x{Tv.Height}");
         Console.WriteLine();
         
         Console.WriteLine($"Keyboard:   {Keyboard.BufferCount} keys buffered, {Keyboard.KeysPressed:N0} total");

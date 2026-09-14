@@ -22,7 +22,7 @@ namespace Usim;
 /// </summary>
 public class WpfBackend : IDisposable
 {
-    private readonly Display _display;
+    private readonly Tv _tv;
     private readonly Keyboard _keyboard;
     private readonly Mouse _mouse;
     private readonly Action _onTick;
@@ -39,9 +39,9 @@ public class WpfBackend : IDisposable
     public bool UseLinearFiltering { get; set; } = true;
     public bool IsRunning { get; private set; }
 
-    public WpfBackend(Display display, Keyboard keyboard, Mouse mouse, Action onTick)
+    public WpfBackend(Tv tv, Keyboard keyboard, Mouse mouse, Action onTick)
     {
-        _display = display ?? throw new ArgumentNullException(nameof(display));
+        _tv = tv ?? throw new ArgumentNullException(nameof(tv));
         _keyboard = keyboard ?? throw new ArgumentNullException(nameof(keyboard));
         _mouse = mouse ?? throw new ArgumentNullException(nameof(mouse));
         _onTick = onTick ?? throw new ArgumentNullException(nameof(onTick));
@@ -59,15 +59,15 @@ public class WpfBackend : IDisposable
 
         _application = Application.Current ?? new Application();
 
-        _bitmap = new WriteableBitmap(Display.WIDTH, Display.HEIGHT, 96, 96, PixelFormats.Pbgra32, null);
+        _bitmap = new WriteableBitmap((int)_tv.Width, (int)_tv.Height, 96, 96, PixelFormats.Pbgra32, null);
 
         _image = new Image
         {
             Source = _bitmap,
             Stretch = Stretch.Fill,
             SnapsToDevicePixels = true,
-            Width = Display.WIDTH,
-            Height = Display.HEIGHT
+            Width = _tv.Width,
+            Height = _tv.Height
         };
         RenderOptions.SetBitmapScalingMode(_image,
             UseLinearFiltering ? BitmapScalingMode.Linear : BitmapScalingMode.NearestNeighbor);
@@ -78,8 +78,8 @@ public class WpfBackend : IDisposable
             Child = _image
         };
 
-        viewbox.Width = Display.WIDTH * Scale;
-        viewbox.Height = Display.HEIGHT * Scale;
+        viewbox.Width = _tv.Width * Scale;
+        viewbox.Height = _tv.Height * Scale;
 
         _window = new Window
         {
@@ -145,7 +145,7 @@ public class WpfBackend : IDisposable
     private void Tick()
     {
         _onTick();
-        _display.Update();
+        _tv.Tick();
         UpdateBitmap();
     }
 
@@ -154,8 +154,8 @@ public class WpfBackend : IDisposable
         if (_bitmap == null)
             return;
 
-        var rect = new Int32Rect(0, 0, Display.WIDTH, Display.HEIGHT);
-        _bitmap.WritePixels(rect, _display.FrameBuffer, Display.WIDTH * 4, 0);
+        var rect = new Int32Rect(0, 0, (int)_tv.Width, (int)_tv.Height);
+        _bitmap.WritePixels(rect, _tv.FrameBuffer, (int)(_tv.Width * 4), 0);
     }
 
     private void HandleKeyEvent(KeyEventArgs e, bool keyDown)
