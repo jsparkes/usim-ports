@@ -96,7 +96,7 @@ public class ColorTv
 
     // Sized to the exact visible geometry -- unlike Tv's deliberately
     // oversized FrameBuffer, color TV's addressable screen-buffer range
-    // (576*454/8 = 32,751 words) is already just under MaxWords, so there
+    // (576*454/8 = 32,688 words) is already just under MaxWords, so there
     // is no writable-but-off-screen gap to guard against here.
     public byte[] FrameBuffer { get; } = new byte[576 * 454 * 4];
 
@@ -108,6 +108,8 @@ public class ColorTv
     private uint _syncPtr;
     private uint _vertSpacing;
     private bool _syncPromEnabled;
+    private bool _hsync;
+    private bool _vsync;
 
     public ColorTv(UCode ucode)
     {
@@ -125,7 +127,13 @@ public class ColorTv
     }
 
     /// <summary>Faithful port of colortv_screen_read (usim/colortv.c:68-72).</summary>
-    public uint ScreenRead(uint offset) => _screenBuffer[offset];
+    public uint ScreenRead(uint offset)
+    {
+        uint v = _screenBuffer[offset];
+        TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+            $"colortv: screen read: offset:{offset} v:0x{_screenBuffer[offset]:X}");
+        return v;
+    }
 
     /// <summary>
     /// Faithful port of colortv_screen_write (usim/colortv.c:74-79). Unlike
@@ -135,6 +143,8 @@ public class ColorTv
     public void ScreenWrite(uint offset, uint v)
     {
         _screenBuffer[offset] = v;
+        TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+            $"colortv: screen write: offset:{offset} v:0x{v:X}");
     }
 
     /// <summary>Faithful port of colortv_control_read (usim/colortv.c:82-113).</summary>
@@ -143,12 +153,34 @@ public class ColorTv
         switch (offset)
         {
             case 0:
-                // Bits 5/6/7 (VSYNC/HSYNC/sync-PROM-enabled) are always 0
-                // in this port -- see the design's Decisions section.
-                return _mode;
+                {
+                    // Bit 7 (sync-PROM-enabled) reflects the real, deterministic
+                    // _syncPromEnabled field (set on offset-3 writes) -- it is
+                    // NOT a hardware timing signal, unlike bits 5/6. Bits 5/6
+                    // (VSYNC/HSYNC) reflect _vsync/_hsync, which Tick() toggles
+                    // once per call -- see Tick()'s comment for why this
+                    // (not literally always 0) is required for correctness.
+                    uint result = _mode
+                        | (_syncPromEnabled ? 0x80u : 0u)
+                        | (_hsync ? 0x40u : 0u)
+                        | (_vsync ? 0x20u : 0u);
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"colortv: read mode: 0x{result:X}");
+                    return result;
+                }
 
             case 1:
-                return _syncPromEnabled ? 0u : _syncRam[_syncPtr];
+                {
+                    uint v = _syncPromEnabled ? 0u : _syncRam[_syncPtr];
+                    if (!_syncPromEnabled)
+                    {
+                        TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                            $"colortv: read sync_ram[0x{_syncPtr:X}] = 0x{v:X}");
+                    }
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"colortv: read sync data: 0x{v:X}");
+                    return v;
+                }
 
             default:
                 TraceLog.Instance.Warning(TraceCategory.Display,
@@ -164,27 +196,39 @@ public class ColorTv
         switch (offset)
         {
             case 0:
+                TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                    $"colortv: write mode: 0x{v:X}");
                 _mode = v & 0x1F;
                 break;
 
             case 1:
+                TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                    $"colortv: write sync data: 0x{v:X}");
                 if (!_syncPromEnabled)
                 {
                     _syncRam[_syncPtr] = (byte)(v & 0xFF);
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"colortv: write sync_ram[0x{_syncPtr:X}] = 0x{_syncRam[_syncPtr]:X}");
                 }
                 break;
 
             case 2:
+                TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                    $"colortv: write sync pointer: 0x{v:X}");
                 _syncPtr = v & 0x0FFF;
                 break;
 
             case 3:
+                TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                    $"colortv: write vert spacing: 0x{v:X}");
                 _syncPromEnabled = (v & 0x80) == 0;
                 _vertSpacing = v & 0x7F;
                 break;
 
             case 4:
                 {
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"colortv: write color map: 0x{v:X}");
                     uint colorChannelValue = 255 - ((v >> 8) & 0xFF);
                     uint colorChannel = (v >> 6) & 0x3;
                     uint location = v & 0x3F;
@@ -207,6 +251,8 @@ public class ColorTv
                             return;
                     }
                     _colorMap[location] = 0xFF000000 | newValue;
+                    TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Debug,
+                        $"colortv: write loc:{location} channel:{colorChannel} value:{colorChannelValue} final:0x{_colorMap[location]:X8}");
                 }
                 break;
 
@@ -231,6 +277,19 @@ public class ColorTv
         {
             return;
         }
+
+        // Real hardware toggles VSYNC/HSYNC continuously at video timing
+        // rates; this emulator only updates color-TV state once per Tick()
+        // (~16ms), so toggling both here is the finest faithful
+        // approximation achievable -- but it is NOT optional. Real Lisp
+        // (sys/window/color.lisp's WRITE-COLOR-MAP) both explicitly waits
+        // for a VSYNC transition (when SYNCHRONIZE=T) and, unconditionally
+        // on every call, relies on microcode (%XBUS-WRITE-SYNC) that waits
+        // for a full HSYNC clear-then-set transition before writing the
+        // color map. Never toggling these bits makes both waits hang
+        // forever -- this was a real, confirmed bug in the original design.
+        _vsync = !_vsync;
+        _hsync = !_hsync;
 
         UnpackFrameBuffer();
 
@@ -294,8 +353,9 @@ public class ColorTv
 `ColorTvTests.cs` (new), mirroring `TvTests.cs`'s structure:
 - `ScreenWrite`/`ScreenRead` round-trips the raw word and does **not** touch `FrameBuffer` (asserts `FrameBuffer` is still all-zero after a `ScreenWrite` with `UsimState.ColorTvEnabled` left false, or more precisely: calls `ScreenWrite` without calling `Tick()`, and asserts `FrameBuffer` is unchanged from its constructed-zero state) — the key behavioral difference from monochrome TV's eager unpacking.
 - `Tick()`'s LSB-nibble-first unpacking: write a color-map entry, write a screen word with a known nibble pattern, call `Tick()` with `UsimState.ColorTvEnabled = true`, assert the correct pixel bytes land in `FrameBuffer` at the correct offset (and that a later nibble in the same word lands at the correct *later* pixel, proving nibble order, not just single-pixel correctness).
-- Mode-write masking (`ControlWrite(0, 0xFF)` then `ControlRead(0) == 0x1F`, since bits 5-7 are always 0 on top of masking bits 0-4 on write).
-- Mode-read's three status bits always 0 regardless of internal state (nothing in this port ever sets them, so this is really just confirming `ControlRead(0)` never ORs in anything beyond the stored `_mode`).
+- Mode-write masking (`ControlWrite(0, 0xFF)` then `ControlRead(0) == 0x1F`, valid when the test never calls `Tick()` or writes offset 3, so bits 5-7 all still read their default-`false` state of 0).
+- `Tick()` toggles VSYNC/HSYNC (mode-read bits 5/6) once per call: read the mode register before any `Tick()` (both bits clear), call `Tick()` once (both bits set), call `Tick()` again (both clear again) — this is required behavior, not an always-0 status (see Decisions: an always-0 design was the original, incorrect approach and would hang real Lisp/microcode sync-waits).
+- Mode-read's bit 7 (sync-PROM-enabled) reflects the real `_syncPromEnabled` state: write offset 3 with bit 7 clear (sync PROM enabled) and confirm mode-read bit 7 is set; write offset 3 with bit 7 set (sync PROM disabled) and confirm mode-read bit 7 is clear.
 - Sync-PROM gating: writing offset 3 with bit 0x80 set/clear correctly gates offset 1 reads/writes, same shape as monochrome's test.
 - Color-map write: three sequential writes (one per channel) to the same `location`, asserting the final stored value has all three channel bytes correctly set and independently preserved (not clobbered by the later writes), plus alpha forced to `0xFF`.
 - Channel-3 write: asserts no exception is thrown, and that the target `_colorMap` entry is left completely untouched by the invalid write (verified by writing a known value to that location via a legitimate channel first, then issuing the channel-3 write, then confirming the location's stored value is unchanged). No assertion on log output — no test in this codebase captures `TraceLog` output, and this port doesn't need to be the first.
