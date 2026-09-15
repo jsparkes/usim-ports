@@ -23,6 +23,7 @@ namespace Usim;
 public class WpfBackend : IDisposable
 {
     private readonly Tv _tv;
+    private readonly ColorTv _colorTv;
     private readonly Keyboard _keyboard;
     private readonly Mouse _mouse;
     private readonly Action _onTick;
@@ -31,6 +32,9 @@ public class WpfBackend : IDisposable
     private Window? _window;
     private Image? _image;
     private WriteableBitmap? _bitmap;
+    private Window? _colorWindow;
+    private Image? _colorImage;
+    private WriteableBitmap? _colorBitmap;
     private DispatcherTimer? _timer;
     private string _windowTitle = "USIM - Lisp Machine Emulator";
 
@@ -39,9 +43,10 @@ public class WpfBackend : IDisposable
     public bool UseLinearFiltering { get; set; } = true;
     public bool IsRunning { get; private set; }
 
-    public WpfBackend(Tv tv, Keyboard keyboard, Mouse mouse, Action onTick)
+    public WpfBackend(Tv tv, ColorTv colorTv, Keyboard keyboard, Mouse mouse, Action onTick)
     {
         _tv = tv ?? throw new ArgumentNullException(nameof(tv));
+        _colorTv = colorTv ?? throw new ArgumentNullException(nameof(colorTv));
         _keyboard = keyboard ?? throw new ArgumentNullException(nameof(keyboard));
         _mouse = mouse ?? throw new ArgumentNullException(nameof(mouse));
         _onTick = onTick ?? throw new ArgumentNullException(nameof(onTick));
@@ -104,7 +109,11 @@ public class WpfBackend : IDisposable
         _image.MouseMove += OnMouseMove;
         _image.MouseDown += OnMouseButton;
         _image.MouseUp += OnMouseButton;
-        _window.Closed += (_, _) => IsRunning = false;
+        _window.Closed += (_, _) =>
+        {
+            IsRunning = false;
+            _colorWindow?.Close();
+        };
 
         _timer = new DispatcherTimer(DispatcherPriority.Render)
         {
@@ -115,6 +124,50 @@ public class WpfBackend : IDisposable
 
         _window.Show();
         IsRunning = true;
+
+        if (UsimState.ColorTvEnabled)
+        {
+            _colorBitmap = new WriteableBitmap((int)_colorTv.Width, (int)_colorTv.Height, 96, 96, PixelFormats.Pbgra32, null);
+
+            _colorImage = new Image
+            {
+                Source = _colorBitmap,
+                Stretch = Stretch.Fill,
+                SnapsToDevicePixels = true,
+                Width = _colorTv.Width,
+                Height = _colorTv.Height
+            };
+            RenderOptions.SetBitmapScalingMode(_colorImage,
+                UseLinearFiltering ? BitmapScalingMode.Linear : BitmapScalingMode.NearestNeighbor);
+
+            var colorViewbox = new Viewbox
+            {
+                Stretch = Stretch.Uniform,
+                Child = _colorImage
+            };
+
+            colorViewbox.Width = _colorTv.Width * Scale;
+            colorViewbox.Height = _colorTv.Height * Scale;
+
+            _colorWindow = new Window
+            {
+                Title = "USIM - Color TV",
+                Content = colorViewbox,
+                Background = Brushes.Black,
+                SizeToContent = SizeToContent.WidthAndHeight,
+                ResizeMode = AllowResize ? ResizeMode.CanResize : ResizeMode.CanMinimize
+            };
+
+            var colorWindow = _colorWindow;
+            colorWindow.Loaded += (_, _) =>
+            {
+                colorWindow.SizeToContent = SizeToContent.Manual;
+                colorViewbox.Width = double.NaN;
+                colorViewbox.Height = double.NaN;
+            };
+
+            _colorWindow.Show();
+        }
 
         TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Info, "WPF backend initialized successfully");
     }
@@ -146,7 +199,9 @@ public class WpfBackend : IDisposable
     {
         _onTick();
         _tv.Tick();
+        _colorTv.Tick();
         UpdateBitmap();
+        UpdateColorBitmap();
     }
 
     private void UpdateBitmap()
@@ -156,6 +211,15 @@ public class WpfBackend : IDisposable
 
         var rect = new Int32Rect(0, 0, (int)_tv.Width, (int)_tv.Height);
         _bitmap.WritePixels(rect, _tv.FrameBuffer, (int)(_tv.Width * 4), 0);
+    }
+
+    private void UpdateColorBitmap()
+    {
+        if (_colorBitmap == null)
+            return;
+
+        var rect = new Int32Rect(0, 0, (int)_colorTv.Width, (int)_colorTv.Height);
+        _colorBitmap.WritePixels(rect, _colorTv.FrameBuffer, (int)(_colorTv.Width * 4), 0);
     }
 
     private void HandleKeyEvent(KeyEventArgs e, bool keyDown)
@@ -240,6 +304,7 @@ public class WpfBackend : IDisposable
 
         _timer?.Stop();
         _window?.Close();
+        _colorWindow?.Close();
         IsRunning = false;
     }
 }
