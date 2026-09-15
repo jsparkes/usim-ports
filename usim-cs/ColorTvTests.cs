@@ -21,6 +21,8 @@ public static class ColorTvTests
         if (TestColorMapInvalidChannelIsNoOp()) passed++; else failed++;
         if (TestTickAssertsInterruptOnlyWhenEnabled()) passed++; else failed++;
         if (TestTickDoesNothingWhenDisabled()) passed++; else failed++;
+        if (TestHsyncVsyncToggleAcrossTicks()) passed++; else failed++;
+        if (TestSyncPromEnabledBitReflectsRealState()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -111,14 +113,14 @@ public static class ColorTvTests
 
     private static bool TestModeWriteMaskAndReadStatusBits()
     {
-        Console.WriteLine("Test: mode write masks to 5 bits, mode read never sets the always-0 status bits");
+        Console.WriteLine("Test: mode write masks to 5 bits; status bits 5-7 default to 0 until Tick() (hsync/vsync) or an offset-3 write (sync-PROM-enabled) changes them -- neither happens in this test");
         try
         {
             var colorTv = MakeColorTv();
 
             colorTv.ControlWrite(0, 0xFF);
             Assert(colorTv.ControlRead(0) == 0x1F,
-                $"mode write masks to bits 0-4 (0x1F), and read never ORs in bits 5-7, got 0x{colorTv.ControlRead(0):X}");
+                $"mode write masks to bits 0-4 (0x1F), and read doesn't OR in bits 5-7 while they're still at their default-false state, got 0x{colorTv.ControlRead(0):X}");
 
             Console.WriteLine("  Mode-write-mask/read-status-bits test passed\n");
             return true;
@@ -299,6 +301,63 @@ public static class ColorTvTests
         finally
         {
             UsimState.ColorTvEnabled = saved;
+        }
+    }
+
+    private static bool TestHsyncVsyncToggleAcrossTicks()
+    {
+        Console.WriteLine("Test: Tick() toggles VSYNC/HSYNC (mode-read bits 5/6) every call -- required so real microcode/Lisp sync-waits can complete, not hang");
+        var saved = UsimState.ColorTvEnabled;
+        try
+        {
+            UsimState.ColorTvEnabled = true;
+            var colorTv = MakeColorTv();
+
+            uint before = colorTv.ControlRead(0) & 0x60; // bits 5+6
+            Assert(before == 0, $"VSYNC/HSYNC both start clear, got 0x{before:X}");
+
+            colorTv.Tick();
+            uint afterOneTick = colorTv.ControlRead(0) & 0x60;
+            Assert(afterOneTick == 0x60, $"VSYNC/HSYNC both set after one Tick(), got 0x{afterOneTick:X}");
+
+            colorTv.Tick();
+            uint afterTwoTicks = colorTv.ControlRead(0) & 0x60;
+            Assert(afterTwoTicks == 0, $"VSYNC/HSYNC both clear again after a second Tick(), got 0x{afterTwoTicks:X}");
+
+            Console.WriteLine("  HSYNC/VSYNC-toggle-across-ticks test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  HSYNC/VSYNC-toggle-across-ticks test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            UsimState.ColorTvEnabled = saved;
+        }
+    }
+
+    private static bool TestSyncPromEnabledBitReflectsRealState()
+    {
+        Console.WriteLine("Test: mode-read bit 7 (sync-PROM-enabled) reflects the real _syncPromEnabled state, not a hardcoded 0");
+        try
+        {
+            var colorTv = MakeColorTv();
+
+            colorTv.ControlWrite(3, 0x00); // vert-spacing bit 7 clear -> sync PROM enabled
+            Assert((colorTv.ControlRead(0) & 0x80) == 0x80, "mode-read bit 7 is set when sync PROM is enabled");
+
+            colorTv.ControlWrite(3, 0x80); // vert-spacing bit 7 set -> sync PROM disabled
+            Assert((colorTv.ControlRead(0) & 0x80) == 0, "mode-read bit 7 is clear when sync PROM is disabled");
+
+            Console.WriteLine("  Sync-PROM-enabled-bit-reflects-real-state test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Sync-PROM-enabled-bit-reflects-real-state test failed: {ex.Message}\n");
+            return false;
         }
     }
 

@@ -109,7 +109,11 @@ public class WpfBackend : IDisposable
         _image.MouseMove += OnMouseMove;
         _image.MouseDown += OnMouseButton;
         _image.MouseUp += OnMouseButton;
-        _window.Closed += (_, _) => IsRunning = false;
+        _window.Closed += (_, _) =>
+        {
+            IsRunning = false;
+            _colorWindow?.Close();
+        };
 
         _timer = new DispatcherTimer(DispatcherPriority.Render)
         {
