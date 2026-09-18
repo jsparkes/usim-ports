@@ -10,14 +10,15 @@ Two existing classes turned out to also be entirely invented, not faithful ports
 
 ## Decisions
 
-- **Scope, decided across two rounds of scoping with the user as real complexity surfaced:** this port fixes `IOBus.cs` (replaced outright, mirroring the `Display.cs` precedent), and `Keyboard.cs`/`Mouse.cs`'s **wire protocol** (the real CSR ready-bit/clear-on-read/interrupt semantics, and the real mouse X/Y/button-toggle bit encoding) — the load-bearing part for input to reach real Lisp software at all. It does **not** replicate `sdl3-keyboard.c`'s full Cadet-scancode mapping table (driven by external `.defs` files) or its background thread/queue/exponential-backoff delivery mechanism — `WpfKeyTranslator.cs` keeps its existing, simpler key-to-scancode mapping, and key/mouse events are delivered synchronously and directly from WPF's own event dispatch, no queue. Real Chaosnet networking (`uch11.c`) stays a separate, future port; this port gives the four Chaos registers real boot activity touches (`ch_csr`/`ch_myaddr`/`ch_rbf`/`ch_rbc`/`ch_xmt`) a minimal, safe idle-state stub.
+- **Scope, decided across three rounds of scoping with the user as real complexity surfaced:** this port fixes `IOBus.cs` (replaced outright, mirroring the `Display.cs` precedent), and `Keyboard.cs`/`Mouse.cs`'s **wire protocol** (the real CSR ready-bit/clear-on-read/interrupt semantics, and the real mouse X/Y/button-toggle bit encoding) — the load-bearing part for input to reach real Lisp software at all. It does **not** replicate `sdl3-keyboard.c`'s external `.defs`-file-loading architecture or its background thread/queue/exponential-backoff delivery mechanism — key/mouse events are delivered synchronously and directly from WPF's own event dispatch, no queue, no runtime file loading. Real Chaosnet networking (`uch11.c`) stays a separate, future port; this port gives the four Chaos registers real boot activity touches (`ch_csr`/`ch_myaddr`/`ch_rbf`/`ch_rbc`/`ch_xmt`) a minimal, safe idle-state stub.
+- **`WpfKeyTranslator.cs`'s current output cannot be reused as-is.** It produces X11-keysym-style codes with shift baked into the returned value (e.g. unshifted `a` = `0x61`, shifted `A` = `0x41`) — a fundamentally different model from the real Cadet scancode table, which assigns each *physical key* one fixed 7-bit scancode regardless of shift state (shift is communicated separately, as a modifier bit elsewhere in the real protocol). Reusing X11-keysym values directly as the low bits of a delivered scancode would not correspond to any real Cadet-table entry for most keys, so real Lisp software would receive meaningless codes for ordinary typing — silently defeating the purpose of fixing the wire protocol at all. The real per-key scancode values are, however, already sitting in this repo as data: `usim/sdl3-keyboard-cadet-scancodes.defs` (physical key name → 7-bit octal scancode) and `usim/sdl3-keyboard-default-mapping.defs` (SDL/physical key → Cadet key name). This port replaces `WpfKeyTranslator`'s key-to-code step with a small, hardcoded C# table built by combining those two real files' data (covering ordinary US-layout typing keys: letters, digits, punctuation, function keys F1-F7, arrows, Home/End/PageUp/PageDown, modifiers) — independently verified via a Python script rather than transcribed by hand (see the Octal Literals table). This is a data substitution, not an architectural one: no `.defs`-file runtime loading, no per-name string lookup machinery, just a `Dictionary<Key, int>` (or switch) with the real values baked in, replacing `TranslateKey`'s existing switch body.
+- **The keyboard-triggered cold/warm-reboot hotkey is dropped, not replicated.** The real trigger is a *separate* mechanism from ordinary scancode delivery: `sdl3-keyboard.c` detects all four Meta/Control keys plus Rubout or Return held simultaneously (a genuine multi-key combo detector, independent of the Cadet-scancode table) and feeds a sentinel value into `iob_set_keyboard_ready` when it fires. Without replicating that combo detector, nothing in this port would ever produce the sentinel, so keeping the sentinel-comparison logic in `SetKeyboardReady` would be dead code. Since `MachineControl.PowerOn()` is already reachable through this project's existing CLI/API paths, the keyboard hotkey is a hardware convenience feature, not a functional gap — this port omits both the combo detector and the sentinel-comparison logic in `SetKeyboardReady` entirely, rather than leaving unreachable code behind.
 - **No queue/backoff means a possible overwrite, not a hang or a drop.** The real C's SDL3 thread retries with exponential backoff (up to ~256ms) if the keyboard-ready bit is still set, to avoid clobbering an unread scancode; queuing overflow is only handled by the (unported) `.defs`-table-driven thread wrapper. Without that wrapper, calling `SetKeyboardReady`/`SetMouseReady` directly and unconditionally (matching `iob_set_keyboard_ready`/`iob_set_mouse_ready`'s own bodies, which have no internal gating at all — the gating lives entirely in the thread wrapper this port doesn't replicate) means a second keypress arriving before microcode reads the first one overwrites it rather than queuing. This is judged safe in practice: WPF key events arrive at human typing speed, many orders of magnitude slower than microcode's read loop, and losing an occasional keystroke under real contention is a graceful degradation, not a correctness bug — no queue exists to overflow silently either.
 - **Mouse raw encoder bits (`rawX`/`rawY`) are always 0.** The real hardware reports raw quadrature-encoder ticks alongside the resolved X/Y position; WPF delivers discrete `MouseMove` events with an absolute position, not encoder ticks, so there is no realistic value to synthesize. The bit *layout* (`0x7777` mask, shift amounts 12/14) is preserved exactly so any code that does inspect those bits sees deterministic zeros rather than garbage, not because zero is a faithful hardware value.
 - **The interval timer (`0764124` write, SDL3-only in the real C via `setitimer`/`SIGALRM`) is tick-counted, not signal-based.** Matching the same coarse-tick approximation already established for TV/color-TV interrupt timing (see both TV specs' Decisions sections): a countdown decremented once per `Iob.Tick()`, firing `UCode.AssertUnibusInterrupt(0274)` at zero. The real C's `16 * v` microsecond unit is converted to an equivalent tick count using the same ~16ms-per-tick assumption WpfBackend/the headless loop already use elsewhere.
 - **The 60Hz clock (`the_60_cycle_clock`, `0764124` read) finally gets a home.** Both TV specs explicitly flagged this as "a separate IOB-owned counter, out of scope for TV/color TV" — this port is that home: incremented once per `Iob.Tick()`, read back as a free-running 16-bit counter (matching the real C's `uint16_t the_60_cycle_clock`).
-- **A found-and-preserved real-C oddity: the cold/warm-boot scancode constants have a likely `<`-vs-`<<` typo in the real source, but it's harmless.** `usim/sdl3-keyboard.c:20-21` defines `cold_boot_scancode`/`warm_boot_scancode` using `(0b111111 < 10)` — a *comparison*, not the evidently-intended `(0b111111 << 10)` shift (this term evaluates to `0`, since `63 < 10` is false, rather than to `0b111111` shifted into bits 10-15). Independently verified via direct computation: the "as literally written" values are `cold_boot_scancode = 0xFF0026`, `warm_boot_scancode = 0xFF0032`; the "evidently intended" values would be `0xFFFC26`/`0xFFFC32`. This makes no behavioral difference because both constants are purely self-referential sentinels — `iob_set_keyboard_ready` only ever compares an incoming scancode against these same two constants, and no other code depends on their specific bit pattern, so the choice of value is arbitrary as long as it can't collide with a real Cadet-table key scancode (which it can't, at this bit width, either way). This port replicates the real C's literal, as-written values (`0xFF0026`/`0xFF0032`) rather than the "corrected" ones, matching this project's standing discipline of porting the real source faithfully rather than second-guessing it, since here that faithfulness costs nothing.
+- **A found-but-not-relevant real-C oddity: the cold/warm-boot scancode constants have a likely `<`-vs-`<<` typo in the real source.** `usim/sdl3-keyboard.c:20-21` defines `cold_boot_scancode`/`warm_boot_scancode` using `(0b111111 < 10)` — a *comparison*, not the evidently-intended `(0b111111 << 10)` shift. Noted here only because it was independently verified during design (the "as literally written" values are `0xFF0026`/`0xFF0032`; the "evidently intended" ones would be `0xFFFC26`/`0xFFFC32`) — it has no bearing on this port at all, since the entire cold/warm-boot-hotkey mechanism these constants belong to is out of scope (see the Scope decision above).
 - **Register width is genuinely 16 bits, not 32.** `iob_unibus_read`/`iob_unibus_write` take `uint16_t *pv`/`uint16_t v` — unlike every XBus-I/O device ported so far (disk, TV, color TV), which use 32-bit registers. `Iob`'s own read/write methods use `ushort`, and `BusAdaptor`'s dispatch masks to `0xFFFF` at the boundary rather than silently carrying a 32-bit value through a 16-bit device.
-- **Cold/warm boot triggers `MachineControl.PowerOn()`** (matching real `machine_control_boot()`'s own `machine_control_reset()` + `promdisabled = false`, which map directly to `MachineControl`'s existing reset path and `UCode.PromDisabled` reset inside `UCode.Init()`). `Iob` receives this as a constructor-injected `Action` callback (matching the existing `WpfBackend(..., onTick: RunMicrocodeBatch)` convention already used elsewhere in `MachineControl`), not a settable-once `Wire*` method — the boot trigger is a one-shot callback, not a persistent object dependency. After triggering the callback, `Iob` still delivers the boot scancode as a normal keyboard-ready event (matching the real C, which lets the PROM's own microcode inspect the low 6 bits afterward to decide cold vs. warm — `Iob` does not make that distinction itself).
 - **Chaos-interface registers get a minimal, safe idle stub, not real networking.** The four registers real boot activity actually touches: `ch_csr` (`0764140`) reads back a constant "idle, no packet pending, no error" value; `ch_myaddr` (`0764142`) reads back a placeholder Chaos address; `ch_rbf`/`ch_rbc` (`0764144`/`0764146`) read back 0 (no packet ever arrives); `ch_xmt` (`0764152`) is a no-op read (matching the real C's own read-triggers-transmission oddity, but with no actual transmission happening). Writes to any of these are accepted and ignored. This is enough for the real boot-time probe to see a consistent, non-hanging response without pretending to implement Chaosnet.
 - **GPIO, serial, and undocumented registers are warn-and-return-0 stubs**, matching the real C's own `warnx(...)` calls for these exact ranges (`usim/iob.c:250-254,285-299`) — not ported behavior, just non-fatal visibility.
 
@@ -31,9 +32,51 @@ Computed via Python, not by hand:
 | `0260` (keyboard interrupt vector) | 176 | `0xB0` | passed to `AssertUnibusInterrupt` on keyboard-ready |
 | `0264` (mouse interrupt vector) | 180 | `0xB4` | passed to `AssertUnibusInterrupt` on mouse-ready |
 | `0274` (interval-timer interrupt vector) | 188 | `0xBC` | passed to `AssertUnibusInterrupt` when the tick-counted interval timer expires |
-| `cold_boot_scancode` (as literally written, `<` not `<<`) | 16711718 | `0xFF0026` | see Decisions — the real C's own likely typo, preserved faithfully since it's harmless |
-| `warm_boot_scancode` (as literally written) | 16711730 | `0xFF0032` | same |
 | `0x7777` (mouse position/encoder mask) | — | `0x7777` binary `0111011101110111` | every 4th bit reserved for raw-encoder state, preserved as a bit-layout constant even though this port always writes 0 into those bit positions |
+
+**The real per-key Cadet scancode table** (hardcoded WPF `Key` → real scancode, per the "`WpfKeyTranslator.cs`'s current output cannot be reused as-is" Decision above), computed by combining `usim/sdl3-keyboard-cadet-scancodes.defs` (physical key → octal scancode) with `usim/sdl3-keyboard-default-mapping.defs` (SDL/physical key → Cadet key name) via a Python script, not by hand — every value below is independently derived, not transcribed from either `.defs` file's own notation:
+
+| WPF `Key` | Hex | Octal | WPF `Key` | Hex | Octal |
+|---|---|---|---|---|---|
+| `Escape` | `0x63` | `0143` | `Home` | `0x77` | `0167` |
+| `F1` | `0x61` | `0141` | `End` | `0x6E` | `0156` |
+| `F2` | `0x22` | `042` | `PageUp` | `0x37` | `067` |
+| `F3` | `0x26` | `046` | `PageDown` | `0x27` | `047` |
+| `F4` | `0x20` | `040` | `Up` | `0x46` | `0106` |
+| `F5` | `0x4E` | `0116` | `Down` | `0x7E` | `0176` |
+| `F6` | `0x48` | `0110` | `Left` | `0x4F` | `0117` |
+| `F7` | `0x28` | `050` | `Right` | `0x0F` | `017` |
+| `Grave`/OemTilde | `0x3F` | `077` | `LeftShift`/`RightShift` | `0x14` | `024` |
+| `D1` | `0x51` | `0121` | `LeftCtrl`/`RightCtrl` | `0x10` | `020` |
+| `D2` | `0x31` | `061` | `LeftWin`/`RWin` (super) | `0x05` | `05` |
+| `D3` | `0x71` | `0161` | `LeftAlt`/`RightAlt` (meta) | `0x25` | `045` |
+| `D4` | `0x09` | `011` | `Space` | `0x5C` | `0134` |
+| `D5` | `0x49` | `0111` | `A` | `0x53` | `0123` |
+| `D6` | `0x29` | `051` | `B` | `0x4C` | `0114` |
+| `D7` | `0x69` | `0151` | `C` | `0x74` | `0164` |
+| `D8` | `0x19` | `031` | `D` | `0x73` | `0163` |
+| `D9` | `0x39` | `071` | `E` | `0x72` | `0162` |
+| `D0` | `0x79` | `0171` | `F` | `0x0B` | `013` |
+| `OemMinus` | `0x59` | `0131` | `G` | `0x4B` | `0113` |
+| `OemPlus` (`=`) | `0x56` | `0126` | `H` | `0x2B` | `053` |
+| `Back` (Backspace → rubout) | `0x13` | `023` | `I` | `0x1A` | `032` |
+| `Tab` | `0x12` | `022` | `J` | `0x6B` | `0153` |
+| `Q` | `0x52` | `0122` | `K` | `0x1B` | `033` |
+| `W` | `0x32` | `062` | `L` | `0x3B` | `073` |
+| `Return` | `0x5E` | `0136` | `M` | `0x6C` | `0154` |
+| `CapsLock` | `0x55` | `0125` | `N` | `0x2C` | `054` |
+| `OemOpenBrackets`/`OemCloseBrackets` (brace_left/right) | `0x76`/`0x66` | `0166`/`0146` | `O` | `0x3A` | `072` |
+| `OemBackslash`/`OemPipe` | `0x1F` | `037` | `P` | `0x7A` | `0172` |
+| `OemSemicolon` | `0x7B` | `0173` | `R` | `0x0A` | `012` |
+| `OemQuotes` | `0x5B` | `0133` | `S` | `0x33` | `063` |
+| `OemComma` | `0x1C` | `034` | `T` | `0x4A` | `0112` |
+| `OemPeriod` | `0x3C` | `074` | `U` | `0x6A` | `0152` |
+| `OemQuestion` (`/`) | `0x7C` | `0174` | `V` | `0x0C` | `014` |
+| | | | `X` | `0x34` | `064` |
+| | | | `Y` | `0x2A` | `052` |
+| | | | `Z` | `0x54` | `0124` |
+
+Any WPF `Key` not in this table (function keys F8-F12, numpad, Insert/Delete/PrintScreen/etc.) has no real default Cadet mapping either (confirmed by the `.defs` file's own "no default mapping" comment block) and returns 0 (`XK_VoidSymbol`-equivalent), matching the real system's own behavior for those keys.
 | register addresses (`0764100`-`0764176` octal) | — | `0x3E840`-`0x3E87E` | already independently verified as the existing `IobLo`/`IobHi` `BusAdaptor.cs` constants from an earlier phase; individual register offsets re-derived in the Register Model section below |
 
 ## Register Model
@@ -43,7 +86,7 @@ All registers are 16-bit words at Unibus addresses `0764100`-`0764176` octal (`0
 **Keyboard** (`0764100`/`0764102` = offsets `0x20`/`0x22` from `IobLo`):
 - Read offset `0x20` (kbd low): returns `_scancode & 0xFFFF`, then clears the keyboard-ready bit (CSR bit 5).
 - Read offset `0x22` (kbd high): returns `(_scancode >> 16) & 0xFFFF`. Does **not** clear the ready bit again (already cleared by the low-word read, matching the real C's comment `// CSR cleared above when reading 0100`).
-- `SetKeyboardReady(uint scancode)`: if `scancode == 0xFF0026` or `== 0xFF0032` (cold/warm boot), invoke the boot-trigger callback first. Then: `_scancode = scancode`; set CSR bit 5; if CSR bit 2 (keyboard-interrupt-enable) is set, call `UCode.AssertUnibusInterrupt(0xB0)`.
+- `SetKeyboardReady(uint scancode)`: `_scancode = scancode`; set CSR bit 5; if CSR bit 2 (keyboard-interrupt-enable) is set, call `UCode.AssertUnibusInterrupt(0xB0)`. (No cold/warm-boot sentinel check — that mechanism is dropped, see Decisions.)
 
 **Mouse** (`0764104`/`0764106` = offsets `0x24`/`0x26`):
 - Read offset `0x24` (mouse Y): returns `_mouseY`, then clears the mouse-ready bit (CSR bit 4).
@@ -103,16 +146,9 @@ namespace Usim;
 
 public class Iob
 {
-    // usim/sdl3-keyboard.c:20-21, preserved as literally written (a likely
-    // '<' vs '<<' typo in the real C -- see the design's Decisions for why
-    // this is harmless: both constants are purely self-referential sentinels).
-    private const uint ColdBootScancode = 0xFF0026;
-    private const uint WarmBootScancode = 0xFF0032;
-
     private const uint ChaosMyAddrPlaceholder = 0x7C20; // 0177040 octal, uch11.c's LOCAL-CADR fallback
 
     private readonly UCode _ucode;
-    private readonly Action _onBootTrigger;
 
     public Action<int>? OnBeep { get; set; }
 
@@ -125,10 +161,9 @@ public class Iob
     private readonly Stopwatch _usecStopwatch = new();
     private bool _usecStarted;
 
-    public Iob(UCode ucode, Action onBootTrigger)
+    public Iob(UCode ucode)
     {
         _ucode = ucode;
-        _onBootTrigger = onBootTrigger;
     }
 
     private bool IsKeyboardInterruptEnabled() => (_csr & 0x4) != 0;
@@ -136,16 +171,12 @@ public class Iob
 
     /// <summary>
     /// Faithful port of iob_set_keyboard_ready (usim/iob.c:88-107, WITH_SDL3
-    /// branch). Called directly from Keyboard's key-down path -- no queue,
-    /// no retry/backoff (see Decisions).
+    /// branch), minus the cold/warm-boot sentinel check (that hotkey
+    /// mechanism is dropped -- see Decisions). Called directly from
+    /// Keyboard's key-down path -- no queue, no retry/backoff (see Decisions).
     /// </summary>
     public void SetKeyboardReady(uint scancode)
     {
-        if (scancode == ColdBootScancode || scancode == WarmBootScancode)
-        {
-            _onBootTrigger();
-        }
-
         _scancode = scancode;
         _csr |= 1u << 5;
 
@@ -344,15 +375,15 @@ public class Iob
 ## Wiring
 
 1. **`BusAdaptor.cs`**: gains settable-once `Iob? _iob` + `WireIob(Iob iob)`, mirroring `_tv`/`WireTv`. `ReadUnibus`/`WriteUnibus` gain a branch for `IobLo`/`IobHi`, computing `offset = uaddr - IobLo`, calling `_iob.Read(offset)`/`_iob.Write(offset, (ushort)v)` with the existing null-guard-and-warn convention. Reads mask the returned `ushort` back up through `ReadUnibus`'s `uint` return type (implicit widening, no data loss); writes truncate the incoming `uint v` to `(ushort)v` at the call site, matching the real 16-bit register width (see Decisions).
-2. **`MachineControl.cs`**: constructs `Iob = new Iob(UCode, onBootTrigger: () => PowerOn());` after `ColorTv`, wires it via `UCode.BusAdaptor.WireIob(Iob)`. Subscribes `Iob.OnBeep = halfWavelengthMicros => DisplayBackend?.Beep(halfWavelengthMicros, 130000);` (matching `WpfBackend.Beep(int halfWavelengthMicros, int durationMicros)`'s real signature and the fixed 130000-microsecond duration derived in the Register Model section above). Both `Reset()`/`InitializeComponents()` and the headless `Run()` loop's tick site gain `Iob.Tick()` alongside `Tv.Tick()`/`ColorTv.Tick()`.
-3. **`Keyboard.cs`**: sheds `AddKey`/`GetKey`/`HasKeys`/`BufferCount`/the `CadrKeyCode` modifier-bit-packing enum entirely. `KeyDown(uint keysym, int modifiers)`/`KeyUp` keep translating WPF input via the existing `WpfKeyTranslator`, but now combine the result into the real scancode encoding (`v = ((!keydown) << 8) | code`) and call `_iob.SetKeyboardReady(v)` — `Keyboard` gains a constructor-injected `Iob` reference (or a settable-once `WireIob`, matching the session's established pattern for a dependency that must exist before construction completes).
+2. **`MachineControl.cs`**: constructs `Iob = new Iob(UCode);` after `ColorTv`, wires it via `UCode.BusAdaptor.WireIob(Iob)`. Subscribes `Iob.OnBeep = halfWavelengthMicros => DisplayBackend?.Beep(halfWavelengthMicros, 130000);` (matching `WpfBackend.Beep(int halfWavelengthMicros, int durationMicros)`'s real signature and the fixed 130000-microsecond duration derived in the Register Model section above). Both `Reset()`/`InitializeComponents()` and the headless `Run()` loop's tick site gain `Iob.Tick()` alongside `Tv.Tick()`/`ColorTv.Tick()`.
+3. **`Keyboard.cs`**: sheds `AddKey`/`GetKey`/`HasKeys`/`BufferCount`/the `CadrKeyCode` modifier-bit-packing enum entirely. `WpfKeyTranslator.TranslateKey`'s switch body is replaced with the real hardcoded Cadet-scancode table (see Octal Literals). `KeyDown(uint keysym, int modifiers)`/`KeyUp` combine the translated code into the real scancode encoding (`v = ((!keydown) << 8) | code`) and call `_iob.SetKeyboardReady(v)` — `Keyboard` gains a constructor-injected `Iob` reference (or a settable-once `WireIob`, matching the session's established pattern for a dependency that must exist before construction completes).
 4. **`Mouse.cs`**: `MoveTo`/`SetButton` (renamed/reshaped as needed during planning to match toggle semantics rather than press/release flags for `_tail`/`_middle`/`_head`) call `_iob.SetMouseReady(x, y, tailToggled, middleToggled, headToggled)` on every position or button change. `ReadXRegister`/`ReadYRegister`/`ReadButtonsRegister`/`MouseButtonBits` and the invented 11-bit linear XY scaling are removed — `Iob` is now the sole owner of the real register encoding.
 5. **`usim-cs/IOBus.cs`**: deleted entirely (the invented `IIODevice`/device-registry framework, never wired into `BusAdaptor`, has no faithful counterpart and no remaining callers once `Iob.cs` exists).
 6. **`TraceLog.cs`**: no change needed — `TraceCategory.IOBus = 128` already exists (confirmed by direct inspection), just unused until this port's `Iob.cs` starts calling `TraceLog.Instance.Warning(TraceCategory.IOBus, ...)`.
 
 ## Testing
 
-`IobTests.cs` (new): CSR read/write masking (low 4 bits only); keyboard-ready set via `SetKeyboardReady`, read-clears-on-low-word-only, interrupt gating on CSR bit 2; mouse-ready set via `SetMouseReady`, read-clears-on-Y-only, interrupt gating on CSR bit 1; the real `0x7777`-masked bit layout for a representative X/Y value with `rawX`/`rawY` always 0; cold and warm boot scancode detection invoking the boot-trigger callback exactly once each, with a non-boot scancode never invoking it; the usec clock returning 0 on its first read and a monotonically increasing value on subsequent reads; the 60Hz clock incrementing exactly once per `Tick()` call and wrapping correctly past `ushort.MaxValue`; the interval timer firing `AssertUnibusInterrupt(0xBC)` at exactly the computed tick count, not one tick early or late; every GPIO/serial/undocumented/Chaos-stub register returning its documented value without throwing, on both read and write.
+`IobTests.cs` (new): CSR read/write masking (low 4 bits only); keyboard-ready set via `SetKeyboardReady`, read-clears-on-low-word-only, interrupt gating on CSR bit 2; mouse-ready set via `SetMouseReady`, read-clears-on-Y-only, interrupt gating on CSR bit 1; the real `0x7777`-masked bit layout for a representative X/Y value with `rawX`/`rawY` always 0; the usec clock returning 0 on its first read and a monotonically increasing value on subsequent reads; the 60Hz clock incrementing exactly once per `Tick()` call and wrapping correctly past `ushort.MaxValue`; the interval timer firing `AssertUnibusInterrupt(0xBC)` at exactly the computed tick count, not one tick early or late; every GPIO/serial/undocumented/Chaos-stub register returning its documented value without throwing, on both read and write. A handful of `WpfKeyTranslator`'s hardcoded scancode-table entries get spot-checked against the Octal Literals table's values (not exhaustively re-verifying all ~55 entries in a test — the table itself was independently computed, not hand-transcribed).
 
 `Keyboard`/`Mouse` (whichever test files already exist, or new ones if not — checked during planning) get updated to verify the new scancode/toggle encoding calls the wired `Iob` correctly, using a real `Iob` instance rather than a mock, matching this project's established convention.
 
