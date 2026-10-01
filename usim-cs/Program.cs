@@ -197,6 +197,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-iob":
+                    IobTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-unibus-mapping":
                     UnibusMappingTests.RunAllTests();
                     Environment.Exit(0);
@@ -299,6 +304,7 @@ public class Program
         Console.WriteLine("  --test-bus-interface    Run bus interface tests only");
         Console.WriteLine("  --test-tv               Run TV tests only");
         Console.WriteLine("  --test-colortv          Run color TV tests only");
+        Console.WriteLine("  --test-iob              Run IOB tests only");
         Console.WriteLine("  --test-unibus-mapping   Run Unibus mapping register tests only");
         Console.WriteLine("  --test-microcode-bus-adaptor Run UCode/BusAdaptor wiring tests only");
         Console.WriteLine("  --test-microcode-dispatch Run microcode dispatch tests only");
@@ -614,6 +620,11 @@ public class Program
         // Run color TV tests
         Console.WriteLine("Running Color TV Tests...\n");
         ColorTvTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run IOB tests
+        Console.WriteLine("Running IOB Tests...\n");
+        IobTests.RunAllTests();
         Console.WriteLine();
 
         // Run Unibus mapping tests
