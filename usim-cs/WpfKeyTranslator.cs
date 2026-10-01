@@ -12,106 +12,105 @@ namespace Usim;
 public static class WpfKeyTranslator
 {
     /// <summary>
-    /// Translate a WPF Key into an X11 keysym-style code. Returns 0
-    /// (XK_VoidSymbol) for keys with no mapping, matching
-    /// SDL2Backend.TranslateKeycode's behavior.
+    /// Translate a WPF Key into its real Cadet-keyboard scancode (a fixed
+    /// 7-bit value per physical key, independent of shift state -- shift is
+    /// communicated separately via GetModifierState, matching the real
+    /// hardware's actual model). Returns 0 for keys with no real Cadet
+    /// mapping (matching usim/sdl3-keyboard-default-mapping.defs's own "no
+    /// default mapping" list). Values independently computed by combining
+    /// usim/sdl3-keyboard-cadet-scancodes.defs and
+    /// usim/sdl3-keyboard-default-mapping.defs via a Python script -- see
+    /// docs/superpowers/specs/2026-09-18-iob-design.md's Octal Literals table.
     /// </summary>
     public static int TranslateKey(Key key, bool shift)
     {
         switch (key)
         {
-            case Key.Escape: return 0xFF1B; // XK_Escape
-            case Key.F1: return 0xFFBE;
-            case Key.F2: return 0xFFBF;
-            case Key.F3: return 0xFFC0;
-            case Key.F4: return 0xFFC1;
-            case Key.F5: return 0xFFC2;
-            case Key.F6: return 0xFFC3;
-            case Key.F7: return 0xFFC4;
-            case Key.F8: return 0xFFC5;
-            case Key.F9: return 0xFFC6;
-            case Key.F10: return 0xFFC7;
-            case Key.F11: return 0xFFC8;
-            case Key.F12: return 0xFFC9;
+            case Key.Escape: return 0x63;
+            case Key.F1: return 0x61;
+            case Key.F2: return 0x22;
+            case Key.F3: return 0x26;
+            case Key.F4: return 0x20;
+            case Key.F5: return 0x4E;
+            case Key.F6: return 0x48;
+            case Key.F7: return 0x28;
 
-            case Key.PageUp: return 0xFF55;
-            case Key.PageDown: return 0xFF56;
-            case Key.Home: return 0xFF50;
-            case Key.End: return 0xFF57;
-            case Key.Left: return 0xFF51;
-            case Key.Right: return 0xFF53;
-            case Key.Up: return 0xFF52;
-            case Key.Down: return 0xFF54;
+            case Key.Home: return 0x77;
+            case Key.End: return 0x6E;
+            case Key.PageUp: return 0x37;
+            case Key.PageDown: return 0x27;
+            case Key.Left: return 0x4F;
+            case Key.Right: return 0x0F;
+            case Key.Up: return 0x46;
+            case Key.Down: return 0x7E;
 
-            case Key.Insert: return 0xFF63;
-            case Key.Delete: return 0xFFFF;
-            case Key.Back: return 0xFF08;
-            case Key.Tab: return 0xFF09;
-            case Key.Return: return 0xFF0D;
-            case Key.Space: return 0x0020;
+            case Key.Back: return 0x13; // Backspace -> rubout
+            case Key.Tab: return 0x12;
+            case Key.Return: return 0x5E;
+            case Key.Space: return 0x5C;
 
-            case Key.LeftShift: return 0xFFE1;
-            case Key.RightShift: return 0xFFE2;
-            case Key.LeftCtrl: return 0xFFE3;
-            case Key.RightCtrl: return 0xFFE4;
-            case Key.LeftAlt: return 0xFFE9;
-            case Key.RightAlt: return 0xFFEA;
-            case Key.LWin: return 0xFFE7;
-            case Key.RWin: return 0xFFE8;
-            case Key.CapsLock: return 0xFFE5;
+            case Key.LeftShift: return 0x14;
+            case Key.RightShift: return 0x14;
+            case Key.LeftCtrl: return 0x10;
+            case Key.RightCtrl: return 0x10;
+            case Key.LeftAlt: return 0x25; // meta
+            case Key.RightAlt: return 0x25; // meta
+            case Key.LWin: return 0x05; // super
+            case Key.RWin: return 0x05; // super
+            case Key.CapsLock: return 0x55;
 
-            case Key.OemTilde: return shift ? 0x007E : 0x0060;
-            case Key.D1: return shift ? 0x0021 : 0x0031;
-            case Key.D2: return shift ? 0x0040 : 0x0032;
-            case Key.D3: return shift ? 0x0023 : 0x0033;
-            case Key.D4: return shift ? 0x0024 : 0x0034;
-            case Key.D5: return shift ? 0x0025 : 0x0035;
-            case Key.D6: return shift ? 0x005E : 0x0036;
-            case Key.D7: return shift ? 0x0026 : 0x0037;
-            case Key.D8: return shift ? 0x002A : 0x0038;
-            case Key.D9: return shift ? 0x0028 : 0x0039;
-            case Key.D0: return shift ? 0x0029 : 0x0030;
-            case Key.OemMinus: return shift ? 0x005F : 0x002D;
-            case Key.OemPlus: return shift ? 0x002B : 0x003D;
+            case Key.OemTilde: return 0x3F; // grave
+            case Key.D1: return 0x51;
+            case Key.D2: return 0x31;
+            case Key.D3: return 0x71;
+            case Key.D4: return 0x09;
+            case Key.D5: return 0x49;
+            case Key.D6: return 0x29;
+            case Key.D7: return 0x69;
+            case Key.D8: return 0x19;
+            case Key.D9: return 0x39;
+            case Key.D0: return 0x79;
+            case Key.OemMinus: return 0x59;
+            case Key.OemPlus: return 0x56; // equal
 
-            case Key.A: return shift ? 0x0041 : 0x0061;
-            case Key.B: return shift ? 0x0042 : 0x0062;
-            case Key.C: return shift ? 0x0043 : 0x0063;
-            case Key.D: return shift ? 0x0044 : 0x0064;
-            case Key.E: return shift ? 0x0045 : 0x0065;
-            case Key.F: return shift ? 0x0046 : 0x0066;
-            case Key.G: return shift ? 0x0047 : 0x0067;
-            case Key.H: return shift ? 0x0048 : 0x0068;
-            case Key.I: return shift ? 0x0049 : 0x0069;
-            case Key.J: return shift ? 0x004A : 0x006A;
-            case Key.K: return shift ? 0x004B : 0x006B;
-            case Key.L: return shift ? 0x004C : 0x006C;
-            case Key.M: return shift ? 0x004D : 0x006D;
-            case Key.N: return shift ? 0x004E : 0x006E;
-            case Key.O: return shift ? 0x004F : 0x006F;
-            case Key.P: return shift ? 0x0050 : 0x0070;
-            case Key.Q: return shift ? 0x0051 : 0x0071;
-            case Key.R: return shift ? 0x0052 : 0x0072;
-            case Key.S: return shift ? 0x0053 : 0x0073;
-            case Key.T: return shift ? 0x0054 : 0x0074;
-            case Key.U: return shift ? 0x0055 : 0x0075;
-            case Key.V: return shift ? 0x0056 : 0x0076;
-            case Key.W: return shift ? 0x0057 : 0x0077;
-            case Key.X: return shift ? 0x0058 : 0x0078;
-            case Key.Y: return shift ? 0x0059 : 0x0079;
-            case Key.Z: return shift ? 0x005A : 0x007A;
+            case Key.A: return 0x53;
+            case Key.B: return 0x4C;
+            case Key.C: return 0x74;
+            case Key.D: return 0x73;
+            case Key.E: return 0x72;
+            case Key.F: return 0x0B;
+            case Key.G: return 0x4B;
+            case Key.H: return 0x2B;
+            case Key.I: return 0x1A;
+            case Key.J: return 0x6B;
+            case Key.K: return 0x1B;
+            case Key.L: return 0x3B;
+            case Key.M: return 0x6C;
+            case Key.N: return 0x2C;
+            case Key.O: return 0x3A;
+            case Key.P: return 0x7A;
+            case Key.Q: return 0x52;
+            case Key.R: return 0x0A;
+            case Key.S: return 0x33;
+            case Key.T: return 0x4A;
+            case Key.U: return 0x6A;
+            case Key.V: return 0x0C;
+            case Key.W: return 0x32;
+            case Key.X: return 0x34;
+            case Key.Y: return 0x2A;
+            case Key.Z: return 0x54;
 
-            case Key.OemOpenBrackets: return shift ? 0x007B : 0x005B;
-            case Key.OemCloseBrackets: return shift ? 0x007D : 0x005D;
-            case Key.OemPipe: return shift ? 0x007C : 0x005C;      // US \| key (VK_OEM_5)
-            case Key.OemBackslash: return shift ? 0x007C : 0x005C; // ISO 102-key extra (VK_OEM_102)
-            case Key.OemSemicolon: return shift ? 0x003A : 0x003B;
-            case Key.OemQuotes: return shift ? 0x0022 : 0x0027;
-            case Key.OemComma: return shift ? 0x003C : 0x002C;
-            case Key.OemPeriod: return shift ? 0x003E : 0x002E;
-            case Key.OemQuestion: return shift ? 0x003F : 0x002F;
+            case Key.OemOpenBrackets: return 0x76; // brace_left
+            case Key.OemCloseBrackets: return 0x66; // brace_right
+            case Key.OemPipe: return 0x1F; // backslash
+            case Key.OemBackslash: return 0x1F; // backslash (ISO 102-key)
+            case Key.OemSemicolon: return 0x7B;
+            case Key.OemQuotes: return 0x5B; // apostrophe
+            case Key.OemComma: return 0x1C;
+            case Key.OemPeriod: return 0x3C;
+            case Key.OemQuestion: return 0x7C; // slash
 
-            default: return 0; // XK_VoidSymbol
+            default: return 0; // no real Cadet mapping for this key
         }
     }
 
