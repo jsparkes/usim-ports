@@ -54,7 +54,7 @@ public class MachineControl
     public Mouse Mouse { get; private set; }
     public Tv Tv { get; private set; }
     public ColorTv ColorTv { get; private set; }
-    public IOBus IOBus { get; private set; }
+    public Iob Iob { get; private set; }
     public UCode UCode { get; private set; }
     
     // Display backend (optional)
@@ -86,7 +86,10 @@ public class MachineControl
         Mouse.MaxY = (int)Tv.Height;
         ColorTv = new ColorTv(UCode);
         UCode.BusAdaptor.WireColorTv(ColorTv);
-        IOBus = new IOBus();
+        Iob = new Iob(UCode);
+        UCode.BusAdaptor.WireIob(Iob);
+        Keyboard.WireIob(Iob);
+        Mouse.WireIob(Iob);
 
         State = PowerState.Off;
         IsStopped = true;
@@ -111,6 +114,7 @@ public class MachineControl
         };
 
         DisplayBackend.Initialize();
+        Iob.OnBeep = halfWavelengthMicros => DisplayBackend?.Beep(halfWavelengthMicros, 130000);
         TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Info, "Display backend initialized");
     }
     
@@ -134,9 +138,6 @@ public class MachineControl
         InitializeComponents();
         UCode.BusInterface.BusReset();
 
-        // Register I/O devices
-        RegisterIODevices();
-        
         // Load system files if cold boot
         if (mode == BootMode.Cold)
         {
@@ -227,7 +228,7 @@ public class MachineControl
         Mouse.Initialize();
         Tv.Reset();
         ColorTv.Reset();
-        IOBus.Reset();
+        Iob.Reset();
         
         Console.WriteLine("Machine reset complete");
     }
@@ -247,20 +248,9 @@ public class MachineControl
         Mouse.Initialize();
         Tv.Reset();
         ColorTv.Reset();
-        IOBus.Initialize();
+        Iob.Reset();
         
         Console.WriteLine("Components initialized");
-    }
-    
-    /// <summary>
-    /// Register I/O devices on the bus
-    /// </summary>
-    private void RegisterIODevices()
-    {
-        // Register clock
-        IOBus.RegisterDevice(new ClockDevice(0x10000));
-        
-        // Additional devices would be registered here
     }
     
     /// <summary>
@@ -352,6 +342,7 @@ public class MachineControl
                 if (State != PowerState.Running) break; // halted mid-batch, via Halt()
                 Tv.Tick();
                 ColorTv.Tick();
+                Iob.Tick();
                 System.Threading.Thread.Sleep(16);
             }
         }
@@ -505,13 +496,10 @@ public class MachineControl
         Memory.PrintStatistics();
         Console.WriteLine();
 
-        IOBus.PrintStatistics();
-        Console.WriteLine();
-        
         Console.WriteLine($"Display:    {Tv.Width}x{Tv.Height}");
         Console.WriteLine();
         
-        Console.WriteLine($"Keyboard:   {Keyboard.BufferCount} keys buffered, {Keyboard.KeysPressed:N0} total");
+        Console.WriteLine($"Keyboard:   {Keyboard.KeysPressed:N0} keys pressed");
         Console.WriteLine($"Mouse:      ({Mouse.X}, {Mouse.Y}) {Mouse.Buttons}");
     }
 }

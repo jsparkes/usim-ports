@@ -207,6 +207,16 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-keyboard":
+                    KeyboardTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-mouse":
+                    MouseTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-unibus-mapping":
                     UnibusMappingTests.RunAllTests();
                     Environment.Exit(0);
@@ -311,6 +321,8 @@ public class Program
         Console.WriteLine("  --test-colortv          Run color TV tests only");
         Console.WriteLine("  --test-iob              Run IOB tests only");
         Console.WriteLine("  --test-keytranslator    Run WpfKeyTranslator tests only");
+        Console.WriteLine("  --test-keyboard         Run Keyboard tests only");
+        Console.WriteLine("  --test-mouse            Run Mouse tests only");
         Console.WriteLine("  --test-unibus-mapping   Run Unibus mapping register tests only");
         Console.WriteLine("  --test-microcode-bus-adaptor Run UCode/BusAdaptor wiring tests only");
         Console.WriteLine("  --test-microcode-dispatch Run microcode dispatch tests only");
@@ -636,6 +648,16 @@ public class Program
         // Run WpfKeyTranslator tests
         Console.WriteLine("Running WpfKeyTranslator Tests...\n");
         WpfKeyTranslatorTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Keyboard tests
+        Console.WriteLine("Running Keyboard Tests...\n");
+        KeyboardTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Mouse tests
+        Console.WriteLine("Running Mouse Tests...\n");
+        MouseTests.RunAllTests();
         Console.WriteLine();
 
         // Run Unibus mapping tests
