@@ -24,6 +24,7 @@ public class WpfBackend : IDisposable
 {
     private readonly Tv _tv;
     private readonly ColorTv _colorTv;
+    private readonly Iob _iob;
     private readonly Keyboard _keyboard;
     private readonly Mouse _mouse;
     private readonly Action _onTick;
@@ -43,10 +44,11 @@ public class WpfBackend : IDisposable
     public bool UseLinearFiltering { get; set; } = true;
     public bool IsRunning { get; private set; }
 
-    public WpfBackend(Tv tv, ColorTv colorTv, Keyboard keyboard, Mouse mouse, Action onTick)
+    public WpfBackend(Tv tv, ColorTv colorTv, Iob iob, Keyboard keyboard, Mouse mouse, Action onTick)
     {
         _tv = tv ?? throw new ArgumentNullException(nameof(tv));
         _colorTv = colorTv ?? throw new ArgumentNullException(nameof(colorTv));
+        _iob = iob ?? throw new ArgumentNullException(nameof(iob));
         _keyboard = keyboard ?? throw new ArgumentNullException(nameof(keyboard));
         _mouse = mouse ?? throw new ArgumentNullException(nameof(mouse));
         _onTick = onTick ?? throw new ArgumentNullException(nameof(onTick));
@@ -200,6 +202,7 @@ public class WpfBackend : IDisposable
         _onTick();
         _tv.Tick();
         _colorTv.Tick();
+        _iob.Tick();
         UpdateBitmap();
         UpdateColorBitmap();
     }

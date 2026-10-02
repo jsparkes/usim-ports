@@ -106,7 +106,7 @@ public class MachineControl
             return;
         }
 
-        DisplayBackend = new WpfBackend(Tv, ColorTv, Keyboard, Mouse, onTick: RunMicrocodeBatch)
+        DisplayBackend = new WpfBackend(Tv, ColorTv, Iob, Keyboard, Mouse, onTick: RunMicrocodeBatch)
         {
             AllowResize = allowResize,
             Scale = scale,
