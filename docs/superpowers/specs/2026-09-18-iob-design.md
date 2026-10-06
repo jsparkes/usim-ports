@@ -43,7 +43,7 @@ Computed via Python, not by hand:
 | `0x7777` (mouse position/encoder mask) | — | `0x7777` binary `0111011101110111` | every 4th bit reserved for raw-encoder state, preserved as a bit-layout constant |
 | `(0b11111 << 19) \| (0b001 << 16)` (NKB header) | 16318464 | `0xF90000` | ORed into every keyboard scancode; high register reads `0x00F9` |
 | `0x7F` / `0x100` (scancode fields) | — | `0x7F` / `0x100` | low 7 bits = Cadet scancode; bit 8 set = key-up |
-| `0177040` (`uch11_myaddr`, `LOCAL-CADR`) | 65056 | `0xFE20` | the real default Chaos address. **The committed `Iob.cs` returns `0x7C20` (= `076040` octal) as its placeholder and labels it `0177040`; that is a pre-existing mismatch, see the Chaos register note** |
+| `0177040` (`uch11_myaddr`, `LOCAL-CADR`) | 65056 | `0xFE20` | the real default Chaos address |
 | `01350` (default beep half-wavelength) | 744 | `0x2E8` | microseconds (~672Hz), from `iob.c`'s own comment |
 
 CSR bit masks (unrelated to register offsets): bit 5 `0x20` = keyboard-ready, bit 4 `0x10` = mouse-ready, bit 2 `0x4` = keyboard-interrupt-enable, bit 1 `0x2` = mouse-interrupt-enable.
@@ -135,7 +135,7 @@ All registers are 16-bit words in the Unibus range `0764000`-`0764176` octal (`0
 
 **Chaos interface** (offsets `0x60`-`0x6E`):
 - Read `ch_csr` (`0x60`): returns 0 — no transmit-done, no receive-done, no CRC error, no lost-packet count; "nothing has ever happened" rather than any specific real hardware reset state.
-- Read `ch_myaddr` (`0x62`): returns the constant `ChaosMyAddrPlaceholder` = `0x7C20`. The intent was the real C's hardcoded `LOCAL-CADR` default `uch11_myaddr = 0177040` (`uch11.c:42`), but `0177040` octal is `0xFE20`, not `0x7C20` (`0x7C20` = `076040` octal); the committed constant and its `0177040` comment disagree. Known discrepancy: harmless to the boot (no packet ever flows and Lisp's Chaos probe just times out), but the constant should be corrected to `0xFE20` in a follow-up code change.
+- Read `ch_myaddr` (`0x62`): returns the constant `ChaosMyAddrPlaceholder` = `0xFE20` — the real C's hardcoded `LOCAL-CADR` default `uch11_myaddr = 0177040` (`uch11.c:42`). (Fixed: previously returned `0x7C20`/`076040` octal with a mismatched `0177040` comment.)
 - Read `ch_rbf`/`ch_rbc` (`0x64`/`0x66`): return 0 (no packet ever arrives).
 - Read `ch_xmt` (`0x6A`): returns the same placeholder address (the real C's read-side echo); performs no transmission.
 - Read `ch_nop` (`0x68`) and the obsolete registers `0x6C`/`0x6E`: warn and return 0.

@@ -356,10 +356,10 @@ public static class IobTests
             var iob = MakeIob(out _);
 
             Assert(iob.Read(0x60) == 0, "ch_csr reads 0 (idle)");
-            Assert(iob.Read(0x62) == 0x7C20, $"ch_myaddr reads the placeholder address, got 0x{iob.Read(0x62):X}");
+            Assert(iob.Read(0x62) == 0xFE20, $"ch_myaddr reads the placeholder address, got 0x{iob.Read(0x62):X}");
             Assert(iob.Read(0x64) == 0, "ch_rbf reads 0");
             Assert(iob.Read(0x66) == 0, "ch_rbc reads 0");
-            Assert(iob.Read(0x6A) == 0x7C20, "ch_xmt echoes the placeholder address");
+            Assert(iob.Read(0x6A) == 0xFE20, "ch_xmt echoes the placeholder address");
             iob.Write(0x60, 0xFFFF); // must not throw, must not change ch_csr's idle read
             Assert(iob.Read(0x60) == 0, "ch_csr write is accepted and ignored");
 

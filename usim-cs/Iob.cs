@@ -11,7 +11,7 @@ namespace Usim;
 
 public class Iob
 {
-    private const uint ChaosMyAddrPlaceholder = 0x7C20; // 0177040 octal, uch11.c's LOCAL-CADR fallback
+    private const uint ChaosMyAddrPlaceholder = 0xFE20; // 0177040 octal = 0xFE20, uch11.c's uch11_myaddr default (LOCAL-CADR)
 
     private readonly UCode _ucode;
 
