@@ -10,6 +10,14 @@ namespace Usim;
 
 public class Keyboard
 {
+    // NKB header the real SDL3 path ORs into every scancode
+    // (usim/sdl3-keyboard.c sdl3_keyboard_new_scancode):
+    // (0b11111 << 19) | (0b001 << 16) == 0xF90000. NKB<23:19> = all ones
+    // (reserved), NKB<18:16> = 001 ("new keyboard"). Lisp's
+    // KBD-CONVERT-TO-SOFTWARE-CHAR selects its converter from bits 18:16 and
+    // drops the key if the header is missing.
+    private const uint NkbHeader = (0b11111u << 19) | (0b001u << 16);
+
     private Iob? _iob;
 
     public ulong KeysPressed { get; private set; }
@@ -36,9 +44,9 @@ public class Keyboard
             return;
         }
 
-        // Faithful port of kbd_event's v = ((!keydown) << 8) | code (usim/kbd.c:79),
-        // reused here as the real scancode encoding IOB expects: bit 8 clear = down.
-        uint v = keysym & 0xFF;
+        // sdl3_keyboard_new_scancode: NKB header | (cadet scancode & 0x7F);
+        // bit 8 clear = key down.
+        uint v = NkbHeader | (keysym & 0x7Fu);
         KeysPressed++;
         _iob?.SetKeyboardReady(v);
 
@@ -46,7 +54,7 @@ public class Keyboard
             $"KeyDown: keysym=0x{keysym:X}, modifiers=0x{modifiers:X}");
     }
 
-    /// <summary>Handle a key-up event from WPF. Bit 8 set = up.</summary>
+    /// <summary>Handle a key-up event from WPF. Header | bit 8 set = up.</summary>
     public void KeyUp(uint keysym, int modifiers)
     {
         if (keysym == 0)
@@ -54,7 +62,7 @@ public class Keyboard
             return;
         }
 
-        uint v = (1u << 8) | (keysym & 0xFF);
+        uint v = NkbHeader | (1u << 8) | (keysym & 0x7Fu);
         _iob?.SetKeyboardReady(v);
 
         TraceLog.Instance.Trace(TraceCategory.Keyboard, TraceLevel.Debug,

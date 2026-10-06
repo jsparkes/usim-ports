@@ -1,8 +1,10 @@
-// Mouse.cs - Faithful port of the real mouse-to-IOB wire protocol
-// (usim/iob.c's WITH_SDL3 iob_set_mouse_ready path / usim/mouse.c's
-// mouse_event toggle semantics). The previous version of this class
-// invented its own 11-bit linear XY-scaling scheme with no relation to the
-// real hardware. See docs/superpowers/specs/2026-09-18-iob-design.md.
+// Mouse.cs - Port of the real SDL3 mouse path (usim/sdl3-mouse.c):
+// position is delivered by writing fixnum x/y straight into microcode
+// A-memory (A-MOUSE-X/A-MOUSE-Y, plus A-MOUSE-WAKEUP = A-V-TRUE), located by
+// name in the loaded microcode symbols; the IOB X/Y registers are always
+// sent as 0 (the microcode treats them as relative counters) and only the
+// button levels travel through iob_set_mouse_ready. See
+// docs/superpowers/specs/2026-09-18-iob-design.md.
 
 using System;
 
@@ -36,16 +38,20 @@ public class Mouse
     public int MaxX { get; set; } = 768;
     public int MaxY { get; set; } = 963;
 
-    // Real hardware toggle state (usim/mouse.c:46-51's mouse_tail/middle/head
-    // ^= 1 on each button-1/2/3 transition -- edge-triggered, not level-
-    // triggered like WPF's own Buttons flags above). Left maps to tail,
-    // Middle to middle, Right to head -- a reasonable mapping given the real
-    // C doesn't document which physical button is 1/2/3.
-    private bool _tailToggle;
-    private bool _middleToggle;
-    private bool _headToggle;
-
     private Iob? _iob;
+    private UCode? _ucode;
+
+    // Lazily resolved A-memory addresses of the microcode variables the
+    // SDL3 path injects into (sdl3_mouse_init's INTERN() calls), cached per
+    // symbol table instance.
+    private SymbolTable? _resolvedFor;
+    private bool _symbolsOk;
+    private bool _warnedMissingSymbols;
+    private uint _aMouseX, _aMouseY, _aMouseWakeup, _aVTrue;
+
+    // DTP_FIX from sdl3-mouse.c: (x & ((1 << 24) - 1)) | (5 << 25).
+    private static uint DtpFix(int x) => ((uint)x & ((1u << 24) - 1)) | (5u << 25);
+
 
     public ulong MoveCount { get; private set; }
     public ulong ClickCount { get; private set; }
@@ -62,6 +68,15 @@ public class Mouse
     public void WireIob(Iob iob)
     {
         _iob = iob;
+    }
+
+    /// <summary>
+    /// Give the mouse access to the microcode's A-memory for position
+    /// injection (sdl3-mouse.c writes amem[] directly).
+    /// </summary>
+    public void WireMicrocode(UCode ucode)
+    {
+        _ucode = ucode;
     }
 
     public void Initialize()
@@ -99,10 +114,8 @@ public class Mouse
     }
 
     /// <summary>
-    /// Faithful port of mouse_event's toggle semantics (usim/mouse.c:36-53):
-    /// each button transition (press OR release) XORs the corresponding
-    /// hardware toggle bit -- it does not track "currently held", it
-    /// remembers the last commanded flip.
+    /// Track a button's held state. Level-based (1 = held): the held state is
+    /// reported on every update, so a redundant press/release is harmless.
     /// </summary>
     public void SetButton(MouseButtons button, bool pressed)
     {
@@ -124,19 +137,6 @@ public class Mouse
             {
                 ButtonReleased?.Invoke(button);
             }
-        }
-
-        switch (button)
-        {
-            case MouseButtons.Left:
-                _tailToggle = !_tailToggle;
-                break;
-            case MouseButtons.Middle:
-                _middleToggle = !_middleToggle;
-                break;
-            case MouseButtons.Right:
-                _headToggle = !_headToggle;
-                break;
         }
 
         ReportToIob();
@@ -177,8 +177,65 @@ public class Mouse
             $"Mouse button up: {button}");
     }
 
+    /// <summary>
+    /// Port of sdl3_mouse_set_mouse_ready: inject position into A-memory, then
+    /// send the IOB x=y=0 with the current button levels.
+    /// </summary>
     private void ReportToIob()
     {
-        _iob?.SetMouseReady(X, Y, _tailToggle, _middleToggle, _headToggle);
+        InjectPosition();
+        _iob?.SetMouseReady(0, 0,
+            (Buttons & MouseButtons.Left) != 0,
+            (Buttons & MouseButtons.Middle) != 0,
+            (Buttons & MouseButtons.Right) != 0);
+    }
+
+    private void InjectPosition()
+    {
+        if (_ucode == null || !ResolveSymbols())
+        {
+            return;
+        }
+
+        // Host coordinates are already unscaled (sdl3_video_scale == 1).
+        _ucode.AMem[_aMouseX] = DtpFix(X);
+        _ucode.AMem[_aMouseY] = DtpFix(Y);
+        _ucode.AMem[_aMouseWakeup] = _ucode.AMem[_aVTrue];
+    }
+
+    // Looks the four variables up by name (sdl3_mouse_init's INTERN()), once
+    // per symbol table instance. Never throws: missing symbols just disable
+    // injection, with at most one warning.
+    private bool ResolveSymbols()
+    {
+        SymbolTable? table = Disassembler.Symbols;
+        if (table == null)
+        {
+            return false;
+        }
+        if (!ReferenceEquals(table, _resolvedFor))
+        {
+            _resolvedFor = table;
+            _symbolsOk =
+                table.TryFindByName(SymbolType.AMem, "A-MOUSE-X", out _aMouseX) &&
+                table.TryFindByName(SymbolType.AMem, "A-MOUSE-Y", out _aMouseY) &&
+                table.TryFindByName(SymbolType.AMem, "A-MOUSE-WAKEUP", out _aMouseWakeup) &&
+                table.TryFindByName(SymbolType.AMem, "A-V-TRUE", out _aVTrue);
+            if (_symbolsOk)
+            {
+                // Mask like UCode.ReadAMem so a bad symbol value cannot index out of range.
+                _aMouseX &= 0x3FF;
+                _aMouseY &= 0x3FF;
+                _aMouseWakeup &= 0x3FF;
+                _aVTrue &= 0x3FF;
+            }
+            else if (!_warnedMissingSymbols)
+            {
+                _warnedMissingSymbols = true;
+                TraceLog.Instance.Trace(TraceCategory.Mouse, TraceLevel.Warning,
+                    "Microcode symbols A-MOUSE-X/A-MOUSE-Y/A-MOUSE-WAKEUP/A-V-TRUE not found; mouse position injection disabled");
+            }
+        }
+        return _symbolsOk;
     }
 }

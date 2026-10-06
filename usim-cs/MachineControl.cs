@@ -90,6 +90,7 @@ public class MachineControl
         UCode.BusAdaptor.WireIob(Iob);
         Keyboard.WireIob(Iob);
         Mouse.WireIob(Iob);
+        Mouse.WireMicrocode(UCode);
 
         State = PowerState.Off;
         IsStopped = true;
