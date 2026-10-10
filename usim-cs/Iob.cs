@@ -32,6 +32,9 @@ public class Iob
         _ucode = ucode;
     }
 
+    /// <summary>Port of iob_is_keyboard_ready_set: CSR bit 5.</summary>
+    public bool IsKeyboardReadySet => (_csr & (1u << 5)) != 0;
+
     private bool IsKeyboardInterruptEnabled() => (_csr & 0x4) != 0;
     private bool IsMouseInterruptEnabled() => (_csr & 0x2) != 0;
 
@@ -48,8 +51,8 @@ public class Iob
     /// <summary>
     /// Faithful port of iob_set_keyboard_ready (usim/iob.c:88-107, WITH_SDL3
     /// branch), minus the cold/warm-boot sentinel check (that hotkey
-    /// mechanism is dropped -- see the design's Decisions). Called directly
-    /// from Keyboard's key-down path -- no queue, no retry/backoff.
+    /// mechanism is dropped -- see the design's Decisions). Called by
+    /// Keyboard's queue once the keyboard is free (IsKeyboardReadySet clear).
     /// </summary>
     public void SetKeyboardReady(uint scancode)
     {

@@ -5,6 +5,7 @@
 // docs/superpowers/specs/2026-09-18-iob-design.md.
 
 using System;
+using System.Collections.Generic;
 
 namespace Usim;
 
@@ -18,7 +19,27 @@ public class Keyboard
     // drops the key if the header is missing.
     private const uint NkbHeader = (0b11111u << 19) | (0b001u << 16);
 
+    // usim/sdl3-keyboard.c QUEUE_CAPACITY.
+    private const int QueueCapacity = 100;
+
+    // The real delivery thread waits for the IOB keyboard to be not busy for
+    // 2+4+...+256 ms (sdl3_keyboard_thread_run) before dropping the scancode.
+    private const long BusyTimeoutMs = 2 + 4 + 8 + 16 + 32 + 64 + 128 + 256;
+
+    private readonly Queue<uint> _queue = new();
+    private readonly Func<long> _nowMs;
+    private long _busySinceMs = -1;
     private Iob? _iob;
+
+    public Keyboard() : this(() => Environment.TickCount64)
+    {
+    }
+
+    // The clock is injectable so the busy-timeout can be tested.
+    public Keyboard(Func<long> nowMs)
+    {
+        _nowMs = nowMs;
+    }
 
     public ulong KeysPressed { get; private set; }
 
@@ -30,6 +51,74 @@ public class Keyboard
     public void Initialize()
     {
         KeysPressed = 0;
+        _queue.Clear();
+        _busySinceMs = -1;
+    }
+
+    /// <summary>Scancodes waiting for the IOB keyboard to become free.</summary>
+    public int QueuedCount => _queue.Count;
+
+    /// <summary>
+    /// Port of sdl3_keyboard_enqueue: drops the scancode (with a warning) if
+    /// the queue is full, otherwise queues it and tries to deliver.
+    /// </summary>
+    private void Enqueue(uint scancode)
+    {
+        if (_queue.Count == QueueCapacity)
+        {
+            TraceLog.Instance.Trace(TraceCategory.Keyboard, TraceLevel.Warning,
+                $"keyboard scancode: {scancode} is missed, queue exhausted");
+            return;
+        }
+        _queue.Enqueue(scancode);
+        Pump();
+    }
+
+    /// <summary>
+    /// Replaces the real delivery thread (sdl3_keyboard_thread_run) with a
+    /// poll: called per tick and on every enqueue. Delivers the head scancode
+    /// once the IOB keyboard is not busy (CSR bit 5 clear); if it stays busy
+    /// for the thread's full back-off (510 ms) the head scancode is dropped
+    /// with a warning, as in the real code.
+    /// </summary>
+    public void Tick()
+    {
+        Pump();
+    }
+
+    private void Pump()
+    {
+        if (_iob == null)
+        {
+            return;
+        }
+        while (_queue.Count > 0)
+        {
+            if (!_iob.IsKeyboardReadySet)
+            {
+                _iob.SetKeyboardReady(_queue.Dequeue());
+                _busySinceMs = -1;
+                // Delivery sets the ready bit; the next scancode has to wait
+                // until Lisp reads this one.
+                return;
+            }
+
+            long now = _nowMs();
+            if (_busySinceMs < 0)
+            {
+                _busySinceMs = now;
+                return;
+            }
+            if (now - _busySinceMs < BusyTimeoutMs)
+            {
+                return;
+            }
+            uint dropped = _queue.Dequeue();
+            TraceLog.Instance.Trace(TraceCategory.Keyboard, TraceLevel.Warning,
+                $"keyboard scancode: {dropped} is missed, keyboard is busy exhausted");
+            _busySinceMs = now;
+        }
+        _busySinceMs = -1;
     }
 
     /// <summary>
@@ -48,7 +137,7 @@ public class Keyboard
         // bit 8 clear = key down.
         uint v = NkbHeader | (keysym & 0x7Fu);
         KeysPressed++;
-        _iob?.SetKeyboardReady(v);
+        Enqueue(v);
 
         TraceLog.Instance.Trace(TraceCategory.Keyboard, TraceLevel.Debug,
             $"KeyDown: keysym=0x{keysym:X}, modifiers=0x{modifiers:X}");
@@ -63,7 +152,7 @@ public class Keyboard
         }
 
         uint v = NkbHeader | (1u << 8) | (keysym & 0x7Fu);
-        _iob?.SetKeyboardReady(v);
+        Enqueue(v);
 
         TraceLog.Instance.Trace(TraceCategory.Keyboard, TraceLevel.Debug,
             $"KeyUp: keysym=0x{keysym:X}, modifiers=0x{modifiers:X}");

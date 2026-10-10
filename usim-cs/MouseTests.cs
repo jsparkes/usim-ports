@@ -23,6 +23,8 @@ public static class MouseTests
         if (TestMoveToInjectsPositionIntoAMem()) passed++; else failed++;
         if (TestMoveToWithoutSymbolsIsSilentNoOp()) passed++; else failed++;
         if (TestMoveToWithMissingSymbolNameIsSilentNoOp()) passed++; else failed++;
+        if (TestWarpFiresOnlyOnChangeToOn()) passed++; else failed++;
+        if (TestWarpWithoutCursorStateSymbolIsDisabled()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -225,6 +227,96 @@ public static class MouseTests
         "A-MOUSE-WAKEUP A-MEM 102",
         "A-V-TRUE A-MEM 103",
     };
+
+    // 0104 octal = 0x44.
+    private static readonly string[] FiveMouseSymbols =
+    {
+        "A-MOUSE-X A-MEM 100",
+        "A-MOUSE-Y A-MEM 101",
+        "A-MOUSE-WAKEUP A-MEM 102",
+        "A-V-TRUE A-MEM 103",
+        "A-MOUSE-CURSOR-STATE A-MEM 104",
+    };
+
+    private static bool TestWarpFiresOnlyOnChangeToOn()
+    {
+        Console.WriteLine("Test: tv:mouse-warp (A-MOUSE-CURSOR-STATE -> 3) fires OnWarp once with A-MOUSE-X/Y, not on repeats or other states");
+        try
+        {
+            WithSymbols(FiveMouseSymbols, () =>
+            {
+                var ucode = new UCode(new MainMemory());
+                var mouse = new Mouse();
+                mouse.WireIob(new Iob(ucode));
+                mouse.WireMicrocode(ucode);
+                var warps = new System.Collections.Generic.List<(int, int)>();
+                mouse.OnWarp = (x, y) => warps.Add((x, y));
+
+                const uint fix = 5u << 25;
+
+                ucode.AMem[0x44] = fix | 2; // off
+                mouse.MoveTo(1, 1);
+                Assert(warps.Count == 0, "state 2 (off) does not warp");
+
+                ucode.AMem[0x44] = fix | 3; // on
+                ucode.AMem[0x40] = fix | 321;
+                ucode.AMem[0x41] = fix | 654;
+                mouse.MoveTo(2, 2);
+                Assert(warps.Count == 1 && warps[0] == (321, 654), $"warps to the A-memory X/Y, got {warps.Count}");
+                Assert(ucode.AMem[0x40] == (fix | 2) && ucode.AMem[0x41] == (fix | 2),
+                    "the same event then injects the host position over A-MOUSE-X/Y (faithful to the C ordering)");
+
+                mouse.MoveTo(3, 3);
+                Assert(warps.Count == 1, "state still 3: no repeat warp");
+
+                ucode.AMem[0x44] = fix | 2;
+                mouse.MoveTo(4, 4);
+                ucode.AMem[0x44] = fix | 3;
+                ucode.AMem[0x40] = fix | 10;
+                ucode.AMem[0x41] = fix | 20;
+                mouse.ButtonDown(MouseButtons.Left);
+                Assert(warps.Count == 2 && warps[1] == (10, 20), "a new change to 3 warps again (button events count too)");
+            });
+
+            Console.WriteLine("  Warp-fires-only-on-change-to-on test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Warp-fires-only-on-change-to-on test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestWarpWithoutCursorStateSymbolIsDisabled()
+    {
+        Console.WriteLine("Test: without A-MOUSE-CURSOR-STATE, warp is disabled but position injection still works");
+        try
+        {
+            WithSymbols(FourMouseSymbols, () =>
+            {
+                var ucode = new UCode(new MainMemory());
+                var mouse = new Mouse();
+                mouse.WireIob(new Iob(ucode));
+                mouse.WireMicrocode(ucode);
+                int warps = 0;
+                mouse.OnWarp = (_, _) => warps++;
+                ucode.AMem[0x44] = (5u << 25) | 3;
+
+                mouse.MoveTo(7, 9);
+                Assert(warps == 0, "no warp");
+                Assert(ucode.AMem[0x40] == (7u | (5u << 25)), "injection still happens");
+            });
+
+            Console.WriteLine("  Warp-without-cursor-state-symbol test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Warp-without-cursor-state-symbol test failed: {ex.Message}\n");
+            return false;
+        }
+    }
 
     private static bool TestMoveToInjectsPositionIntoAMem()
     {

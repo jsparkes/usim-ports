@@ -8,6 +8,7 @@
 using System;
 using System.IO;
 using System.Media;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -43,6 +44,10 @@ public class WpfBackend : IDisposable
     public bool AllowResize { get; set; } = false;
     public bool UseLinearFiltering { get; set; } = true;
     public bool IsRunning { get; private set; }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetCursorPos(int x, int y);
 
     public WpfBackend(Tv tv, ColorTv colorTv, Iob iob, Keyboard keyboard, Mouse mouse, Action onTick)
     {
@@ -108,6 +113,7 @@ public class WpfBackend : IDisposable
 
         _window.KeyDown += (_, e) => HandleKeyEvent(e, keyDown: true);
         _window.KeyUp += (_, e) => HandleKeyEvent(e, keyDown: false);
+        _mouse.OnWarp = WarpCursor;
         _image.MouseMove += OnMouseMove;
         _image.MouseDown += OnMouseButton;
         _image.MouseUp += OnMouseButton;
@@ -203,6 +209,7 @@ public class WpfBackend : IDisposable
         _tv.Tick();
         _colorTv.Tick();
         _iob.Tick();
+        _keyboard.Tick();
         UpdateBitmap();
         UpdateColorBitmap();
     }
@@ -247,6 +254,21 @@ public class WpfBackend : IDisposable
             _keyboard.KeyUp((uint)keysym, modifiers);
 
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Port of SDL_WarpMouseInWindow for tv:mouse-warp: move the real cursor to
+    /// guest pixel (x, y). Only while the main window is active, so Lisp
+    /// cannot pull the cursor out of another application. The move raises a
+    /// normal MouseMove, which feeds the new position back to Lisp.
+    /// </summary>
+    private void WarpCursor(int x, int y)
+    {
+        if (_window == null || _image == null || !_window.IsActive)
+            return;
+
+        Point screen = _image.PointToScreen(new Point(x, y));
+        SetCursorPos((int)Math.Round(screen.X), (int)Math.Round(screen.Y));
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)

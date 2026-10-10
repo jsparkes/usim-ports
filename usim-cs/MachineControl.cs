@@ -344,6 +344,7 @@ public class MachineControl
                 Tv.Tick();
                 ColorTv.Tick();
                 Iob.Tick();
+                Keyboard.Tick();
                 System.Threading.Thread.Sleep(16);
             }
         }

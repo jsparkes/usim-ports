@@ -60,6 +60,20 @@ public class Mouse
     public event Action<MouseButtons>? ButtonPressed;
     public event Action<MouseButtons>? ButtonReleased;
 
+    /// <summary>
+    /// Called with the guest pixel (x, y) Lisp asked the cursor to jump to
+    /// (the port of SDL_WarpMouseInWindow in sdl3_mouse_warp_if_needed). The
+    /// display backend maps it to a real cursor position.
+    /// </summary>
+    public Action<int, int>? OnWarp { get; set; }
+
+    // tv:mouse-warp's cursor states (sys/ucadr/uc-parameters.lisp).
+    private const uint StateDisabled = 0;
+    private const uint StateOn = 3;
+    private uint _prevCursorState = StateDisabled;
+    private uint _aMouseCursorState;
+    private bool _cursorStateOk;
+
     public Mouse()
     {
         Initialize();
@@ -183,11 +197,35 @@ public class Mouse
     /// </summary>
     private void ReportToIob()
     {
+        // sdl3_mouse_set_mouse_ready checks for a warp before injecting.
+        WarpIfNeeded();
         InjectPosition();
         _iob?.SetMouseReady(0, 0,
             (Buttons & MouseButtons.Left) != 0,
             (Buttons & MouseButtons.Middle) != 0,
             (Buttons & MouseButtons.Right) != 0);
+    }
+
+    /// <summary>
+    /// Port of sdl3_mouse_warp_if_needed: tv:mouse-warp changes
+    /// A-MOUSE-CURSOR-STATE and sets A-MOUSE-X/Y. Warps only on a change to
+    /// state 3 (on). Like the C, it is only checked when a mouse event arrives.
+    /// </summary>
+    private void WarpIfNeeded()
+    {
+        if (_ucode == null || !ResolveSymbols() || !_cursorStateOk)
+        {
+            return;
+        }
+
+        uint state = _ucode.AMem[_aMouseCursorState] & ((1u << 24) - 1);
+        if (state != _prevCursorState && state == StateOn)
+        {
+            int x = (int)(_ucode.AMem[_aMouseX] & ((1u << 24) - 1));
+            int y = (int)(_ucode.AMem[_aMouseY] & ((1u << 24) - 1));
+            OnWarp?.Invoke(x, y);
+        }
+        _prevCursorState = state;
     }
 
     private void InjectPosition()
@@ -221,6 +259,13 @@ public class Mouse
                 table.TryFindByName(SymbolType.AMem, "A-MOUSE-Y", out _aMouseY) &&
                 table.TryFindByName(SymbolType.AMem, "A-MOUSE-WAKEUP", out _aMouseWakeup) &&
                 table.TryFindByName(SymbolType.AMem, "A-V-TRUE", out _aVTrue);
+            // Warp has its own symbol so its absence cannot disable injection.
+            _cursorStateOk = _symbolsOk &&
+                table.TryFindByName(SymbolType.AMem, "A-MOUSE-CURSOR-STATE", out _aMouseCursorState);
+            if (_cursorStateOk)
+            {
+                _aMouseCursorState &= 0x3FF;
+            }
             if (_symbolsOk)
             {
                 // Mask like UCode.ReadAMem so a bad symbol value cannot index out of range.
