@@ -32,6 +32,7 @@ public static class BusAdaptorTests
         if (TestUnibusMapDmaToUnmappedXbusSetsNxm()) passed++; else failed++;
         if (TestTvRangeDispatchesToRealTv()) passed++; else failed++;
         if (TestColorTvRangeDispatchesToRealColorTvOnlyWhenEnabled()) passed++; else failed++;
+        if (TestIobRangeDispatchesToRealIob()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -540,6 +541,38 @@ public static class BusAdaptorTests
         catch (Exception ex)
         {
             Console.WriteLine($"  TV real-dispatch test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestIobRangeDispatchesToRealIob()
+    {
+        Console.WriteLine("Test: IOB range dispatches to a real, wired Iob, not the generic placeholder");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var busAdaptor = ucode.BusAdaptor;
+            var iob = new Iob(ucode);
+            busAdaptor.WireIob(iob);
+
+            bool promDisabled = false;
+
+            // CSR register, offset 0x4A from IobLo (0x3E800) -- a real
+            // round-trip only happens through the real Iob path; the old
+            // generic placeholder always returned 0 regardless of what was
+            // "written" (a no-op).
+            busAdaptor.Write(UaddrToPaddr(0x3E84A), 0xF, ref promDisabled);
+            uint csr = busAdaptor.Read(UaddrToPaddr(0x3E84A));
+            Assert(csr == 0xF, $"IOB CSR register round-trips through real Iob, got 0x{csr:X}");
+            Assert(promDisabled == false, "IOB writes never touch promDisabled");
+
+            Console.WriteLine("  IOB real-dispatch test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  IOB real-dispatch test failed: {ex.Message}\n");
             return false;
         }
     }

@@ -34,18 +34,18 @@ public static class WpfBackendTests
         Console.WriteLine("Test: Key Translation");
         try
         {
-            Assert(WpfKeyTranslator.TranslateKey(Key.Escape, shift: false) == 0xFF1B, "Escape -> XK_Escape");
-            Assert(WpfKeyTranslator.TranslateKey(Key.F1, shift: false) == 0xFFBE, "F1 -> XK_F1");
-            Assert(WpfKeyTranslator.TranslateKey(Key.A, shift: false) == 0x0061, "a (no shift) -> 'a'");
-            Assert(WpfKeyTranslator.TranslateKey(Key.A, shift: true) == 0x0041, "a (shift) -> 'A'");
-            Assert(WpfKeyTranslator.TranslateKey(Key.D1, shift: false) == 0x0031, "1 (no shift) -> '1'");
-            Assert(WpfKeyTranslator.TranslateKey(Key.D1, shift: true) == 0x0021, "1 (shift) -> '!'");
-            Assert(WpfKeyTranslator.TranslateKey(Key.Space, shift: false) == 0x0020, "Space -> 0x20");
-            Assert(WpfKeyTranslator.TranslateKey(Key.Scroll, shift: false) == 0, "Unmapped key -> XK_VoidSymbol");
-            Assert(WpfKeyTranslator.TranslateKey(Key.OemPipe, shift: false) == 0x005C, "OemPipe (no shift) -> '\\'");
-            Assert(WpfKeyTranslator.TranslateKey(Key.OemPipe, shift: true) == 0x007C, "OemPipe (shift) -> '|'");
-            Assert(WpfKeyTranslator.TranslateKey(Key.OemComma, shift: false) == 0x002C, "OemComma (no shift) -> ','");
-            Assert(WpfKeyTranslator.TranslateKey(Key.OemComma, shift: true) == 0x003C, "OemComma (shift) -> '<'");
+            Assert(WpfKeyTranslator.TranslateKey(Key.Escape, shift: false) == 0x63, "Escape -> alt_mode scancode 0x63");
+            Assert(WpfKeyTranslator.TranslateKey(Key.F1, shift: false) == 0x61, "F1 -> scancode 0x61");
+            Assert(WpfKeyTranslator.TranslateKey(Key.A, shift: false) == 0x53, "A (no shift) -> scancode 0x53");
+            Assert(WpfKeyTranslator.TranslateKey(Key.A, shift: true) == 0x53, "A (shift) -> same scancode 0x53; shift does not change the scancode");
+            Assert(WpfKeyTranslator.TranslateKey(Key.D1, shift: false) == 0x51, "1 (no shift) -> scancode 0x51");
+            Assert(WpfKeyTranslator.TranslateKey(Key.D1, shift: true) == 0x51, "1 (shift) -> same scancode 0x51; shift does not change the scancode");
+            Assert(WpfKeyTranslator.TranslateKey(Key.Space, shift: false) == 0x5C, "Space -> scancode 0x5C");
+            Assert(WpfKeyTranslator.TranslateKey(Key.Scroll, shift: false) == 0, "Unmapped key -> 0");
+            Assert(WpfKeyTranslator.TranslateKey(Key.OemPipe, shift: false) == 0x1F, "OemPipe (no shift) -> backslash scancode 0x1F");
+            Assert(WpfKeyTranslator.TranslateKey(Key.OemPipe, shift: true) == 0x1F, "OemPipe (shift) -> same scancode 0x1F");
+            Assert(WpfKeyTranslator.TranslateKey(Key.OemComma, shift: false) == 0x1C, "OemComma (no shift) -> scancode 0x1C");
+            Assert(WpfKeyTranslator.TranslateKey(Key.OemComma, shift: true) == 0x1C, "OemComma (shift) -> same scancode 0x1C");
 
             Console.WriteLine("  Key Translation tests passed\n");
             return true;

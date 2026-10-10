@@ -23,6 +23,7 @@ public class BusAdaptor
     private DiskController? _diskController;
     private Tv? _tv;
     private ColorTv? _colorTv;
+    private Iob? _iob;
 
     public BusAdaptor(BusInterface busInterface, MainMemory mainMemory, UCode ucode)
     {
@@ -45,6 +46,11 @@ public class BusAdaptor
     public void WireColorTv(ColorTv colorTv)
     {
         _colorTv = colorTv;
+    }
+
+    public void WireIob(Iob iob)
+    {
+        _iob = iob;
     }
 
     // XBus I/O absolute physical-address ranges (usim/bus-adaptor.c's
@@ -414,6 +420,17 @@ public class BusAdaptor
         {
             return UnibusMapDmaRead(uaddr);
         }
+        if (uaddr >= IobLo && uaddr <= IobHi)
+        {
+            uint offset = uaddr - IobLo;
+            if (_iob == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: IOB read at offset {offset} with no Iob wired");
+                return 0;
+            }
+            return _iob.Read(offset);
+        }
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: read un-ported Unibus uaddr 0x{uaddr:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
         return 0;
@@ -447,6 +464,18 @@ public class BusAdaptor
         if (uaddr >= UnibusMapLo && uaddr <= UnibusMapHi)
         {
             UnibusMapDmaWrite(uaddr, v);
+            return;
+        }
+        if (uaddr >= IobLo && uaddr <= IobHi)
+        {
+            uint offset = uaddr - IobLo;
+            if (_iob == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: IOB write at offset {offset} with no Iob wired");
+                return;
+            }
+            _iob.Write(offset, (ushort)v);
             return;
         }
         TraceLog.Instance.Warning(TraceCategory.Memory,

@@ -45,6 +45,7 @@ public enum SymbolType
 public class SymbolTable
 {
     private readonly Dictionary<(SymbolType Type, uint Value), string> _byTypeAndValue = new();
+    private readonly Dictionary<(SymbolType Type, string Name), uint> _byTypeAndName = new();
 
     public void LoadFromFile(string filename)
     {
@@ -143,7 +144,17 @@ public class SymbolTable
         uint magnitude = Convert.ToUInt32(negative ? valueToken.Substring(1) : valueToken, 8);
         uint value = negative ? unchecked((uint)-(int)magnitude) : magnitude;
         _byTypeAndValue[(type, value)] = name;
+        // Last definition wins, so a later-loaded ucadr.sym overrides promh.sym
+        // (the real C looks microcode names up in sym_mcr, i.e. ucadr).
+        _byTypeAndName[(type, name)] = value;
     }
+
+    /// <summary>
+    /// Name-to-value lookup (the reverse of FindByTypeValue); port of the
+    /// lookup half of usym.c's sym_find().
+    /// </summary>
+    public bool TryFindByName(SymbolType type, string name, out uint value) =>
+        _byTypeAndName.TryGetValue((type, name), out value);
 
     public string? FindByTypeValue(SymbolType type, uint value) =>
         _byTypeAndValue.TryGetValue((type, value), out string? name) ? name : null;
