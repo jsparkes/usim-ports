@@ -28,6 +28,7 @@ public class WpfBackend : IDisposable
     private readonly Iob _iob;
     private readonly Keyboard _keyboard;
     private readonly Mouse _mouse;
+    private readonly Idle _idle;
     private readonly Action _onTick;
 
     private Application? _application;
@@ -49,13 +50,14 @@ public class WpfBackend : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetCursorPos(int x, int y);
 
-    public WpfBackend(Tv tv, ColorTv colorTv, Iob iob, Keyboard keyboard, Mouse mouse, Action onTick)
+    public WpfBackend(Tv tv, ColorTv colorTv, Iob iob, Keyboard keyboard, Mouse mouse, Idle idle, Action onTick)
     {
         _tv = tv ?? throw new ArgumentNullException(nameof(tv));
         _colorTv = colorTv ?? throw new ArgumentNullException(nameof(colorTv));
         _iob = iob ?? throw new ArgumentNullException(nameof(iob));
         _keyboard = keyboard ?? throw new ArgumentNullException(nameof(keyboard));
         _mouse = mouse ?? throw new ArgumentNullException(nameof(mouse));
+        _idle = idle ?? throw new ArgumentNullException(nameof(idle));
         _onTick = onTick ?? throw new ArgumentNullException(nameof(onTick));
     }
 
@@ -234,6 +236,7 @@ public class WpfBackend : IDisposable
 
     private void HandleKeyEvent(KeyEventArgs e, bool keyDown)
     {
+        _idle.Activity();
         Key key = e.Key == Key.System ? e.SystemKey : e.Key;
         bool shift = System.Windows.Input.Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
@@ -273,12 +276,14 @@ public class WpfBackend : IDisposable
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
+        _idle.Activity();
         Point pos = e.GetPosition(_image);
         _mouse.UpdatePosition((int)pos.X, (int)pos.Y);
     }
 
     private void OnMouseButton(object sender, MouseButtonEventArgs e)
     {
+        _idle.Activity();
         MouseButtons button = e.ChangedButton switch
         {
             System.Windows.Input.MouseButton.Left => MouseButtons.Left,

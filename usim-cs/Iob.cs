@@ -32,6 +32,19 @@ public class Iob
         _ucode = ucode;
     }
 
+    /// <summary>
+    /// Port of iob_prepare_for_warm_boot (WITH_SDL3 branch): any scancode other
+    /// than 046 tells the boot code this is a warm boot, so present 062 as an
+    /// unread keyboard scancode. Nothing calls it yet: the C only does so when
+    /// resuming from a saved state file (usim.c's warm_boot_flag), and that
+    /// save/restore (dump.c) is not ported.
+    /// </summary>
+    public void PrepareForWarmBoot()
+    {
+        _scancode = 0x32; // 062 octal
+        _csr |= 1u << 5;
+    }
+
     /// <summary>Port of iob_is_keyboard_ready_set: CSR bit 5.</summary>
     public bool IsKeyboardReadySet => (_csr & (1u << 5)) != 0;
 
