@@ -14,6 +14,7 @@ public static class IobTests
         int failed = 0;
 
         if (TestCsrWriteMasksToLow4Bits()) passed++; else failed++;
+        if (TestPrepareForWarmBootPresentsScancode062()) passed++; else failed++;
         if (TestKeyboardReadySetAndClearOnLowWordOnly()) passed++; else failed++;
         if (TestKeyboardInterruptGating()) passed++; else failed++;
         if (TestMouseReadySetAndClearOnYOnly()) passed++; else failed++;
@@ -37,6 +38,32 @@ public static class IobTests
         ucode = new UCode(new MainMemory());
         ucode.SetInterruptStatusReg(0x400);  // Enable Unibus interrupts
         return new Iob(ucode);
+    }
+
+    private static bool TestPrepareForWarmBootPresentsScancode062()
+    {
+        Console.WriteLine("Test: PrepareForWarmBoot presents scancode 062 octal (0x32) as an unread keyboard word (iob_prepare_for_warm_boot)");
+        try
+        {
+            var iob = MakeIob(out _);
+            Assert(!iob.IsKeyboardReadySet, "starts with no key pending");
+
+            iob.PrepareForWarmBoot();
+
+            Assert(iob.IsKeyboardReadySet, "keyboard-ready (CSR bit 5) is set");
+            Assert((iob.Read(0x4A) & 0x20) == 0x20, "CSR read shows bit 5");
+            Assert(iob.Read(0x40) == 0x32, "kbd low is 062 octal = 0x32");
+            Assert(iob.Read(0x42) == 0, "kbd high is 0 (no NKB header in the real code)");
+            Assert(!iob.IsKeyboardReadySet, "reading kbd low clears the ready bit as usual");
+
+            Console.WriteLine("  PrepareForWarmBoot test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  PrepareForWarmBoot test failed: {ex.Message}\n");
+            return false;
+        }
     }
 
     private static bool TestCsrWriteMasksToLow4Bits()

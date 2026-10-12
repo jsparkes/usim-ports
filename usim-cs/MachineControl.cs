@@ -51,6 +51,7 @@ public class MachineControl
     public MainMemory Memory { get; private set; }
     public DiskController DiskController { get; private set; }
     public Keyboard Keyboard { get; private set; }
+    public Idle Idle { get; private set; }
     public Mouse Mouse { get; private set; }
     public Tv Tv { get; private set; }
     public ColorTv ColorTv { get; private set; }
@@ -78,6 +79,13 @@ public class MachineControl
         UCode = new UCode(Memory);
         DiskController = new DiskController(Memory, UCode);
         UCode.BusAdaptor.WireDiskController(DiskController);
+        Idle = new Idle(UCode)
+        {
+            Cycles = UsimState.IdleCycles,
+            Quantum = UsimState.IdleQuantum,
+            TimeoutMicros = UsimState.IdleTimeoutMicros,
+        };
+        DiskController.WireIdle(Idle);
         Keyboard = new Keyboard();
         Mouse = new Mouse();
         Tv = new Tv(UCode, UsimState.TvWidth, UsimState.TvHeight);
@@ -107,7 +115,7 @@ public class MachineControl
             return;
         }
 
-        DisplayBackend = new WpfBackend(Tv, ColorTv, Iob, Keyboard, Mouse, onTick: RunMicrocodeBatch)
+        DisplayBackend = new WpfBackend(Tv, ColorTv, Iob, Keyboard, Mouse, Idle, onTick: RunMicrocodeBatch)
         {
             AllowResize = allowResize,
             Scale = scale,
@@ -226,6 +234,7 @@ public class MachineControl
         UCode.Init();
         Memory.Initialize();
         Keyboard.Initialize();
+        Idle.Init();
         Mouse.Initialize();
         Tv.Reset();
         ColorTv.Reset();
@@ -246,6 +255,7 @@ public class MachineControl
         // DiskController resets itself in its constructor -- no Initialize()
         // to call here (see this task's rewrite of DiskController/DiskUnit).
         Keyboard.Initialize();
+        Idle.Init();
         Mouse.Initialize();
         Tv.Reset();
         ColorTv.Reset();
@@ -367,6 +377,7 @@ public class MachineControl
         for (int i = 0; i < StepsPerTick && !UCode.Halted; i++)
         {
             UCode.Step();
+            if (Idle.Enabled) Idle.Check(UCode.MachineCycles);
         }
 
         if (UCode.Halted)
@@ -503,5 +514,6 @@ public class MachineControl
         
         Console.WriteLine($"Keyboard:   {Keyboard.KeysPressed:N0} keys pressed");
         Console.WriteLine($"Mouse:      ({Mouse.X}, {Mouse.Y}) {Mouse.Buttons}");
+        Console.WriteLine($"Idle:       {(Idle.IsIdle ? "idle" : "running")}, idle count {Idle.IdleCount:N0}");
     }
 }

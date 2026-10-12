@@ -135,7 +135,7 @@ public static class BusAdaptorTests
 
     private static bool TestDiagnosticOtherRegistersNoThrow()
     {
-        Console.WriteLine("Test: other diagnostic-interface registers are a no-op, not the real C's fatal errx()");
+        Console.WriteLine("Test: the diagnostic interface is the real port -- DEBUG-IR is accepted, the fatal registers throw (see DiagnosticInterfaceTests for the rest)");
         try
         {
             var mainMemory = new MainMemory();
@@ -143,14 +143,16 @@ public static class BusAdaptorTests
             var busAdaptor = new BusAdaptor(ucode.BusInterface, mainMemory, ucode);
             bool promDisabled = false;
 
-            // DEBUG-IR (0766000-0766004), clock control (0766006, real C errx()s if v!=1),
-            // OPC control (0766010, real C errx()s unconditionally) -- all must be safe no-ops here.
-            busAdaptor.Write(UaddrToPaddr(0x3EC00), 0x1234, ref promDisabled);
-            busAdaptor.Write(UaddrToPaddr(0x3EC06), 0x99, ref promDisabled); // clock control (0766006 octal), NOT 1 -- would errx() in the real C
-            busAdaptor.Write(UaddrToPaddr(0x3EC08), 0x42, ref promDisabled); // OPC control (0766010 octal) -- always errx()s in the real C
+            busAdaptor.Write(UaddrToPaddr(0x3EC00), 0x1234, ref promDisabled); // DEBUG-IR<15-0>
+            busAdaptor.Write(UaddrToPaddr(0x3EC06), 1, ref promDisabled);      // clock control RUN
             Assert(promDisabled == false, "none of these touch promDisabled");
 
-            Assert(busAdaptor.Read(UaddrToPaddr(0x3EC00)) == 0, "reading a non-mode spy register is a safe default (0)");
+            bool threw = false;
+            try { busAdaptor.Write(UaddrToPaddr(0x3EC06), 0x99, ref promDisabled); } catch (InvalidOperationException) { threw = true; }
+            Assert(threw, "clock control != 1 is fatal in the real C (errx), so it throws");
+
+            ucode.P0 = 0xFFFF;
+            Assert(busAdaptor.Read(UaddrToPaddr(0x3EC00)) == 0xFFFF, "IR<15-0> reads the real P0, not a stub 0");
 
             Console.WriteLine("  Diagnostic other-registers tests passed\n");
             return true;
