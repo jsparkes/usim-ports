@@ -237,6 +237,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-boot-milestone":
+                    BootMilestoneTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--debug-microcode":
                 case "--debug-ucode":
                     var debugger = new MicrocodeDebugger(new UCode());
@@ -292,6 +297,7 @@ public class Program
         Console.WriteLine("  --test-symbol-table     Run SymbolTable tests only");
         Console.WriteLine("  --test-disk-unit        Run DiskUnit tests only");
         Console.WriteLine("  --test-disk-controller  Run DiskController tests only");
+        Console.WriteLine("  --test-boot-milestone   Run end-to-end boot milestone tests only");
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
@@ -622,6 +628,10 @@ public class Program
         // Run DiskController tests
         Console.WriteLine("Running DiskController Tests...\n");
         DiskControllerTests.RunAllTests();
+        Console.WriteLine();
+
+        Console.WriteLine("Running Boot Milestone Tests...\n");
+        BootMilestoneTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");
