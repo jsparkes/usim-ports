@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Security.Cryptography;
 
 namespace Usim;
 
@@ -25,6 +26,17 @@ public static class DiskControllerTests
         if (TestLastMemoryAddressSetBeforeCcwReadFails()) passed++; else failed++;
         if (TestInterruptAssertAndDeassert()) passed++; else failed++;
         if (TestStartOnOfflineUnitIsSilentNoOp()) passed++; else failed++;
+
+        // Real usim/disk.img tests -- usim/disk.img is a large untracked
+        // reference file, not guaranteed to exist in every checkout, so
+        // these follow the same convention as SymbolTableTests.cs's
+        // TestLoadRealPromhSymFile/TestLoadRealUcadrSymFileWithNegativeValues
+        // and UCodeFetchDecodeTests.cs's TestPromDecodeSanity: they live in
+        // the normal suite (no separate CLI switch) and print SKIPPED +
+        // return true (not a failure) when the file is absent.
+        if (TestRealDiskImageLabelBlockMatchesRawRead()) passed++; else failed++;
+        if (TestRealDiskImageCcwChainCrossesHeadBoundary()) passed++; else failed++;
+        if (TestRealDiskImageReadNeverMutatesPackFile()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -521,6 +533,254 @@ public static class DiskControllerTests
         finally
         {
             File.Delete(path);
+        }
+    }
+
+    // --- Real usim/disk.img tests ---
+    // usim/disk.img is a real CADR T-300 pack image (confirmed-exact
+    // geometry: 815 cylinders x 19 heads x 17 blocks/track x 1024 bytes =
+    // 269,562,880 bytes). It lives at the repo root's usim/disk.img and is
+    // untracked, so it may not exist in every checkout -- each test below
+    // skips gracefully rather than failing when it's absent.
+
+    private const string RealDiskImagePath = "usim/disk.img";
+
+    // BusAdaptor's DiskControlLo (usim/bus-adaptor.c's disk-control XBus-I/O
+    // range, 017377774-017377777 octal -- see BusAdaptor.cs's own constant
+    // and derivation comment). Hardcoded here deliberately, same as
+    // UCodeBusAdaptorTests.cs independently re-derives BusAdaptor paddrs/
+    // uaddrs rather than reaching into BusAdaptor's private consts.
+    private const uint DiskControlPaddr = 0x3DFFFC;
+
+    // Builds a DiskController wired to a real MainMemory/UCode/BusAdaptor,
+    // with unit 0 configured as "T-300" against imagePath -- mirrors
+    // MachineControl.cs's own real wiring (UCode(mem) -> DiskController(mem,
+    // ucode) -> ucode.BusAdaptor.WireDiskController(dc)), not a shortcut.
+    private static (DiskController Controller, MainMemory Memory, UCode UCode, BusAdaptor BusAdaptor) MakeRealT300Controller(string imagePath)
+    {
+        var mem = new MainMemory();
+        var ucode = new UCode(mem);
+        var dc = new DiskController(mem, ucode);
+        ucode.BusAdaptor.WireDiskController(dc);
+        dc.ConfigureUnit(0, "T-300", imagePath);
+        return (dc, mem, ucode, ucode.BusAdaptor);
+    }
+
+    // Issues a disk-controller register write through BusAdaptor's real
+    // register interface (paddr DiskControlPaddr+offset) -- never
+    // DiskController.Write directly.
+    private static void BusWrite(BusAdaptor busAdaptor, uint offset, uint value)
+    {
+        bool promDisabled = false;
+        busAdaptor.Write(DiskControlPaddr + offset, value, ref promDisabled);
+    }
+
+    private static uint BusRead(BusAdaptor busAdaptor, uint offset) =>
+        busAdaptor.Read(DiskControlPaddr + offset);
+
+    // Independent raw read of one 256-word (1024-byte) block at the given
+    // LBA, bypassing DiskUnit/DiskController/MainMemory entirely -- the
+    // cross-check reference for the controller-mediated reads below. Native
+    // (little-endian on x86) byte->uint32 packing, same convention
+    // DiskUnit.Read itself uses via Buffer.BlockCopy.
+    private static uint[] ReadRawBlock(string path, long lba)
+    {
+        var words = new uint[256];
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        fs.Seek(lba * 1024, SeekOrigin.Begin);
+        byte[] bytes = new byte[1024];
+        fs.ReadExactly(bytes, 0, 1024);
+        Buffer.BlockCopy(bytes, 0, words, 0, 1024);
+        return words;
+    }
+
+    private static string Md5Hex(string path)
+    {
+        using var md5 = MD5.Create();
+        // Explicit FileShare.ReadWrite|Delete (File.OpenRead's default
+        // FileShare.Read is NOT enough -- it conflicts with DiskUnit's own
+        // still-open FileAccess.ReadWrite handle on this same path and
+        // throws a sharing-violation IOException on Windows).
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        return Convert.ToHexString(md5.ComputeHash(fs));
+    }
+
+    // Copies usim/disk.img to a fresh temp file -- every real-image test
+    // operates on this copy, never the repo's own usim/disk.img.
+    private static string CopyRealDiskImage()
+    {
+        string path = Path.GetTempFileName();
+        File.Copy(RealDiskImagePath, path, overwrite: true);
+        return path;
+    }
+
+    private static bool TestRealDiskImageLabelBlockMatchesRawRead()
+    {
+        Console.WriteLine("Test: a real BusAdaptor-issued read of the real T-300 pack's cylinder 0/head 0/block 0 decodes the real 'LABL' label and matches an independent raw read (skipped if usim/disk.img is absent)");
+        if (!File.Exists(RealDiskImagePath))
+        {
+            Console.WriteLine($"  SKIPPED: {RealDiskImagePath} not present\n");
+            return true;
+        }
+
+        string diskPath = CopyRealDiskImage();
+        try
+        {
+            var (dc, mem, ucode, busAdaptor) = MakeRealT300Controller(diskPath);
+
+            uint targetPage = 0x000600; // an arbitrary, otherwise-unused page in MainMemory
+            uint clp = 0x005000;
+            mem.WritePhysical(clp, targetPage | 0); // single CCW, chain bit clear
+
+            BusWrite(busAdaptor, 1, clp);
+            BusWrite(busAdaptor, 2, EncodeDa(0, 0, 0, 0));
+            BusWrite(busAdaptor, 0, 0x0); // read, no interrupt
+            BusWrite(busAdaptor, 3, 0); // start
+
+            Assert((BusRead(busAdaptor, 0) & (1u << 0)) != 0, "controller reports idle after the read completes");
+            Assert(BusRead(busAdaptor, 1) == targetPage + 255, $"LastMemoryAddress convention holds, got 0x{BusRead(busAdaptor, 1):X}");
+
+            var fromController = new uint[256];
+            for (int i = 0; i < 256; i++) fromController[i] = mem.ReadPhysical(targetPage + (uint)i);
+
+            Assert(fromController[0] == 0x4C42414C, $"word0 is the real pack's 'LABL' label, got 0x{fromController[0]:X}");
+            Assert(fromController[1] == 0x00000001, $"word1 is 0x00000001, got 0x{fromController[1]:X}");
+
+            var rawBlock = ReadRawBlock(diskPath, lba: 0);
+            for (int i = 0; i < 256; i++)
+                Assert(fromController[i] == rawBlock[i], $"word {i} matches an independent raw FileStream read, got 0x{fromController[i]:X}, expected 0x{rawBlock[i]:X}");
+
+            Console.WriteLine("  Real-disk-image label-block test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Real-disk-image label-block test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            File.Delete(diskPath);
+        }
+    }
+
+    private static bool TestRealDiskImageCcwChainCrossesHeadBoundary()
+    {
+        Console.WriteLine("Test: a 2-block CCW-chain read starting at a track's last block round-trips real data and exercises SeekNextLba's head rollover against real T-300 geometry (skipped if usim/disk.img is absent)");
+        if (!File.Exists(RealDiskImagePath))
+        {
+            Console.WriteLine($"  SKIPPED: {RealDiskImagePath} not present\n");
+            return true;
+        }
+
+        string diskPath = CopyRealDiskImage();
+        try
+        {
+            var (dc, mem, ucode, busAdaptor) = MakeRealT300Controller(diskPath);
+            var unit = dc.GetUnitForTest(0);
+
+            // Start at cylinder 0, head 0, the LAST block of the track
+            // (BlocksPerTrack-1) -- the second CCW's SeekNextLba call must
+            // roll over to head 1, block 0 (not throw, not wrap cylinder).
+            uint cyl = 0, head = 0, lastBlock = unit.BlocksPerTrack - 1;
+            long lbaFirst = (cyl * unit.BlocksPerCylinder) + (head * unit.BlocksPerTrack) + lastBlock;
+            long lbaSecond = lbaFirst + 1; // head 0 -> head 1, block 0 -- still cylinder 0
+
+            uint pageA = 0x000700;
+            uint pageB = 0x000800;
+            uint clp = 0x006000;
+            mem.WritePhysical(clp + 0, pageA | 1); // chains to the second CCW
+            mem.WritePhysical(clp + 1, pageB | 0); // ends the chain
+
+            BusWrite(busAdaptor, 1, clp);
+            BusWrite(busAdaptor, 2, EncodeDa(0, cyl, head, lastBlock));
+            BusWrite(busAdaptor, 0, 0x0); // read
+            BusWrite(busAdaptor, 3, 0); // start
+
+            Assert(BusRead(busAdaptor, 1) == pageB + 255, $"LastMemoryAddress convention holds across the chain, got 0x{BusRead(busAdaptor, 1):X}");
+            uint expectedFinalDa = EncodeDa(0, cyl, head + 1, 0);
+            Assert(BusRead(busAdaptor, 2) == expectedFinalDa, $"da register reflects the head-rollover position, got 0x{BusRead(busAdaptor, 2):X}, expected 0x{expectedFinalDa:X}");
+
+            var fromControllerA = new uint[256];
+            var fromControllerB = new uint[256];
+            for (int i = 0; i < 256; i++)
+            {
+                fromControllerA[i] = mem.ReadPhysical(pageA + (uint)i);
+                fromControllerB[i] = mem.ReadPhysical(pageB + (uint)i);
+            }
+
+            var rawA = ReadRawBlock(diskPath, lbaFirst);
+            var rawB = ReadRawBlock(diskPath, lbaSecond);
+            for (int i = 0; i < 256; i++)
+            {
+                Assert(fromControllerA[i] == rawA[i], $"first block (last block of track) word {i} matches raw read, got 0x{fromControllerA[i]:X}, expected 0x{rawA[i]:X}");
+                Assert(fromControllerB[i] == rawB[i], $"second block (rolled over to head {head + 1}) word {i} matches raw read, got 0x{fromControllerB[i]:X}, expected 0x{rawB[i]:X}");
+            }
+
+            Console.WriteLine("  Real-disk-image head-rollover CCW-chain test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Real-disk-image head-rollover CCW-chain test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            File.Delete(diskPath);
+        }
+    }
+
+    private static bool TestRealDiskImageReadNeverMutatesPackFile()
+    {
+        Console.WriteLine("Test: issuing read commands through BusAdaptor against the real pack never mutates the pack file (skipped if usim/disk.img is absent)");
+        if (!File.Exists(RealDiskImagePath))
+        {
+            Console.WriteLine($"  SKIPPED: {RealDiskImagePath} not present\n");
+            return true;
+        }
+
+        string diskPath = CopyRealDiskImage();
+        try
+        {
+            string hashBefore = Md5Hex(diskPath);
+
+            var (dc, mem, ucode, busAdaptor) = MakeRealT300Controller(diskPath);
+            var unit = dc.GetUnitForTest(0);
+
+            uint clp = 0x007000;
+            mem.WritePhysical(clp + 0, 0x000900u | 1);
+            mem.WritePhysical(clp + 1, 0x000A00u | 0);
+
+            // A handful of varied real reads: block 0, the last block of a
+            // track (head-rollover), and a read-compare.
+            BusWrite(busAdaptor, 1, clp);
+            BusWrite(busAdaptor, 2, EncodeDa(0, 0, 0, 0));
+            BusWrite(busAdaptor, 0, 0x0);
+            BusWrite(busAdaptor, 3, 0);
+
+            BusWrite(busAdaptor, 2, EncodeDa(0, 0, 0, unit.BlocksPerTrack - 1));
+            BusWrite(busAdaptor, 0, 0x0);
+            BusWrite(busAdaptor, 3, 0);
+
+            BusWrite(busAdaptor, 2, EncodeDa(0, 1, 2, 3));
+            BusWrite(busAdaptor, 0, 0x8); // read-compare
+            BusWrite(busAdaptor, 3, 0);
+
+            string hashAfter = Md5Hex(diskPath);
+            Assert(hashBefore == hashAfter, $"pack file's MD5 is unchanged by read commands, before={hashBefore}, after={hashAfter}");
+
+            Console.WriteLine("  Real-disk-image read-never-mutates test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Real-disk-image read-never-mutates test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            File.Delete(diskPath);
         }
     }
 
