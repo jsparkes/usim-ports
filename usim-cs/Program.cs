@@ -249,6 +249,30 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--debug-boot":
+                {
+                    const string promPath = "sys/ubin/promh.mcr";
+                    const string diskImagePath = "usim/disk.img";
+                    if (!File.Exists(promPath) || !File.Exists(diskImagePath))
+                    {
+                        Console.Error.WriteLine($"Error: --debug-boot requires {promPath} and {diskImagePath}");
+                        Environment.Exit(1);
+                    }
+
+                    var bootMem = new MainMemory();
+                    var bootUcode = new UCode(bootMem);
+                    bootUcode.Init();
+                    bootUcode.LoadPromFromFile(promPath);
+                    var bootDc = new DiskController(bootMem, bootUcode);
+                    bootUcode.BusAdaptor.WireDiskController(bootDc);
+                    bootDc.ConfigureUnit(0, "T-300", diskImagePath);
+
+                    var bootDebugger = new MicrocodeDebugger(bootUcode);
+                    bootDebugger.StartDebugSession();
+                    Environment.Exit(0);
+                    break;
+                }
+
                 default:
                     Console.Error.WriteLine($"Unknown option: {args[i]}");
                     return false;
@@ -301,6 +325,7 @@ public class Program
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
+        Console.WriteLine("  --debug-boot            Interactive debugger pre-wired with real promh.mcr+disk.img");
     }
     
     private static MachineControl? _machine;
