@@ -252,23 +252,34 @@ public class Program
                 case "--debug-boot":
                 {
                     const string promPath = "sys/ubin/promh.mcr";
-                    const string diskImagePath = "usim/disk.img";
-                    if (!File.Exists(promPath) || !File.Exists(diskImagePath))
+                    const string realDiskImagePath = "usim/disk.img";
+                    if (!File.Exists(promPath) || !File.Exists(realDiskImagePath))
                     {
-                        Console.Error.WriteLine($"Error: --debug-boot requires {promPath} and {diskImagePath}");
+                        Console.Error.WriteLine($"Error: --debug-boot requires {promPath} and {realDiskImagePath}");
                         Environment.Exit(1);
                     }
 
-                    var bootMem = new MainMemory();
-                    var bootUcode = new UCode(bootMem);
-                    bootUcode.Init();
-                    bootUcode.LoadPromFromFile(promPath);
-                    var bootDc = new DiskController(bootMem, bootUcode);
-                    bootUcode.BusAdaptor.WireDiskController(bootDc);
-                    bootDc.ConfigureUnit(0, "T-300", diskImagePath);
+                    // Operate on a temp copy so debugger writes never touch the real disk.img.
+                    string diskImagePath = Path.GetTempFileName();
+                    try
+                    {
+                        File.Copy(realDiskImagePath, diskImagePath, overwrite: true);
 
-                    var bootDebugger = new MicrocodeDebugger(bootUcode);
-                    bootDebugger.StartDebugSession();
+                        var bootMem = new MainMemory();
+                        var bootUcode = new UCode(bootMem);
+                        bootUcode.Init();
+                        bootUcode.LoadPromFromFile(promPath);
+                        var bootDc = new DiskController(bootMem, bootUcode);
+                        bootUcode.BusAdaptor.WireDiskController(bootDc);
+                        bootDc.ConfigureUnit(0, "T-300", diskImagePath);
+
+                        var bootDebugger = new MicrocodeDebugger(bootUcode);
+                        bootDebugger.StartDebugSession();
+                    }
+                    finally
+                    {
+                        File.Delete(diskImagePath);
+                    }
                     Environment.Exit(0);
                     break;
                 }
