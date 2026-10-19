@@ -12,6 +12,7 @@ public static class BootMilestoneTests
     private const string RealPromPath = "sys/ubin/promh.mcr";
     private const string RealPromSymPath = "sys/ubin/promh.sym";
     private const string RealUcadrSymPath = "sys/ubin/ucadr.sym";
+    private const string RealUcadrPath = "sys/ubin/ucadr.mcr";
     private const string RealDiskImagePath = "usim/disk.img";
     private const int MaxBootCycles = 5_000_000;
 
@@ -21,6 +22,7 @@ public static class BootMilestoneTests
         int passed = 0, failed = 0;
 
         if (TestPromBootReachesRamHandoff()) passed++; else failed++;
+        if (TestLoadedUCadrMatchesRealFile()) passed++; else failed++;
         if (TestDiagnosticsOnCycleBudgetExceeded()) passed++; else failed++;
         if (TestDiagnosticsOnHalted()) passed++; else failed++;
 
@@ -61,6 +63,49 @@ public static class BootMilestoneTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Real-boot PROM->RAM handoff test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            File.Delete(diskPath);
+        }
+    }
+
+    private static bool TestLoadedUCadrMatchesRealFile()
+    {
+        Console.WriteLine("Test: the microcode loaded off the real disk.img into IMem[] during boot matches the real ucadr.mcr file word-for-word (skipped if promh.mcr, ucadr.mcr, or disk.img is absent)");
+        if (!File.Exists(RealPromPath) || !File.Exists(RealUcadrPath) || !File.Exists(RealDiskImagePath))
+        {
+            Console.WriteLine($"  SKIPPED: {RealPromPath}, {RealUcadrPath}, and/or {RealDiskImagePath} not present\n");
+            return true;
+        }
+
+        string diskPath = CopyRealDiskImage();
+        try
+        {
+            var mem = new MainMemory();
+            var ucode = new UCode(mem);
+            ucode.Init();
+            ucode.LoadPromFromFile(RealPromPath);
+            var dc = new DiskController(mem, ucode);
+            ucode.BusAdaptor.WireDiskController(dc);
+            dc.ConfigureUnit(0, "T-300", diskPath);
+            MaybeLoadSymbols();
+
+            bool reached = TryRunUntilHandoff(ucode, MaxBootCycles, out string diagnostics);
+            Assert(reached, $"PROM boot reached the handoff before comparing IMem[] (prerequisite for this test).\n{diagnostics}");
+
+            ulong[] realUcadr = ReadRawMcrWords(RealUcadrPath);
+            Assert(realUcadr.Length <= ucode.IMem.Length, $"real ucadr.mcr ({realUcadr.Length} words) fits in IMem[] ({ucode.IMem.Length} words)");
+            for (int i = 0; i < realUcadr.Length; i++)
+                Assert(ucode.IMem[i] == realUcadr[i], $"IMem[{i}] matches real ucadr.mcr, got 0x{ucode.IMem[i]:X16}, expected 0x{realUcadr[i]:X16}");
+
+            Console.WriteLine($"  Loaded-UCADR-matches-real-file test passed ({realUcadr.Length} words verified)\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Loaded-UCADR-matches-real-file test failed: {ex.Message}\n");
             return false;
         }
         finally
@@ -132,6 +177,42 @@ public static class BootMilestoneTests
         string path = Path.GetTempFileName();
         File.Copy(RealDiskImagePath, path, overwrite: true);
         return path;
+    }
+
+    // Test-local, non-mutating reader for the first section of a .mcr file.
+    // Same byte layout as UCode.LoadPromFromFile (12-byte PDP-endian header
+    // code/start/size, then `size` words each assembled from four
+    // little-endian 16-bit halves as w1<<48 | w2<<32 | w3<<16 | w4), but it
+    // returns the words instead of writing into any UCode array. Deliberately
+    // duplicated rather than exposed from UCode.
+    private static ulong[] ReadRawMcrWords(string path)
+    {
+        byte[] data = File.ReadAllBytes(path);
+        if (data.Length < 12)
+            throw new InvalidDataException($"{path}: shorter than the 12-byte section header");
+
+        // PDP-endian: byte order 1-0-3-2.
+        static uint ReadU32Pdp(byte[] d, int off) =>
+            ((uint)d[off + 1] << 24) | ((uint)d[off] << 16) | ((uint)d[off + 3] << 8) | d[off + 2];
+        static ulong ReadU16Le(byte[] d, int off) => (ulong)(d[off] | (d[off + 1] << 8));
+
+        // Section header: code (unused here), start (unused here -- the first
+        // section of ucadr.mcr is start 0), size (word count).
+        uint size = ReadU32Pdp(data, 8);
+        long needed = 12L + (long)size * 8;
+        if (needed > data.Length)
+            throw new InvalidDataException($"{path}: header claims {size} words but file has only {data.Length} bytes");
+
+        var words = new ulong[size];
+        for (int i = 0; i < size; i++)
+        {
+            int off = 12 + i * 8;
+            words[i] = (ReadU16Le(data, off) << 48)
+                     | (ReadU16Le(data, off + 2) << 32)
+                     | (ReadU16Le(data, off + 4) << 16)
+                     | ReadU16Le(data, off + 6);
+        }
+        return words;
     }
 
     private static void MaybeLoadSymbols()
