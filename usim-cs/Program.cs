@@ -182,6 +182,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-tv":
+                    TvTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-bus-interface":
                     BusInterfaceTests.RunAllTests();
                     Environment.Exit(0);
@@ -331,6 +336,7 @@ public class Program
         Console.WriteLine("  --test-uvmem            Run virtual memory (Uvmem) tests only");
         Console.WriteLine("  --test-microcode-vm     Run microcode virtual memory tests only");
         Console.WriteLine("  --test-bus-adaptor      Run bus adaptor tests only");
+        Console.WriteLine("  --test-tv               Run TV device tests only");
         Console.WriteLine("  --test-bus-interface    Run bus interface tests only");
         Console.WriteLine("  --test-microcode-bus-adaptor Run UCode/BusAdaptor wiring tests only");
         Console.WriteLine("  --test-microcode-dispatch Run microcode dispatch tests only");
@@ -624,6 +630,10 @@ public class Program
         // Run bus adaptor tests
         Console.WriteLine("Running Bus Adaptor Tests...\n");
         BusAdaptorTests.RunAllTests();
+        Console.WriteLine();
+
+        Console.WriteLine("Running TV Tests...\n");
+        TvTests.RunAllTests();
         Console.WriteLine();
 
         // Run bus interface tests

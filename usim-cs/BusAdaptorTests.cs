@@ -4,6 +4,7 @@
 // confirms every placeholder path is non-fatal (never throws).
 
 using System;
+using System.IO;
 
 namespace Usim;
 
@@ -23,6 +24,9 @@ public static class BusAdaptorTests
         if (TestPlaceholderPathsDoNotThrow()) passed++; else failed++;
         if (TestBusInterfaceRangeDispatchesForReal()) passed++; else failed++;
         if (TestDiskControlDispatchesToRealController()) passed++; else failed++;
+        if (TestTvScreenReadWriteThroughBusAdaptor()) passed++; else failed++;
+        if (TestTvModeRegisterThroughBusAdaptor()) passed++; else failed++;
+        if (TestTvCheckerboardScreenshotThroughBusAdaptor()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -244,6 +248,90 @@ public static class BusAdaptorTests
             Console.WriteLine($"  Disk-control real-dispatch test failed: {ex.Message}\n");
             return false;
         }
+    }
+
+    private static bool TestTvScreenReadWriteThroughBusAdaptor()
+    {
+        Console.WriteLine("Test: TV screen read/write through BusAdaptor's real register interface round-trips, including the last valid word");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            bool promDisabled = false;
+
+            // TvScreenLo = 0x3C0000 (BusAdaptor's own constant) -- offset 0 and offset 0x7FFF (last valid word).
+            uint tvScreenLo = 0x3C0000;
+            ucode.BusAdaptor.Write(tvScreenLo + 0, 0xDEADBEEF, ref promDisabled);
+            uint v0 = ucode.BusAdaptor.Read(tvScreenLo + 0);
+            Assert(v0 == 0xDEADBEEF, $"offset 0 round-trips through BusAdaptor, got 0x{v0:X}");
+
+            ucode.BusAdaptor.Write(tvScreenLo + 0x7FFF, 0x12345678, ref promDisabled);
+            uint vLast = ucode.BusAdaptor.Read(tvScreenLo + 0x7FFF);
+            Assert(vLast == 0x12345678, $"last valid word (offset 0x7FFF) round-trips through BusAdaptor, got 0x{vLast:X}");
+
+            Console.WriteLine("  TV-screen-read-write-through-BusAdaptor test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  TV-screen-read-write-through-BusAdaptor test failed: {ex.Message}\n"); return false; }
+    }
+
+    private static bool TestTvModeRegisterThroughBusAdaptor()
+    {
+        Console.WriteLine("Test: TV mode register read/write through BusAdaptor's real register interface round-trips");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            bool promDisabled = false;
+
+            // TvControlLo = 0x3DFFF0 (BusAdaptor's own constant), offset 0 is the mode register.
+            uint tvControlLo = 0x3DFFF0;
+            ucode.BusAdaptor.Write(tvControlLo + 0, 0xFFFFFFFF, ref promDisabled);
+            uint v = ucode.BusAdaptor.Read(tvControlLo + 0);
+            Assert(v == 0xFFFFFFFF, $"mode register round-trips through BusAdaptor with no masking, got 0x{v:X}");
+
+            Console.WriteLine("  TV-mode-register-through-BusAdaptor test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  TV-mode-register-through-BusAdaptor test failed: {ex.Message}\n"); return false; }
+    }
+
+    private static bool TestTvCheckerboardScreenshotThroughBusAdaptor()
+    {
+        Console.WriteLine("Test: a checkerboard pattern written through BusAdaptor and saved via Tv.SaveScreenshotPbm matches an independently-computed PBM");
+        string path = Path.GetTempFileName();
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            bool promDisabled = false;
+            uint tvScreenLo = 0x3C0000;
+
+            uint visibleWords = ucode.BusAdaptor.Tv.Width * ucode.BusAdaptor.Tv.Height / 32;
+            for (uint i = 0; i < visibleWords; i++)
+                ucode.BusAdaptor.Write(tvScreenLo + i, 0xAAAAAAAA, ref promDisabled); // checkerboard: alternating bits
+
+            ucode.BusAdaptor.Tv.SaveScreenshotPbm(path);
+
+            var expected = new System.Text.StringBuilder();
+            uint width = ucode.BusAdaptor.Tv.Width, height = ucode.BusAdaptor.Tv.Height;
+            expected.Append("P1\n").Append(width).Append(' ').Append(height).Append('\n');
+            for (uint i = 0; i < width * height; i++)
+            {
+                int bitpos = (int)(i % 32);
+                bool bit = (0xAAAAAAAAu & (1u << bitpos)) != 0;
+                expected.Append(bit ? '1' : '0');
+                if (i % 70 == 0 && i > 0) expected.Append('\n');
+            }
+
+            string actual = File.ReadAllText(path);
+            Assert(actual == expected.ToString(), "checkerboard screenshot written through BusAdaptor matches independently-computed PBM exactly");
+
+            Console.WriteLine("  TV-checkerboard-screenshot-through-BusAdaptor test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  TV-checkerboard-screenshot-through-BusAdaptor test failed: {ex.Message}\n"); return false; }
+        finally { File.Delete(path); }
     }
 
     /// <summary>

@@ -18,9 +18,12 @@ public class BusAdaptor
     private readonly BusInterface _busInterface;
     private DiskController? _diskController;
 
+    public Tv Tv { get; }
+
     public BusAdaptor(BusInterface busInterface)
     {
         _busInterface = busInterface;
+        Tv = new Tv(busInterface);
     }
 
     public void WireDiskController(DiskController diskController)
@@ -94,6 +97,16 @@ public class BusAdaptor
 
     private uint ReadXbusIo(uint paddr)
     {
+        if (paddr >= TvScreenLo && paddr <= TvScreenHi)
+        {
+            Tv.ScreenRead(paddr - TvScreenLo, out uint v);
+            return v;
+        }
+        if (paddr >= TvControlLo && paddr <= TvControlHi)
+        {
+            Tv.ControlRead(paddr - TvControlLo, out uint v);
+            return v;
+        }
         if (paddr >= DiskControlLo && paddr <= DiskControlHi)
         {
             uint offset = paddr - DiskControlLo;
@@ -107,6 +120,16 @@ public class BusAdaptor
 
     private void WriteXbusIo(uint paddr, uint v)
     {
+        if (paddr >= TvScreenLo && paddr <= TvScreenHi)
+        {
+            Tv.ScreenWrite(paddr - TvScreenLo, v);
+            return;
+        }
+        if (paddr >= TvControlLo && paddr <= TvControlHi)
+        {
+            Tv.ControlWrite(paddr - TvControlLo, v);
+            return;
+        }
         if (paddr >= DiskControlLo && paddr <= DiskControlHi)
         {
             uint offset = paddr - DiskControlLo;
