@@ -446,6 +446,8 @@ Add immediately after the existing `case "--debug-microcode": case "--debug-ucod
 
 Note: `--debug-boot` runs directly against the real `usim/disk.img` (not a copy) since it's an interactive, read/write diagnostic session the user drives deliberately — unlike the automated tests, which must never risk mutating the checked-in reference file unattended.
 
+**Addendum (post-implementation):** this was overridden during execution — `--debug-boot` actually operates on a temp copy of `disk.img`, never the original, same as every other real-image path in this plan. See the SDD ledger for the ruling and why.
+
 Add a `PrintUsage` line next to `--debug-microcode`:
 
 ```csharp
@@ -458,7 +460,7 @@ Run: `dotnet run --project usim-cs -- --debug-boot` with no `sys/ubin/promh.mcr`
 Expected: prints `Error: --debug-boot requires sys/ubin/promh.mcr and usim/disk.img` and exits with code 1, no unhandled exception.
 
 Then, with the real files temporarily copied in: re-run the same command.
-Expected: drops into the existing `MicrocodeDebugger` prompt with the real PROM loaded and disk configured — confirm with the debugger's own `pc`/`regs` commands that `Npc` starts at 0 and `step`/`continue` advance it.
+Expected: drops into the existing `MicrocodeDebugger` prompt with the real PROM loaded and disk configured — confirm with the debugger's own `print pc`/`regs` commands (confirmed during actual testing: `MicrocodeDebugger` has no `pc` command of its own — it prints `Unknown command: pc`; `p pc`/`print pc` is the command that shows the PC, per `usim-cs/MicrocodeDebugger.cs`'s `PrintExpression`) that `Npc` starts at 0 and `step`/`continue` advance it.
 
 - [ ] **Step 3: Run the full suite to confirm no regression**
 

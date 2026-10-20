@@ -41,9 +41,10 @@ public static class BootMilestoneTests
             return true;
         }
 
-        string diskPath = CopyRealDiskImage();
+        string? diskPath = null;
         try
         {
+            diskPath = CopyRealDiskImage();
             var mem = new MainMemory();
             var ucode = new UCode(mem);
             ucode.Init();
@@ -67,7 +68,7 @@ public static class BootMilestoneTests
         }
         finally
         {
-            File.Delete(diskPath);
+            if (diskPath != null) File.Delete(diskPath);
         }
     }
 
@@ -80,9 +81,10 @@ public static class BootMilestoneTests
             return true;
         }
 
-        string diskPath = CopyRealDiskImage();
+        string? diskPath = null;
         try
         {
+            diskPath = CopyRealDiskImage();
             var mem = new MainMemory();
             var ucode = new UCode(mem);
             ucode.Init();
@@ -110,7 +112,7 @@ public static class BootMilestoneTests
         }
         finally
         {
-            File.Delete(diskPath);
+            if (diskPath != null) File.Delete(diskPath);
         }
     }
 
@@ -132,6 +134,7 @@ public static class BootMilestoneTests
             Assert(diagnostics.Contains("Cycle budget"), $"diagnostics names the cycle-budget reason, got: {diagnostics}");
             Assert(diagnostics.Contains("Final Npc="), $"diagnostics includes the final Npc, got: {diagnostics}");
             Assert(diagnostics.Contains("Last instructions executed"), $"diagnostics includes recent disassembly, got: {diagnostics}");
+            Assert(!diagnostics.Contains("no instruction word available"), $"diagnostics uses real disassembly, not the DisassemblePC2 stub, got: {diagnostics}");
 
             Console.WriteLine("  Cycle-budget-exceeded diagnostics test passed\n");
             return true;
@@ -196,9 +199,16 @@ public static class BootMilestoneTests
             ((uint)d[off + 1] << 24) | ((uint)d[off] << 16) | ((uint)d[off + 3] << 8) | d[off + 2];
         static ulong ReadU16Le(byte[] d, int off) => (ulong)(d[off] | (d[off + 1] << 8));
 
-        // Section header: code (unused here), start (unused here -- the first
-        // section of ucadr.mcr is start 0), size (word count).
+        // Section header: code (must be 1 == I-MEM section), start (must be
+        // 0 -- the first section of ucadr.mcr is start 0), size (word count).
+        // Validated up front so a malformed or unexpected ucadr.mcr fails
+        // loudly and specifically here, instead of silently reading the
+        // wrong thing or failing confusingly later in the caller.
+        uint code = ReadU32Pdp(data, 0);
+        uint start = ReadU32Pdp(data, 4);
         uint size = ReadU32Pdp(data, 8);
+        if (code != 1 || start != 0)
+            throw new InvalidDataException($"{path}: unexpected section header (code={code}, start={start}, size={size}) -- expected code=1 (I-MEM), start=0");
         long needed = 12L + (long)size * 8;
         if (needed > data.Length)
             throw new InvalidDataException($"{path}: header claims {size} words but file has only {data.Length} bytes");
@@ -215,6 +225,15 @@ public static class BootMilestoneTests
         return words;
     }
 
+    // Separate from Disassembler.Symbols (which merges both promh.sym and
+    // ucadr.sym into one table for general disassembly lookups): this
+    // table holds ONLY ucadr.sym's entries, for the one lookup in
+    // BuildDiagnostics that is meaningful specifically when PromDisabled is
+    // true (a genuine IMem/RAM address from ucadr.mcr's world). Using the
+    // merged table there risks resolving to a promh.sym entry that happens
+    // to share the same numeric address, which would print the wrong label.
+    private static SymbolTable? _ucadrOnlySymbols;
+
     private static void MaybeLoadSymbols()
     {
         var symbols = new SymbolTable();
@@ -222,18 +241,37 @@ public static class BootMilestoneTests
         if (File.Exists(RealPromSymPath)) { symbols.LoadFromFile(RealPromSymPath); any = true; }
         if (File.Exists(RealUcadrSymPath)) { symbols.LoadFromFile(RealUcadrSymPath); any = true; }
         Disassembler.Symbols = any ? symbols : null;
+
+        if (File.Exists(RealUcadrSymPath))
+        {
+            var ucadrOnly = new SymbolTable();
+            ucadrOnly.LoadFromFile(RealUcadrSymPath);
+            _ucadrOnlySymbols = ucadrOnly;
+        }
+        else
+        {
+            _ucadrOnlySymbols = null;
+        }
     }
 
     private static bool TryRunUntilHandoff(UCode ucode, int maxCycles, out string diagnostics)
     {
-        var recentPcs = new uint[5];
-        var recentPromDisabled = new bool[5];
+        var recentP1Pcs = new uint[5];
+        var recentP1Imem = new bool[5];
+        var recentP1Words = new ulong[5];
         int ring = 0;
 
         for (int i = 0; i < maxCycles; i++)
         {
-            recentPcs[ring % 5] = ucode.Npc;
-            recentPromDisabled[ring % 5] = ucode.PromDisabled;
+            // Record the instruction actually about to execute this step --
+            // it's already sitting in P1 (address P1Pc, bank flag P1Imem)
+            // before Step() runs; Npc is only the prefetch address for the
+            // word after that. Capture the word itself (not just the
+            // address) too, since a later WRITE-I-MEM could overwrite that
+            // IMem[] slot before BuildDiagnostics inspects it on failure.
+            recentP1Pcs[ring % 5] = ucode.P1Pc;
+            recentP1Imem[ring % 5] = ucode.P1Imem;
+            recentP1Words[ring % 5] = ucode.P1;
             ring++;
 
             try
@@ -242,7 +280,7 @@ public static class BootMilestoneTests
             }
             catch (Exception ex)
             {
-                diagnostics = BuildDiagnostics(ucode, recentPcs, recentPromDisabled, ring, $"Exception during Step(): {ex.Message}");
+                diagnostics = BuildDiagnostics(ucode, recentP1Pcs, recentP1Imem, recentP1Words, ring, $"Exception during Step(): {ex.Message}");
                 return false;
             }
 
@@ -254,23 +292,23 @@ public static class BootMilestoneTests
 
             if (ucode.Halted)
             {
-                diagnostics = BuildDiagnostics(ucode, recentPcs, recentPromDisabled, ring, "UCode.Halted became true");
+                diagnostics = BuildDiagnostics(ucode, recentP1Pcs, recentP1Imem, recentP1Words, ring, "UCode.Halted became true");
                 return false;
             }
         }
 
-        diagnostics = BuildDiagnostics(ucode, recentPcs, recentPromDisabled, ring, $"Cycle budget ({maxCycles}) exhausted");
+        diagnostics = BuildDiagnostics(ucode, recentP1Pcs, recentP1Imem, recentP1Words, ring, $"Cycle budget ({maxCycles}) exhausted");
         return false;
     }
 
-    private static string BuildDiagnostics(UCode ucode, uint[] recentPcs, bool[] recentPromDisabled, int ring, string reason)
+    private static string BuildDiagnostics(UCode ucode, uint[] recentP1Pcs, bool[] recentP1Imem, ulong[] recentP1Words, int ring, string reason)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"Reason: {reason}");
         sb.AppendLine($"Final Npc=0x{ucode.Npc:X4} PromDisabled={ucode.PromDisabled} Halted={ucode.Halted}");
 
         string? label = ucode.PromDisabled
-            ? Disassembler.Symbols?.FindByTypeValue(SymbolType.IMem, ucode.Npc)
+            ? _ucadrOnlySymbols?.FindByTypeValue(SymbolType.IMem, ucode.Npc)
             : null; // Prom-side addresses aren't resolved -- promh.sym's own entries are also typed I-MEM, indistinguishable from IMem[]'s, so only resolve when PromDisabled (i.e. genuinely executing from IMem).
         if (label != null) sb.AppendLine($"  (resolved label: {label})");
 
@@ -279,7 +317,7 @@ public static class BootMilestoneTests
         for (int k = count - 1; k >= 0; k--)
         {
             int idx = (ring - 1 - k) % 5;
-            sb.AppendLine($"  {Disassembler.DisassemblePC2(recentPcs[idx], recentPromDisabled[idx])}");
+            sb.AppendLine($"  [P1Pc {recentP1Pcs[idx]:X4} ({(recentP1Imem[idx] ? "IMEM" : "PROM")})] {Disassembler.DisassembleInst2(recentP1Words[idx], recentP1Imem[idx])}");
         }
         return sb.ToString();
     }
