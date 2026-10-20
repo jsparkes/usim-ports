@@ -273,6 +273,16 @@ public class Program
                         bootUcode.BusAdaptor.WireDiskController(bootDc);
                         bootDc.ConfigureUnit(0, "T-300", diskImagePath);
 
+                        // Ctrl+C terminates the process without running finally blocks, so
+                        // clean up the temp copy from the handler too. Do not set e.Cancel:
+                        // the process should still exit on Ctrl+C as before.
+                        ConsoleCancelEventHandler cleanupOnCancel = (sender, e) =>
+                        {
+                            try { File.Delete(diskImagePath); }
+                            catch (Exception) { /* already deleted by the finally block, or inaccessible */ }
+                        };
+                        Console.CancelKeyPress += cleanupOnCancel;
+
                         var bootDebugger = new MicrocodeDebugger(bootUcode);
                         bootDebugger.StartDebugSession();
                     }
