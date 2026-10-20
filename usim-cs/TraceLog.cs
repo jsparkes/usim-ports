@@ -23,6 +23,8 @@ public enum TraceCategory
     Mouse = 32,
     Network = 64,
     IOBus = 128,
+    Spy = 256,
+    Idle = 512,
     All = 0xFFFF
 }
 

@@ -20,6 +20,7 @@ public class BusAdaptor
     private readonly MainMemory _mainMemory;
     private readonly UCode _ucode;
     private readonly UnibusMapping _unibusMapping;
+    private readonly DiagnosticInterface _diagnosticInterface;
     private DiskController? _diskController;
     private Tv? _tv;
     private ColorTv? _colorTv;
@@ -31,6 +32,7 @@ public class BusAdaptor
         _mainMemory = mainMemory;
         _ucode = ucode;
         _unibusMapping = new UnibusMapping(busInterface);
+        _diagnosticInterface = new DiagnosticInterface(ucode, busInterface);
     }
 
     public void WireDiskController(DiskController diskController)
@@ -80,7 +82,6 @@ public class BusAdaptor
     private const uint IobHi = 0x3E87E;
     private const uint DiagnosticLo = 0x3EC00;      // 0766000-0766036 octal
     private const uint DiagnosticHi = 0x3EC1E;
-    private const uint DiagnosticModeRegister = 0x3EC0A; // 0766012 octal
     private const uint BusInterfaceLo = 0x3EC20;    // 0766040-0766136 octal -- routed to
     private const uint BusInterfaceHi = 0x3EC5E;    // BusInterface (Phase 4's own faithful port)
     internal const uint UnibusMappingLo = 0x3EC60;  // 0766140-0766176 octal
@@ -105,8 +106,8 @@ public class BusAdaptor
     /// <summary>
     /// Faithful port of bus_adaptor_write (usim/bus-adaptor.c), same scope note as
     /// Read. promDisabled is UCode's own PromDisabled field, threaded through
-    /// because the one real register this class implements (the diagnostic-
-    /// interface mode register) sets it directly, matching the real C's
+    /// because the diagnostic-
+    /// interface mode register sets it directly, matching the real C's
     /// machine_state.promdisabled = (v &amp; (1&lt;&lt;5)) != 0.
     /// </summary>
     public void Write(uint paddr, uint v, ref bool promDisabled)
@@ -403,10 +404,7 @@ public class BusAdaptor
     {
         if (uaddr >= DiagnosticLo && uaddr <= DiagnosticHi)
         {
-            // No spy register is meaningfully readable back without real debug-IR/
-            // clock state, which this phase doesn't implement -- 0 is a safe
-            // default; the boot PROM's early boot never reads these back.
-            return 0;
+            return _diagnosticInterface.Read(uaddr);
         }
         if (uaddr >= BusInterfaceLo && uaddr <= BusInterfaceHi)
         {
@@ -438,17 +436,9 @@ public class BusAdaptor
 
     private void WriteUnibus(uint uaddr, uint v, ref bool promDisabled)
     {
-        if (uaddr == DiagnosticModeRegister)
-        {
-            promDisabled = (v & (1 << 5)) != 0;
-            return;
-        }
         if (uaddr >= DiagnosticLo && uaddr <= DiagnosticHi)
         {
-            // Other spy registers (DEBUG-IR, clock control, OPC control) are fatal
-            // misuse guards in the real C (errx() -- real microcode is never
-            // expected to trigger them) -- a no-op here, not a faithful throw. See
-            // Global Constraints in the Phase 5B plan for why.
+            _diagnosticInterface.Write(uaddr, (ushort)v, ref promDisabled);
             return;
         }
         if (uaddr >= BusInterfaceLo && uaddr <= BusInterfaceHi)

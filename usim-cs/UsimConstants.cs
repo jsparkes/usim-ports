@@ -51,6 +51,9 @@ public static class UsimState
 
     public static (uint Unit, string TypeName, string Filename)[] DiskUnits { get; set; } = Array.Empty<(uint, string, string)>();
 
+    public static ulong IdleCycles { get; set; } = Idle.DefaultCycles;
+    public static ulong IdleQuantum { get; set; } = Idle.DefaultQuantum;
+    public static ulong IdleTimeoutMicros { get; set; } = Idle.DefaultTimeoutMicros;
     public static uint TvWidth { get; set; } = 768;
     public static uint TvHeight { get; set; } = 963;
 }
