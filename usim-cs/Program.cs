@@ -272,12 +272,62 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-boot-milestone":
+                    BootMilestoneTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--debug-microcode":
                 case "--debug-ucode":
                     var debugger = new MicrocodeDebugger(new UCode());
                     debugger.StartDebugSession();
                     Environment.Exit(0);
                     break;
+
+                case "--debug-boot":
+                {
+                    const string promPath = "sys/ubin/promh.mcr";
+                    const string realDiskImagePath = "usim/disk.img";
+                    if (!File.Exists(promPath) || !File.Exists(realDiskImagePath))
+                    {
+                        Console.Error.WriteLine($"Error: --debug-boot requires {promPath} and {realDiskImagePath}");
+                        Environment.Exit(1);
+                    }
+
+                    // Operate on a temp copy so debugger writes never touch the real disk.img.
+                    string diskImagePath = Path.GetTempFileName();
+                    try
+                    {
+                        File.Copy(realDiskImagePath, diskImagePath, overwrite: true);
+
+                        var bootMem = new MainMemory();
+                        var bootUcode = new UCode(bootMem);
+                        bootUcode.Init();
+                        bootUcode.LoadPromFromFile(promPath);
+                        var bootDc = new DiskController(bootMem, bootUcode);
+                        bootUcode.BusAdaptor.WireDiskController(bootDc);
+                        bootDc.ConfigureUnit(0, "T-300", diskImagePath);
+
+                        // Ctrl+C terminates the process without running finally blocks, so
+                        // clean up the temp copy from the handler too. Do not set e.Cancel:
+                        // the process should still exit on Ctrl+C as before.
+                        ConsoleCancelEventHandler cleanupOnCancel = (sender, e) =>
+                        {
+                            try { File.Delete(diskImagePath); }
+                            catch (Exception) { /* already deleted by the finally block, or inaccessible */ }
+                        };
+                        Console.CancelKeyPress += cleanupOnCancel;
+
+                        var bootDebugger = new MicrocodeDebugger(bootUcode);
+                        bootDebugger.StartDebugSession();
+                    }
+                    finally
+                    {
+                        File.Delete(diskImagePath);
+                    }
+                    Environment.Exit(0);
+                    break;
+                }
 
                 default:
                     Console.Error.WriteLine($"Unknown option: {args[i]}");
@@ -334,9 +384,11 @@ public class Program
         Console.WriteLine("  --test-symbol-table     Run SymbolTable tests only");
         Console.WriteLine("  --test-disk-unit        Run DiskUnit tests only");
         Console.WriteLine("  --test-disk-controller  Run DiskController tests only");
+        Console.WriteLine("  --test-boot-milestone   Run end-to-end boot milestone tests only");
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
+        Console.WriteLine("  --debug-boot            Interactive debugger pre-wired with real promh.mcr+disk.img");
     }
     
     private static MachineControl? _machine;
@@ -708,6 +760,10 @@ public class Program
         // Run DiskController tests
         Console.WriteLine("Running DiskController Tests...\n");
         DiskControllerTests.RunAllTests();
+        Console.WriteLine();
+
+        Console.WriteLine("Running Boot Milestone Tests...\n");
+        BootMilestoneTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");

@@ -1,0 +1,324 @@
+// BootMilestoneTests.cs - End-to-end: boot the real promh.mcr PROM against
+// the real disk.img T-300 pack and detect the real PROM->RAM handoff
+// (Npc==6, PromDisabled) -- see docs/superpowers/specs/2026-10-17-end-to-end-boot-milestone-design.md.
+
+using System;
+using System.IO;
+
+namespace Usim;
+
+public static class BootMilestoneTests
+{
+    private const string RealPromPath = "sys/ubin/promh.mcr";
+    private const string RealPromSymPath = "sys/ubin/promh.sym";
+    private const string RealUcadrSymPath = "sys/ubin/ucadr.sym";
+    private const string RealUcadrPath = "sys/ubin/ucadr.mcr";
+    private const string RealDiskImagePath = "usim/disk.img";
+    private const int MaxBootCycles = 5_000_000;
+
+    public static void RunAllTests()
+    {
+        Console.WriteLine("=== Boot Milestone Test Suite ===\n");
+        int passed = 0, failed = 0;
+
+        if (TestPromBootReachesRamHandoff()) passed++; else failed++;
+        if (TestLoadedUCadrMatchesRealFile()) passed++; else failed++;
+        if (TestDiagnosticsOnCycleBudgetExceeded()) passed++; else failed++;
+        if (TestDiagnosticsOnHalted()) passed++; else failed++;
+
+        Console.WriteLine($"\n=== Test Summary ===");
+        Console.WriteLine($"Passed: {passed}");
+        Console.WriteLine($"Failed: {failed}");
+        Console.WriteLine($"Total:  {passed + failed}");
+    }
+
+    private static bool TestPromBootReachesRamHandoff()
+    {
+        Console.WriteLine("Test: booting the real promh.mcr against the real disk.img reaches the real PROM->RAM handoff (Npc==6, PromDisabled) (skipped if promh.mcr or disk.img is absent)");
+        if (!File.Exists(RealPromPath) || !File.Exists(RealDiskImagePath))
+        {
+            Console.WriteLine($"  SKIPPED: {RealPromPath} and/or {RealDiskImagePath} not present\n");
+            return true;
+        }
+
+        string? diskPath = null;
+        try
+        {
+            diskPath = CopyRealDiskImage();
+            var mem = new MainMemory();
+            var ucode = new UCode(mem);
+            ucode.Init();
+            ucode.LoadPromFromFile(RealPromPath);
+            var dc = new DiskController(mem, ucode);
+            ucode.BusAdaptor.WireDiskController(dc);
+            dc.ConfigureUnit(0, "T-300", diskPath);
+
+            MaybeLoadSymbols();
+
+            bool reached = TryRunUntilHandoff(ucode, MaxBootCycles, out string diagnostics);
+            Assert(reached, $"PROM boot reached the real PROM->RAM handoff (Npc==6, PromDisabled) within {MaxBootCycles} cycles.\n{diagnostics}");
+
+            Console.WriteLine("  Real-boot PROM->RAM handoff test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Real-boot PROM->RAM handoff test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            if (diskPath != null) File.Delete(diskPath);
+        }
+    }
+
+    private static bool TestLoadedUCadrMatchesRealFile()
+    {
+        Console.WriteLine("Test: the microcode loaded off the real disk.img into IMem[] during boot matches the real ucadr.mcr file word-for-word (skipped if promh.mcr, ucadr.mcr, or disk.img is absent)");
+        if (!File.Exists(RealPromPath) || !File.Exists(RealUcadrPath) || !File.Exists(RealDiskImagePath))
+        {
+            Console.WriteLine($"  SKIPPED: {RealPromPath}, {RealUcadrPath}, and/or {RealDiskImagePath} not present\n");
+            return true;
+        }
+
+        string? diskPath = null;
+        try
+        {
+            diskPath = CopyRealDiskImage();
+            var mem = new MainMemory();
+            var ucode = new UCode(mem);
+            ucode.Init();
+            ucode.LoadPromFromFile(RealPromPath);
+            var dc = new DiskController(mem, ucode);
+            ucode.BusAdaptor.WireDiskController(dc);
+            dc.ConfigureUnit(0, "T-300", diskPath);
+            MaybeLoadSymbols();
+
+            bool reached = TryRunUntilHandoff(ucode, MaxBootCycles, out string diagnostics);
+            Assert(reached, $"PROM boot reached the handoff before comparing IMem[] (prerequisite for this test).\n{diagnostics}");
+
+            ulong[] realUcadr = ReadRawMcrWords(RealUcadrPath);
+            Assert(realUcadr.Length <= ucode.IMem.Length, $"real ucadr.mcr ({realUcadr.Length} words) fits in IMem[] ({ucode.IMem.Length} words)");
+            for (int i = 0; i < realUcadr.Length; i++)
+                Assert(ucode.IMem[i] == realUcadr[i], $"IMem[{i}] matches real ucadr.mcr, got 0x{ucode.IMem[i]:X16}, expected 0x{realUcadr[i]:X16}");
+
+            Console.WriteLine($"  Loaded-UCADR-matches-real-file test passed ({realUcadr.Length} words verified)\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Loaded-UCADR-matches-real-file test failed: {ex.Message}\n");
+            return false;
+        }
+        finally
+        {
+            if (diskPath != null) File.Delete(diskPath);
+        }
+    }
+
+    // These two tests need no optional real files -- they deterministically
+    // pin TryRunUntilHandoff's two non-success diagnostic paths so this
+    // logic is actually exercised by --test-all even in an environment with
+    // none of promh.mcr/ucadr.mcr/disk.img present (otherwise it would never
+    // run at all in a typical dev/CI checkout).
+    private static bool TestDiagnosticsOnCycleBudgetExceeded()
+    {
+        Console.WriteLine("Test: TryRunUntilHandoff reports a clear cycle-budget-exceeded diagnostic when the handoff is never reached (no real files needed)");
+        try
+        {
+            var ucode = new UCode(new MainMemory());
+            ucode.Init(); // Prom[]/IMem[] stay all-zero -- never produces Npc==6 && PromDisabled within a tiny budget.
+
+            bool reached = TryRunUntilHandoff(ucode, maxCycles: 10, out string diagnostics);
+            Assert(!reached, "handoff is not reached against an all-zero Prom/IMem within 10 cycles");
+            Assert(diagnostics.Contains("Cycle budget"), $"diagnostics names the cycle-budget reason, got: {diagnostics}");
+            Assert(diagnostics.Contains("Final Npc="), $"diagnostics includes the final Npc, got: {diagnostics}");
+            Assert(diagnostics.Contains("Last instructions executed"), $"diagnostics includes recent disassembly, got: {diagnostics}");
+            Assert(!diagnostics.Contains("no instruction word available"), $"diagnostics uses real disassembly, not the DisassemblePC2 stub, got: {diagnostics}");
+
+            Console.WriteLine("  Cycle-budget-exceeded diagnostics test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Cycle-budget-exceeded diagnostics test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestDiagnosticsOnHalted()
+    {
+        Console.WriteLine("Test: TryRunUntilHandoff reports a clear Halted diagnostic when UCode.Halted becomes true before the handoff (no real files needed)");
+        try
+        {
+            var ucode = new UCode(new MainMemory());
+            ucode.Init();
+            ucode.Halted = true; // simulate a real fatal PROM error path without needing to craft real microcode for it.
+
+            bool reached = TryRunUntilHandoff(ucode, maxCycles: 1000, out string diagnostics);
+            Assert(!reached, "handoff is not reported reached when Halted is already true");
+            Assert(diagnostics.Contains("Halted"), $"diagnostics names the Halted reason, got: {diagnostics}");
+
+            Console.WriteLine("  Halted diagnostics test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Halted diagnostics test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static void Assert(bool condition, string message)
+    {
+        if (!condition)
+            throw new Exception($"Assertion failed: {message}");
+    }
+
+    private static string CopyRealDiskImage()
+    {
+        string path = Path.GetTempFileName();
+        File.Copy(RealDiskImagePath, path, overwrite: true);
+        return path;
+    }
+
+    // Test-local, non-mutating reader for the first section of a .mcr file.
+    // Same byte layout as UCode.LoadPromFromFile (12-byte PDP-endian header
+    // code/start/size, then `size` words each assembled from four
+    // little-endian 16-bit halves as w1<<48 | w2<<32 | w3<<16 | w4), but it
+    // returns the words instead of writing into any UCode array. Deliberately
+    // duplicated rather than exposed from UCode.
+    private static ulong[] ReadRawMcrWords(string path)
+    {
+        byte[] data = File.ReadAllBytes(path);
+        if (data.Length < 12)
+            throw new InvalidDataException($"{path}: shorter than the 12-byte section header");
+
+        // PDP-endian: byte order 1-0-3-2.
+        static uint ReadU32Pdp(byte[] d, int off) =>
+            ((uint)d[off + 1] << 24) | ((uint)d[off] << 16) | ((uint)d[off + 3] << 8) | d[off + 2];
+        static ulong ReadU16Le(byte[] d, int off) => (ulong)(d[off] | (d[off + 1] << 8));
+
+        // Section header: code (must be 1 == I-MEM section), start (must be
+        // 0 -- the first section of ucadr.mcr is start 0), size (word count).
+        // Validated up front so a malformed or unexpected ucadr.mcr fails
+        // loudly and specifically here, instead of silently reading the
+        // wrong thing or failing confusingly later in the caller.
+        uint code = ReadU32Pdp(data, 0);
+        uint start = ReadU32Pdp(data, 4);
+        uint size = ReadU32Pdp(data, 8);
+        if (code != 1 || start != 0)
+            throw new InvalidDataException($"{path}: unexpected section header (code={code}, start={start}, size={size}) -- expected code=1 (I-MEM), start=0");
+        long needed = 12L + (long)size * 8;
+        if (needed > data.Length)
+            throw new InvalidDataException($"{path}: header claims {size} words but file has only {data.Length} bytes");
+
+        var words = new ulong[size];
+        for (int i = 0; i < size; i++)
+        {
+            int off = 12 + i * 8;
+            words[i] = (ReadU16Le(data, off) << 48)
+                     | (ReadU16Le(data, off + 2) << 32)
+                     | (ReadU16Le(data, off + 4) << 16)
+                     | ReadU16Le(data, off + 6);
+        }
+        return words;
+    }
+
+    // Separate from Disassembler.Symbols (which merges both promh.sym and
+    // ucadr.sym into one table for general disassembly lookups): this
+    // table holds ONLY ucadr.sym's entries, for the one lookup in
+    // BuildDiagnostics that is meaningful specifically when PromDisabled is
+    // true (a genuine IMem/RAM address from ucadr.mcr's world). Using the
+    // merged table there risks resolving to a promh.sym entry that happens
+    // to share the same numeric address, which would print the wrong label.
+    private static SymbolTable? _ucadrOnlySymbols;
+
+    private static void MaybeLoadSymbols()
+    {
+        var symbols = new SymbolTable();
+        bool any = false;
+        if (File.Exists(RealPromSymPath)) { symbols.LoadFromFile(RealPromSymPath); any = true; }
+        if (File.Exists(RealUcadrSymPath)) { symbols.LoadFromFile(RealUcadrSymPath); any = true; }
+        Disassembler.Symbols = any ? symbols : null;
+
+        if (File.Exists(RealUcadrSymPath))
+        {
+            var ucadrOnly = new SymbolTable();
+            ucadrOnly.LoadFromFile(RealUcadrSymPath);
+            _ucadrOnlySymbols = ucadrOnly;
+        }
+        else
+        {
+            _ucadrOnlySymbols = null;
+        }
+    }
+
+    private static bool TryRunUntilHandoff(UCode ucode, int maxCycles, out string diagnostics)
+    {
+        var recentP1Pcs = new uint[5];
+        var recentP1Imem = new bool[5];
+        var recentP1Words = new ulong[5];
+        int ring = 0;
+
+        for (int i = 0; i < maxCycles; i++)
+        {
+            // Record the instruction actually about to execute this step --
+            // it's already sitting in P1 (address P1Pc, bank flag P1Imem)
+            // before Step() runs; Npc is only the prefetch address for the
+            // word after that. Capture the word itself (not just the
+            // address) too, since a later WRITE-I-MEM could overwrite that
+            // IMem[] slot before BuildDiagnostics inspects it on failure.
+            recentP1Pcs[ring % 5] = ucode.P1Pc;
+            recentP1Imem[ring % 5] = ucode.P1Imem;
+            recentP1Words[ring % 5] = ucode.P1;
+            ring++;
+
+            try
+            {
+                ucode.Step();
+            }
+            catch (Exception ex)
+            {
+                diagnostics = BuildDiagnostics(ucode, recentP1Pcs, recentP1Imem, recentP1Words, ring, $"Exception during Step(): {ex.Message}");
+                return false;
+            }
+
+            if (ucode.Npc == 6 && ucode.PromDisabled)
+            {
+                diagnostics = "";
+                return true;
+            }
+
+            if (ucode.Halted)
+            {
+                diagnostics = BuildDiagnostics(ucode, recentP1Pcs, recentP1Imem, recentP1Words, ring, "UCode.Halted became true");
+                return false;
+            }
+        }
+
+        diagnostics = BuildDiagnostics(ucode, recentP1Pcs, recentP1Imem, recentP1Words, ring, $"Cycle budget ({maxCycles}) exhausted");
+        return false;
+    }
+
+    private static string BuildDiagnostics(UCode ucode, uint[] recentP1Pcs, bool[] recentP1Imem, ulong[] recentP1Words, int ring, string reason)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Reason: {reason}");
+        sb.AppendLine($"Final Npc=0x{ucode.Npc:X4} PromDisabled={ucode.PromDisabled} Halted={ucode.Halted}");
+
+        string? label = ucode.PromDisabled
+            ? _ucadrOnlySymbols?.FindByTypeValue(SymbolType.IMem, ucode.Npc)
+            : null; // Prom-side addresses aren't resolved -- promh.sym's own entries are also typed I-MEM, indistinguishable from IMem[]'s, so only resolve when PromDisabled (i.e. genuinely executing from IMem).
+        if (label != null) sb.AppendLine($"  (resolved label: {label})");
+
+        sb.AppendLine("Last instructions executed (oldest first):");
+        int count = Math.Min(ring, 5);
+        for (int k = count - 1; k >= 0; k--)
+        {
+            int idx = (ring - 1 - k) % 5;
+            sb.AppendLine($"  [P1Pc {recentP1Pcs[idx]:X4} ({(recentP1Imem[idx] ? "IMEM" : "PROM")})] {Disassembler.DisassembleInst2(recentP1Words[idx], recentP1Imem[idx])}");
+        }
+        return sb.ToString();
+    }
+}
