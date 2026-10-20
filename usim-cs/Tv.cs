@@ -29,7 +29,7 @@ public class Tv
     public void ScreenRead(uint offset, out uint value) => value = ScreenBuffer[offset];
     public void ScreenWrite(uint offset, uint value) => ScreenBuffer[offset] = value;
 
-    private bool SyncPromEnabled => (_vertSpacing & 0x80) != 0; // see Global Constraints: resolved discrepancy, bit 7 of vertSpacing, not Mode
+    private bool SyncPromEnabled => (_vertSpacing & 0x80) == 0; // see Global Constraints: resolved discrepancy, bit 7 of vertSpacing, not Mode -- real C negates: enabled when the bit is CLEAR (tv.c:103-108's leading `!`)
 
     public void ControlRead(uint offset, out uint value)
     {

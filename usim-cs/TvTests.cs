@@ -104,20 +104,31 @@ public static class TvTests
         {
             var tv = MakeTv();
 
-            // sync-prom-enabled is FALSE by default (vertSpacing starts at 0) -- sync RAM is live.
+            // Real C (usim/tv.c:106-108): tv_is_sync_prom_enabled() returns
+            // !((tv_vert_spacing & 0200) != 0) -- enabled when bit 7 is CLEAR. Both
+            // tv_control_read and tv_control_write (tv.c:262, 311) gate sync-RAM
+            // access with "if (!tv_is_sync_prom_enabled())" -- i.e. sync RAM is only
+            // accessed when sync-prom-enabled is FALSE (bit 7 SET). So: bit 7 CLEAR
+            // (the default, vertSpacing = 0) -> sync-prom-enabled TRUE -> sync RAM
+            // DISABLED (reads 0, writes ignored); bit 7 SET -> sync-prom-enabled
+            // FALSE -> sync RAM LIVE.
+
+            // Set bit 7 first so sync RAM is live, and write a value through it.
+            tv.ControlWrite(3, 0x80); // vertSpacing bit 7 set -> sync-prom-enabled becomes false -> sync RAM live
             tv.ControlWrite(2, 0x010); // sync ptr = 0x10
             tv.ControlWrite(1, 0xAB);  // sync_ram[0x10] = 0xAB
             tv.ControlRead(1, out uint v1);
-            Assert(v1 == 0xAB, $"sync RAM live when sync-prom disabled, got 0x{v1:X}");
+            Assert(v1 == 0xAB, $"sync RAM live when sync-prom disabled (vertSpacing bit 7 set), got 0x{v1:X}");
 
-            // Enable sync-prom (vertSpacing bit 7 set) -- sync RAM reads must return 0, writes ignored.
-            tv.ControlWrite(3, 0x80); // vertSpacing bit 7 set -> sync-prom-enabled
+            // Clear bit 7 -- back to the default, sync-prom-enabled becomes TRUE,
+            // sync RAM disabled: reads must return 0, writes ignored.
+            tv.ControlWrite(3, 0x00); // vertSpacing bit 7 clear (default) -> sync-prom-enabled true -> sync RAM disabled
             tv.ControlWrite(1, 0xCD); // must be ignored
             tv.ControlRead(1, out uint v2);
-            Assert(v2 == 0, $"sync RAM reads 0 when sync-prom enabled, got 0x{v2:X}");
+            Assert(v2 == 0, $"sync RAM reads 0 when sync-prom enabled (vertSpacing bit 7 clear, the default), got 0x{v2:X}");
 
-            // Disable again -- the original 0xAB at ptr 0x10 must still be there (the 0xCD write was ignored).
-            tv.ControlWrite(3, 0x00);
+            // Set bit 7 again -- the original 0xAB at ptr 0x10 must still be there (the 0xCD write was ignored).
+            tv.ControlWrite(3, 0x80);
             tv.ControlRead(1, out uint v3);
             Assert(v3 == 0xAB, $"ignored write during sync-prom-enabled didn't stick, got 0x{v3:X}");
 
@@ -140,10 +151,16 @@ public static class TvTests
             tv.ControlWrite(4, 0x1);
             Assert(busInterface.IsXbusNxm(), "invalid-offset write sets Xbus NXM");
 
-            // Reset and check the read path too (SetXbusNxm's real behavior, if idempotent-reset
-            // is needed, is up to BusInterface -- just confirm the read path also sets it fresh).
-            tv.ControlRead(5, out uint v);
-            Assert(busInterface.IsXbusNxm(), "invalid-offset read also sets Xbus NXM");
+            // Fresh BusInterface/Tv pair for the read path -- reusing the write-path
+            // instances would leave NXM already set from the write above, making this
+            // assertion trivially true regardless of whether ControlRead's default case
+            // actually sets it.
+            var readUcode = new UCode();
+            var readBusInterface = new BusInterface(readUcode);
+            var readTv = new Tv(readBusInterface);
+            Assert(!readBusInterface.IsXbusNxm(), "sanity: Xbus NXM starts clear on the fresh read-path pair");
+            readTv.ControlRead(5, out uint v);
+            Assert(readBusInterface.IsXbusNxm(), "invalid-offset read sets Xbus NXM");
             Assert(v == 0, $"invalid-offset read assigns 0 (documented deviation from the real C's untouched-*pv), got 0x{v:X}");
 
             Console.WriteLine("  Invalid-control-offset-sets-NXM test passed\n");
@@ -159,9 +176,18 @@ public static class TvTests
         try
         {
             var tv = MakeTv();
-            // Fill the whole visible range with alternating-bit words (0xAAAAAAAA).
+            // Fill the visible range with a row-dependent pattern -- alternate the word
+            // value by row (0xAAAAAAAA on even rows, 0x55555555 on odd rows) rather than
+            // writing the same value everywhere. Width (768) is a multiple of 32 (24 words
+            // per row), so a single repeated word value would make every row identical --
+            // unable to catch a row-stride or word-permutation bug, only basic bit order.
+            uint wordsPerRow = tv.Width / 32;
             uint visibleWords = tv.Width * tv.Height / 32;
-            for (uint i = 0; i < visibleWords; i++) tv.ScreenWrite(i, 0xAAAAAAAA);
+            for (uint i = 0; i < visibleWords; i++)
+            {
+                uint row = i / wordsPerRow;
+                tv.ScreenWrite(i, (row % 2 == 0) ? 0xAAAAAAAAu : 0x55555555u);
+            }
 
             tv.SaveScreenshotPbm(path);
 
@@ -171,9 +197,11 @@ public static class TvTests
             expected.Append("P1\n").Append(tv.Width).Append(' ').Append(tv.Height).Append('\n');
             for (uint i = 0; i < tv.Width * tv.Height; i++)
             {
-                uint offset = i / 32;
+                uint wordIndex = i / 32;
+                uint row = wordIndex / wordsPerRow;
                 int bitpos = (int)(i % 32);
-                bool bit = (0xAAAAAAAAu & (1u << bitpos)) != 0;
+                uint wordValue = (row % 2 == 0) ? 0xAAAAAAAAu : 0x55555555u;
+                bool bit = (wordValue & (1u << bitpos)) != 0;
                 expected.Append(bit ? '1' : '0');
                 if (i % 70 == 0 && i > 0) expected.Append('\n');
             }

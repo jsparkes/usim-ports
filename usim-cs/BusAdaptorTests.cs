@@ -27,6 +27,7 @@ public static class BusAdaptorTests
         if (TestTvScreenReadWriteThroughBusAdaptor()) passed++; else failed++;
         if (TestTvModeRegisterThroughBusAdaptor()) passed++; else failed++;
         if (TestTvCheckerboardScreenshotThroughBusAdaptor()) passed++; else failed++;
+        if (TestTvControlHiAndTvScreenBoundaries()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -307,9 +308,19 @@ public static class BusAdaptorTests
             bool promDisabled = false;
             uint tvScreenLo = 0x3C0000;
 
+            // Row-dependent pattern -- alternate the word value by row (0xAAAAAAAA on
+            // even rows, 0x55555555 on odd rows), not the same value everywhere. Width
+            // (768) is a multiple of 32 (24 words per row), so a single repeated word
+            // value would make every row identical -- unable to catch a row-stride or
+            // word-permutation bug, only basic bit order.
+            uint wordsPerRow = ucode.BusAdaptor.Tv.Width / 32;
             uint visibleWords = ucode.BusAdaptor.Tv.Width * ucode.BusAdaptor.Tv.Height / 32;
             for (uint i = 0; i < visibleWords; i++)
-                ucode.BusAdaptor.Write(tvScreenLo + i, 0xAAAAAAAA, ref promDisabled); // checkerboard: alternating bits
+            {
+                uint row = i / wordsPerRow;
+                uint wordValue = (row % 2 == 0) ? 0xAAAAAAAAu : 0x55555555u;
+                ucode.BusAdaptor.Write(tvScreenLo + i, wordValue, ref promDisabled);
+            }
 
             ucode.BusAdaptor.Tv.SaveScreenshotPbm(path);
 
@@ -318,8 +329,11 @@ public static class BusAdaptorTests
             expected.Append("P1\n").Append(width).Append(' ').Append(height).Append('\n');
             for (uint i = 0; i < width * height; i++)
             {
+                uint wordIndex = i / 32;
+                uint row = wordIndex / wordsPerRow;
                 int bitpos = (int)(i % 32);
-                bool bit = (0xAAAAAAAAu & (1u << bitpos)) != 0;
+                uint wordValue = (row % 2 == 0) ? 0xAAAAAAAAu : 0x55555555u;
+                bool bit = (wordValue & (1u << bitpos)) != 0;
                 expected.Append(bit ? '1' : '0');
                 if (i % 70 == 0 && i > 0) expected.Append('\n');
             }
@@ -332,6 +346,52 @@ public static class BusAdaptorTests
         }
         catch (Exception ex) { Console.WriteLine($"  TV-checkerboard-screenshot-through-BusAdaptor test failed: {ex.Message}\n"); return false; }
         finally { File.Delete(path); }
+    }
+
+    private static bool TestTvControlHiAndTvScreenBoundaries()
+    {
+        Console.WriteLine("Test: TvControlHi (last control offset, invalid) sets Xbus NXM; TvScreenHi+1 falls through to the generic placeholder, not Tv");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            bool promDisabled = false;
+
+            // (a) TvControlHi = TvControlLo + 7 (0x3DFFF7) -- offset 7 relative to
+            // TvControlLo, which is NOT one of Tv.ControlRead/ControlWrite's handled
+            // offsets (0-3 only; 4-7 all hit the default case). Confirm this reaches
+            // Tv's real default case and sets Xbus NXM via BusAdaptor's real register
+            // interface, not a stub.
+            uint tvControlHi = 0x3DFFF7;
+            Assert(!ucode.BusInterface.IsXbusNxm(), "sanity: Xbus NXM starts clear");
+            ucode.BusAdaptor.Write(tvControlHi, 0x1, ref promDisabled);
+            Assert(ucode.BusInterface.IsXbusNxm(), "write to TvControlHi (invalid offset 7) sets Xbus NXM");
+
+            uint readAfter = ucode.BusAdaptor.Read(tvControlHi);
+            Assert(readAfter == 0, $"read from TvControlHi (invalid offset 7) returns 0 (documented deviation), got 0x{readAfter:X}");
+            Assert(!promDisabled, "TV control writes never touch promDisabled");
+
+            // (b) TvScreenHi + 1 (0x3C8000) is one past the last valid TV-screen
+            // address -- it must NOT reach Tv at all (by definition, since it's
+            // outside TvScreenLo..TvScreenHi). Confirm it falls through to
+            // BusAdaptor's generic placeholder path instead: a safe-default read of
+            // 0 and a non-throwing write, with the TV screen buffer itself
+            // untouched (Tv has no way to receive this address, so there's nothing
+            // of Tv's to assert on here -- only the generic fallback's behavior).
+            uint tvScreenHiPlusOne = 0x3C8000;
+            uint unmappedRead = ucode.BusAdaptor.Read(tvScreenHiPlusOne);
+            Assert(unmappedRead == 0, $"TvScreenHi+1 read falls through to the generic placeholder's safe default (0), got 0x{unmappedRead:X}");
+            ucode.BusAdaptor.Write(tvScreenHiPlusOne, 0xDEADBEEF, ref promDisabled);
+            Assert(!promDisabled, "TvScreenHi+1 write (generic placeholder) never touches promDisabled");
+
+            Console.WriteLine("  TvControlHi/TvScreenHi-boundary tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  TvControlHi/TvScreenHi-boundary tests failed: {ex.Message}\n");
+            return false;
+        }
     }
 
     /// <summary>

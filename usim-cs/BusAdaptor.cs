@@ -143,10 +143,13 @@ public class BusAdaptor
 
     private static string DescribeXbusIo(uint paddr)
     {
-        if (paddr >= TvScreenLo && paddr <= TvScreenHi) return "main TV screen";
+        // Main TV screen (TvScreenLo/Hi) and main TV control (TvControlLo/Hi) are
+        // deliberately NOT branches here -- ReadXbusIo/WriteXbusIo's TV dispatch
+        // (added when Tv.cs was ported) returns before ever falling through to the
+        // call site that invokes this helper for those same ranges, so those
+        // branches would be dead code.
         if (paddr >= ColorTvScreenLo && paddr <= ColorTvScreenHi) return "color TV screen";
         if (paddr >= ColorTvControlLo && paddr <= ColorTvControlHi) return "color TV control";
-        if (paddr >= TvControlLo && paddr <= TvControlHi) return "main TV control";
         return "unmapped XBus I/O";
     }
 
