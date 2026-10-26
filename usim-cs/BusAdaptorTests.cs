@@ -19,7 +19,7 @@ public static class BusAdaptorTests
         if (TestDiskControlStatusRead()) passed++; else failed++;
         if (TestDiskControlOtherOffsetsAndWrites()) passed++; else failed++;
         if (TestDiagnosticModeRegisterWrite()) passed++; else failed++;
-        if (TestDiagnosticOtherRegistersNoThrow()) passed++; else failed++;
+        if (TestDiagnosticOtherRegistersAcceptWritesInvalidClockControlThrows()) passed++; else failed++;
         if (TestPlaceholderPathsDoNotThrow()) passed++; else failed++;
         if (TestBusInterfaceRangeDispatchesForReal()) passed++; else failed++;
         if (TestDiskControlDispatchesToRealController()) passed++; else failed++;
@@ -133,7 +133,7 @@ public static class BusAdaptorTests
         }
     }
 
-    private static bool TestDiagnosticOtherRegistersNoThrow()
+    private static bool TestDiagnosticOtherRegistersAcceptWritesInvalidClockControlThrows()
     {
         Console.WriteLine("Test: the diagnostic interface is the real port -- DEBUG-IR is accepted, the fatal registers throw (see DiagnosticInterfaceTests for the rest)");
         try

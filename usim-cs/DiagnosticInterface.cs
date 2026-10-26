@@ -82,18 +82,23 @@ public class DiagnosticInterface
         return reg;
     }
 
+    // These wires (map-write, dest-space, I-write/mod, PDL-write/push, the
+    // IR parity check, nop and jump-condition detect) all come from
+    // microcode-sequencer hardware this port doesn't implement, so they are
+    // hardcoded false here, matching the real C (diagnostic-interface.c's
+    // get_flag_register_2), which never sets them either.
     private ushort GetFlagRegister2()
     {
-        const bool wmapd = false;
-        const bool destspcd = false;
-        const bool iwrited = false;
-        const bool imodd = false;
-        const bool pdlwrited = false;
-        const bool spushd = false;
+        bool wmapd = false;
+        bool destspcd = false;
+        bool iwrited = false;
+        bool imodd = false;
+        bool pdlwrited = false;
+        bool spushd = false;
         const bool ir_parity = false;
-        const bool nop = false;
+        bool nop = false;
         bool vmaok = _ucode.VmaOk;
-        const bool jcond = false;
+        bool jcond = false;
         const uint pcs = 0;
 
         ushort reg = 0;
@@ -142,6 +147,9 @@ public class DiagnosticInterface
                 Spy($"read IR<47-32>: {Oct(v)} IR={Oct(p0)}");
                 return v;
             case ClockControl: // not used
+                // The real C leaves *pv uninitialized here (undefined
+                // behavior); returning a defined 0 is a deliberate choice
+                // this port makes instead.
                 return 0;
             case Opc:
                 v = (ushort)_ucode.Opc;
@@ -187,6 +195,8 @@ public class DiagnosticInterface
             case StatCounterHigh:
                 throw new InvalidOperationException("Statistics counter is not implemented");
             default:
+                // As above: the real C leaves *pv uninitialized for an
+                // invalid address; 0 here is a deliberate, defined choice.
                 TraceLog.Instance.Warning(TraceCategory.Spy, $"spy: read invalid uaddr:{Oct(uaddr)}");
                 _busInterface.SetUnibusNxm();
                 return 0;
