@@ -32,6 +32,28 @@ public class Iob
         _ucode = ucode;
     }
 
+    /// <summary>
+    /// Port of iob_prepare_for_warm_boot (WITH_SDL3 branch): any scancode other
+    /// than 046 tells the boot code this is a warm boot, so present 062 as an
+    /// unread keyboard scancode. The real C calls this unconditionally from
+    /// usim_post_init() (usim.c:444) whenever -w was given on the command
+    /// line -- it is not tied to resuming from a saved state file.
+    /// restore_state() (dump.c) is never actually called anywhere in the real
+    /// C (its only "caller" is itself, recursively, when passed a null
+    /// filename -- dead code), so real warm boot never restores any state; it
+    /// only presents this scancode. Nothing calls this method in this port
+    /// today because this port has no -w option (UsimState.WarmBootFlag is
+    /// never set anywhere) -- even though Program.cs already turns
+    /// WarmBootFlag into BootMode.Warm, and MachineControl.PowerOn's
+    /// BootMode.Warm branch is exactly where a call to this method would need
+    /// to be wired in once -w is added.
+    /// </summary>
+    public void PrepareForWarmBoot()
+    {
+        _scancode = 0x32; // 062 octal
+        _csr |= 1u << 5;
+    }
+
     /// <summary>Port of iob_is_keyboard_ready_set: CSR bit 5.</summary>
     public bool IsKeyboardReadySet => (_csr & (1u << 5)) != 0;
 

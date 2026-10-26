@@ -197,6 +197,16 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-diagnostic":
+                    DiagnosticInterfaceTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-idle":
+                    IdleTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-iob":
                     IobTests.RunAllTests();
                     Environment.Exit(0);
@@ -370,6 +380,8 @@ public class Program
         Console.WriteLine("  --test-tv               Run TV tests only");
         Console.WriteLine("  --test-colortv          Run color TV tests only");
         Console.WriteLine("  --test-iob              Run IOB tests only");
+        Console.WriteLine("  --test-diagnostic       Run diagnostic interface tests only");
+        Console.WriteLine("  --test-idle             Run idle tests only");
         Console.WriteLine("  --test-keytranslator    Run WpfKeyTranslator tests only");
         Console.WriteLine("  --test-keyboard         Run Keyboard tests only");
         Console.WriteLine("  --test-mouse            Run Mouse tests only");
@@ -454,6 +466,13 @@ public class Program
         UsimState.AutoBoot = config.GetBool("Execution", "auto-boot", false);
         UsimState.AutoPowerOff = config.GetBool("Execution", "auto-power-off", false);
         UsimState.VerboseDumpStateFlag = config.GetBool("Debug", "verbose-dump", false);
+
+        // [idle] cycles/quantum/timeout (usim/ucfg.c). A negative cycles value
+        // disables idle, which is already the default (see Idle.cs).
+        long idleCycles = config.GetLong("idle", "cycles", (long)Idle.DefaultCycles);
+        if (idleCycles >= 0) UsimState.IdleCycles = (ulong)idleCycles;
+        UsimState.IdleQuantum = (ulong)config.GetLong("idle", "quantum", (long)Idle.DefaultQuantum);
+        UsimState.IdleTimeoutMicros = (ulong)config.GetLong("idle", "timeout", (long)Idle.DefaultTimeoutMicros);
 
         string monitor = config.GetString("usim", "monitor", "other");
         switch (monitor)
@@ -695,6 +714,16 @@ public class Program
         // Run IOB tests
         Console.WriteLine("Running IOB Tests...\n");
         IobTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run diagnostic interface tests
+        Console.WriteLine("Running Diagnostic Interface Tests...\n");
+        DiagnosticInterfaceTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run idle tests
+        Console.WriteLine("Running Idle Tests...\n");
+        IdleTests.RunAllTests();
         Console.WriteLine();
 
         // Run WpfKeyTranslator tests

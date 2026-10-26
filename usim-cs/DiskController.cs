@@ -13,6 +13,7 @@ public class DiskController
 
     private readonly MainMemory _mainMemory;
     private readonly UCode _ucode;
+    private Idle? _idle;
     private readonly DiskUnit[] _units;
 
     // --- registers (usim/disk-controller.c:70-78) ---
@@ -30,6 +31,12 @@ public class DiskController
 
     private bool _doneInterruptEnable;
     private bool _attentionInterruptEnable;
+
+    /// <summary>idle_disk_activity() in the C start(): disk commands count as activity.</summary>
+    public void WireIdle(Idle idle)
+    {
+        _idle = idle;
+    }
 
     public DiskController(MainMemory mainMemory, UCode ucode)
     {
@@ -332,6 +339,7 @@ public class DiskController
     /// offset-clear. cmd mask 017=0xF.</summary>
     private void Start()
     {
+        _idle?.Activity();
         DiskUnit p = SelectedUnit();
         if (!p.Online)
         {
