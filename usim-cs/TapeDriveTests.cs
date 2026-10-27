@@ -23,6 +23,7 @@ public static class TapeDriveTests
         if (TestSeekClampsToFileBoundsAndSetsBot()) passed++; else failed++;
         if (TestSeekPastEotSetsEot()) passed++; else failed++;
         if (TestWriteFileMarkWritesRealSentinel()) passed++; else failed++;
+        if (TestByteAtATimeReadWriteUpdatesEot()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -241,6 +242,47 @@ public static class TapeDriveTests
             return true;
         }
         catch (Exception ex) { Console.WriteLine($"  Write-file-mark-writes-real-sentinel test failed: {ex.Message}\n"); return false; }
+        finally { File.Delete(path); }
+    }
+
+    private static bool TestByteAtATimeReadWriteUpdatesEot()
+    {
+        Console.WriteLine("Test: ReadByte/WriteByte each recompute Eot via SeekRelative (regression for the real C's tape_drive_read_uint8/write_uint8 each calling tape_drive_seek(p, 1, SEEK_CUR), usim/tape-drive.c:307-353) -- driven purely by byte-at-a-time calls, never SeekAbsolute, across the EOT boundary");
+        string path = MakeValidTapeImage();
+        try
+        {
+            var td = new TapeDrive(0);
+            td.Configure(5, "rw", path); // lengthFt=5
+            td.SetBpi(1); // eotpos = (5-4)*12*1 = 12 -- a few bytes in
+
+            Assert(!td.Eot, "fresh drive, well before the (small) EOT boundary, Eot is false");
+
+            // Cross the boundary one WriteByte at a time.
+            for (int i = 0; i < 12; i++)
+            {
+                Assert(td.WriteByte((byte)i), $"WriteByte succeeds at iteration {i}");
+                bool expectedEot = td.Pos >= 12;
+                Assert(td.Eot == expectedEot, $"Eot reflects the true boundary after WriteByte #{i}, pos={td.Pos}, eot={td.Eot}, expected={expectedEot}");
+            }
+            Assert(td.Eot, "Eot is true once WriteByte has advanced position to/past the boundary");
+
+            // Reset to BOT (setup only, not part of the boundary crossing under
+            // test) and repeat the same check driven by ReadByte.
+            td.SeekAbsolute(0);
+            Assert(!td.Eot, "reset to BOT clears Eot (setup)");
+
+            for (int i = 0; i < 12; i++)
+            {
+                Assert(td.ReadByte(out byte _), $"ReadByte succeeds at iteration {i}");
+                bool expectedEot = td.Pos >= 12;
+                Assert(td.Eot == expectedEot, $"Eot reflects the true boundary after ReadByte #{i}, pos={td.Pos}, eot={td.Eot}, expected={expectedEot}");
+            }
+            Assert(td.Eot, "Eot is true once ReadByte has advanced position to/past the boundary");
+
+            Console.WriteLine("  Byte-at-a-time-read-write-updates-eot test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  Byte-at-a-time-read-write-updates-eot test failed: {ex.Message}\n"); return false; }
         finally { File.Delete(path); }
     }
 

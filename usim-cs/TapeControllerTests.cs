@@ -51,6 +51,7 @@ public static class TapeControllerTests
         if (TestUnknownRegisterOffsetThrows()) passed++; else failed++;
         if (TestReadRecordLongerThanMtbrcSetsRle()) passed++; else failed++;
         if (TestSpaceForwardOverFileMarkSetsEof()) passed++; else failed++;
+        if (TestReadCrossingEotMidTransferSetsEot()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -373,6 +374,41 @@ public static class TapeControllerTests
             return true;
         }
         catch (Exception ex) { Console.WriteLine($"  Unknown-register-offset-throws test failed: {ex.Message}\n"); return false; }
+        finally { File.Delete(path); }
+    }
+
+    private static bool TestReadCrossingEotMidTransferSetsEot()
+    {
+        Console.WriteLine("Test: a Read DMA transfer that crosses the drive's EOT boundary mid-transfer (MTBRC exhausts before the real on-tape record does, taking the RLE branch, which performs no Seek of its own) leaves MTS.EOT set afterward -- regression for TapeDrive.ReadByte now recomputing Eot via SeekRelative on every byte moved (usim/tape-drive.c:233-270,307-317) and TapeController syncing _eot from the drive after Read()'s transfer loop");
+        string path = MakeValidTapeImage();
+        try
+        {
+            const uint OnTapeRecordLength = 20000; // bigger than what MTBRC will actually transfer, so the RLE branch (recordLength > 0 after the loop) is taken -- that branch performs no Seek of its own, so it can only see a correct Eot if ReadByte itself kept the drive's Eot in sync.
+            const int TransferBytes = 9602; // even (loop moves 2 bytes/pass); with lengthFt=5 and DEN8 (800 bpi), eotpos = (5-4)*12*800 = 9600 -- this crosses it partway through the transfer.
+
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+                fs.Write(BitConverter.GetBytes(OnTapeRecordLength), 0, 4); // preamble only -- the RLE branch never reaches a real postamble
+
+            var mem = new MainMemory();
+            var ucode = new UCode(mem);
+            var busInterface = new BusInterface(ucode);
+            var busAdaptor = new BusAdaptor(busInterface, mem, ucode);
+            var tc = new TapeController(ucode, busInterface, busAdaptor);
+            tc.ConfigureUnit(0, 5, "rw", path); // lengthFt=5
+
+            tc.Write(Mtbrc, unchecked((ushort)(-TransferBytes)));
+            tc.Write(Mtcma, 0);
+            // unit 0 (slt bits 10-8 = 0), DEN8 (bit 14, selects 800 bpi), function=Read (bits 3-1 = 1), GO (bit 0)
+            tc.Write(Mtc, (ushort)((1 << 14) | (0 << 8) | (1 << 1) | 1));
+
+            tc.Read(Mts, out ushort status);
+            Assert((status & 0x0200) != 0, $"RLE set, confirming the test actually took the no-further-seek RLE branch, got 0x{status:X}");
+            Assert((status & 0x0400) != 0, $"EOT bit (bit 10) set after a Read transfer crosses the drive's EOT boundary mid-transfer, got 0x{status:X}");
+            Assert(tc.GetUnitForTest(0).Eot, "the drive's own Eot also reflects true past the boundary");
+            Console.WriteLine("  Read-crossing-eot-mid-transfer-sets-eot test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  Read-crossing-eot-mid-transfer-sets-eot test failed: {ex.Message}\n"); return false; }
         finally { File.Delete(path); }
     }
 

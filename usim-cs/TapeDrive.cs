@@ -113,7 +113,11 @@ public class TapeDrive
         int b = _file.ReadByte();
         if (b < 0) return false;
         value = (byte)b;
-        Pos++;
+        // Real C's tape_drive_read_uint8 (usim/tape-drive.c:307-317) advances
+        // via tape_drive_seek(p, 1, SEEK_CUR) after a successful read, not a
+        // bare pos++ -- that seek is what recomputes Bot/Eot on every single
+        // byte moved. Go through SeekRelative here for the same reason.
+        SeekRelative(1);
         return true;
     }
 
@@ -124,7 +128,10 @@ public class TapeDrive
         if (_file == null || ReadOnly || Pos >= _fileSize) return false;
         _file.Seek(Pos, SeekOrigin.Begin);
         _file.WriteByte(value);
-        Pos++;
+        // See ReadByte's comment above -- real C's tape_drive_write_uint8
+        // (usim/tape-drive.c:343-353) likewise advances via
+        // tape_drive_seek(p, 1, SEEK_CUR), not a bare pos++.
+        SeekRelative(1);
         return true;
     }
 

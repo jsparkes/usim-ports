@@ -322,6 +322,7 @@ public class TapeController
         if (preamble == TapeDrive.FILE_MARK)
         {
             _eof = true;
+            _eot = p.Eot;
             return;
         }
 
@@ -384,17 +385,26 @@ public class TapeController
             {
                 // no file mark, roll back
                 p.SeekRelative(-4);
-                _eot = p.Eot;
             }
         }
+
+        // Every exit path past the main transfer loop must leave _eot
+        // faithful to the drive's true EOT state (real C's tape_drive_seek,
+        // usim/tape-drive.c:233-270, recomputes EOT on every byte moved --
+        // see this class's header comment). The early file-mark-preamble
+        // return above syncs its own case separately since it returns before
+        // reaching here.
+        _eot = p.Eot;
     }
 
     /// <summary>Faithful port of tape_controller_write (usim/tape-controller.c:475-570),
     /// named WriteCommand to avoid a name clash with the public
-    /// Write(uint offset, ushort value) register-interface method. No
-    /// TapeDrive.Seek calls happen in this path (matching the real C, which
-    /// has no tape_drive_seek call in tape_controller_write either), so
-    /// MTS.EOT is never synced here.</summary>
+    /// Write(uint offset, ushort value) register-interface method. Every
+    /// byte this method moves goes through TapeDrive.WriteByte, which now
+    /// (faithfully) advances via TapeDrive.SeekRelative -- mirroring real
+    /// C's tape_drive_write_uint8 calling tape_drive_seek(p, 1, SEEK_CUR)
+    /// (usim/tape-drive.c:343-353) -- so _eot is synced from p.Eot once
+    /// after the transfer completes, matching Read()'s own sync.</summary>
     private void WriteCommand(TapeDrive p)
     {
         // ill_com is set on any write command on a drive which is file protected
@@ -467,6 +477,8 @@ public class TapeController
         {
             p.WriteRecordLength((uint)recordLength);
         }
+
+        _eot = p.Eot;
     }
 
     /// <summary>Faithful port of tape_controller_write_eof (usim/tape-controller.c:572-586).</summary>
@@ -479,6 +491,7 @@ public class TapeController
         }
 
         p.WriteFileMark();
+        _eot = p.Eot;
         // after writing, a read is always performed, so after writing EOF, EOF should be set
         _eof = true;
     }
