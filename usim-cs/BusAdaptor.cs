@@ -400,7 +400,7 @@ public class BusAdaptor
         _busInterface.SetXbusNxm();
     }
 
-    private uint ReadUnibus(uint uaddr)
+    internal uint ReadUnibus(uint uaddr)
     {
         if (uaddr >= DiagnosticLo && uaddr <= DiagnosticHi)
         {
@@ -434,7 +434,7 @@ public class BusAdaptor
         return 0;
     }
 
-    private void WriteUnibus(uint uaddr, uint v, ref bool promDisabled)
+    internal void WriteUnibus(uint uaddr, uint v, ref bool promDisabled)
     {
         if (uaddr >= DiagnosticLo && uaddr <= DiagnosticHi)
         {
