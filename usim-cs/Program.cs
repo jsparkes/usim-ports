@@ -563,7 +563,12 @@ public class Program
             }
             else
             {
-                lengthFt = long.Parse(parts[0].Trim());
+                // Real C (tape-drive.c:132-136) never validates the length token at
+                // parse time here -- it just assigns the raw string, and later validates
+                // via atoll(length_ft) == 0, which is non-fatal (the unit is simply left
+                // unconfigured). atoll/atoi return 0 for a non-numeric string, so mirror
+                // that with TryParse instead of throwing on a bad token.
+                lengthFt = long.TryParse(parts[0].Trim(), out long parsedLength3) ? parsedLength3 : 0;
                 mode = parts[1].Trim();
                 filename = parts[2].Trim();
             }

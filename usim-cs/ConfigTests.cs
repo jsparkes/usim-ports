@@ -362,10 +362,11 @@ public static class ConfigTests
             parser.SetString("tape", "tape1", "ro,/path/to/readonly.img");    // mode,filename
             parser.SetString("tape", "tape2", "10,/path/to/short.img");       // length,filename
             parser.SetString("tape", "tape3", "10,ro,/path/to/short-ro.img"); // length,mode,filename
+            parser.SetString("tape", "tape4", "abc,ro,/path/to/bad-length.img"); // length,mode,filename with non-numeric length
 
             Program.ApplyConfiguration(parser);
 
-            Assert(UsimState.TapeUnits.Length == 4, $"exactly 4 units configured, got {UsimState.TapeUnits.Length}");
+            Assert(UsimState.TapeUnits.Length == 5, $"exactly 5 units configured, got {UsimState.TapeUnits.Length}");
 
             var unit0 = Array.Find(UsimState.TapeUnits, u => u.Unit == 0);
             Assert(unit0.LengthFeet == 2400, $"unit 0 (bare filename) defaults to 2400ft, got {unit0.LengthFeet}");
@@ -384,6 +385,17 @@ public static class ConfigTests
             Assert(unit3.LengthFeet == 10, $"unit 3 (length,mode,filename) length is 10, got {unit3.LengthFeet}");
             Assert(unit3.Mode == "ro", $"unit 3 mode is ro, got {unit3.Mode}");
             Assert(unit3.Filename == "/path/to/short-ro.img", $"unit 3 filename correct, got {unit3.Filename}");
+
+            // Real C (usim/tape-drive.c:132-136) never validates the length token at
+            // parse time in the length,mode,filename branch -- it just assigns the raw
+            // string, and atoll() of a non-numeric string yields 0 (same as atoi/atoll's
+            // standard C behavior). Validation happens later, non-fatally, downstream in
+            // TapeDrive.Configure (usim-cs/TapeDrive.cs:47-57) -- not here. So a non-numeric
+            // length token here must not throw, and must parse to LengthFeet == 0.
+            var unit4 = Array.Find(UsimState.TapeUnits, u => u.Unit == 4);
+            Assert(unit4.LengthFeet == 0, $"unit 4 (non-numeric length) parses to 0 like atoll, got {unit4.LengthFeet}");
+            Assert(unit4.Mode == "ro", $"unit 4 mode is ro, got {unit4.Mode}");
+            Assert(unit4.Filename == "/path/to/bad-length.img", $"unit 4 filename correct, got {unit4.Filename}");
 
             Console.WriteLine("  Apply-configuration-parses-tape-units test passed\n");
             return true;
