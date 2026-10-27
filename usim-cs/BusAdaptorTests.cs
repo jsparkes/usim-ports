@@ -33,6 +33,7 @@ public static class BusAdaptorTests
         if (TestTvRangeDispatchesToRealTv()) passed++; else failed++;
         if (TestColorTvRangeDispatchesToRealColorTvOnlyWhenEnabled()) passed++; else failed++;
         if (TestIobRangeDispatchesToRealIob()) passed++; else failed++;
+        if (TestTapeControlThroughBusAdaptor()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -619,6 +620,41 @@ public static class BusAdaptorTests
         {
             UsimState.ColorTvEnabled = saved;
         }
+    }
+
+    private static bool TestTapeControlThroughBusAdaptor()
+    {
+        Console.WriteLine("Test: tape MTC GO on an offline unit sets ILC in MTS, dispatching to the real TapeController (not the old placeholder, which never modeled command execution at all)");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var busAdaptor = ucode.BusAdaptor;
+            var tapeController = new TapeController(ucode, ucode.BusInterface, busAdaptor);
+            busAdaptor.WireTapeController(tapeController);
+
+            uint tapeControlLo = 0x3F550;
+            bool promDisabled = false;
+
+            // Select unit 0 (default _slt=0), fun=1 (read), go=1. Unit 0 is
+            // offline (never configured), so the real TapeController's Go()
+            // sets ILC ("selected drive not on-line") immediately -- a value
+            // only real command execution can produce. The old placeholder
+            // always read back 0 regardless of what was written, so a plain
+            // "read-back is stable" check (status1 == status2) would pass
+            // trivially even without this wiring; this assertion actually
+            // discriminates the two paths.
+            uint mtc = (0u << 8) | (1u << 1) | 1u; // slt=0, fun=1, go=1
+            busAdaptor.Write(UaddrToPaddr(tapeControlLo + 2), mtc, ref promDisabled);
+
+            uint mts = busAdaptor.Read(UaddrToPaddr(tapeControlLo + 0));
+            Assert((mts & (1u << 15)) != 0, $"ILC bit set in MTS after GO on offline unit 0, confirming the real TapeController (not the old placeholder) is now handling this range, got 0x{mts:X}");
+            Assert(promDisabled == false, "tape-control writes never touch promDisabled");
+
+            Console.WriteLine("  Tape-control-through-BusAdaptor test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  Tape-control-through-BusAdaptor test failed: {ex.Message}\n"); return false; }
     }
 
     /// <summary>

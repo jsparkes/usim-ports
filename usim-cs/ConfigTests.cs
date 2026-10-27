@@ -30,6 +30,7 @@ public static class ConfigTests
         if (TestSectionOperations()) passed++; else failed++;
         if (TestConfigManager()) passed++; else failed++;
         if (TestApplyConfigurationParsesDiskUnits()) passed++; else failed++;
+        if (TestApplyConfigurationParsesTapeUnits()) passed++; else failed++;
         if (TestApplyConfigurationParsesMonitorType()) passed++; else failed++;
         
         Console.WriteLine($"\n=== Test Summary ===");
@@ -347,6 +348,52 @@ public static class ConfigTests
         {
             UsimState.DiskUnits = savedDiskUnits;
         }
+    }
+
+    private static bool TestApplyConfigurationParsesTapeUnits()
+    {
+        Console.WriteLine("Test: ApplyConfiguration parses the [tape] section's 4 real-C grammar shapes into UsimState.TapeUnits");
+        // Same save/restore-static-state discipline as TestApplyConfigurationParsesDiskUnits.
+        var savedTapeUnits = UsimState.TapeUnits;
+        try
+        {
+            var parser = new ConfigParser();
+            parser.SetString("tape", "tape0", "/path/to/bare.img");           // bare filename -> defaults 2400ft, rw
+            parser.SetString("tape", "tape1", "ro,/path/to/readonly.img");    // mode,filename
+            parser.SetString("tape", "tape2", "10,/path/to/short.img");       // length,filename
+            parser.SetString("tape", "tape3", "10,ro,/path/to/short-ro.img"); // length,mode,filename
+
+            Program.ApplyConfiguration(parser);
+
+            Assert(UsimState.TapeUnits.Length == 4, $"exactly 4 units configured, got {UsimState.TapeUnits.Length}");
+
+            var unit0 = Array.Find(UsimState.TapeUnits, u => u.Unit == 0);
+            Assert(unit0.LengthFeet == 2400, $"unit 0 (bare filename) defaults to 2400ft, got {unit0.LengthFeet}");
+            Assert(unit0.Mode == "rw", $"unit 0 (bare filename) defaults to rw, got {unit0.Mode}");
+            Assert(unit0.Filename == "/path/to/bare.img", $"unit 0 filename correct, got {unit0.Filename}");
+
+            var unit1 = Array.Find(UsimState.TapeUnits, u => u.Unit == 1);
+            Assert(unit1.LengthFeet == 2400, $"unit 1 (mode,filename) defaults to 2400ft, got {unit1.LengthFeet}");
+            Assert(unit1.Mode == "ro", $"unit 1 mode is ro, got {unit1.Mode}");
+
+            var unit2 = Array.Find(UsimState.TapeUnits, u => u.Unit == 2);
+            Assert(unit2.LengthFeet == 10, $"unit 2 (length,filename) length is 10, got {unit2.LengthFeet}");
+            Assert(unit2.Mode == "rw", $"unit 2 (length,filename) defaults to rw, got {unit2.Mode}");
+
+            var unit3 = Array.Find(UsimState.TapeUnits, u => u.Unit == 3);
+            Assert(unit3.LengthFeet == 10, $"unit 3 (length,mode,filename) length is 10, got {unit3.LengthFeet}");
+            Assert(unit3.Mode == "ro", $"unit 3 mode is ro, got {unit3.Mode}");
+            Assert(unit3.Filename == "/path/to/short-ro.img", $"unit 3 filename correct, got {unit3.Filename}");
+
+            Console.WriteLine("  Apply-configuration-parses-tape-units test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Apply-configuration-parses-tape-units test failed: {ex.Message}\n");
+            return false;
+        }
+        finally { UsimState.TapeUnits = savedTapeUnits; }
     }
 
     private static bool TestApplyConfigurationParsesMonitorType()

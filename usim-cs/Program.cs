@@ -287,6 +287,16 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-tape-drive":
+                    TapeDriveTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-tape-controller":
+                    TapeControllerTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--debug-microcode":
                 case "--debug-ucode":
                     var debugger = new MicrocodeDebugger(new UCode());
@@ -397,6 +407,8 @@ public class Program
         Console.WriteLine("  --test-disk-unit        Run DiskUnit tests only");
         Console.WriteLine("  --test-disk-controller  Run DiskController tests only");
         Console.WriteLine("  --test-boot-milestone   Run end-to-end boot milestone tests only");
+        Console.WriteLine("  --test-tape-drive       Run TapeDrive tests only");
+        Console.WriteLine("  --test-tape-controller  Run TapeController tests only");
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
@@ -517,6 +529,48 @@ public class Program
             diskUnits.Add((i, typeName, filename));
         }
         UsimState.DiskUnits = diskUnits.ToArray();
+
+        var tapeUnits = new List<(uint, long, string, string)>();
+        for (uint i = 0; i < TapeDrive.NUMBER_OF_TAPE_DRIVES; i++)
+        {
+            string line = config.GetString("tape", $"tape{i}", "");
+            if (string.IsNullOrEmpty(line)) continue;
+
+            // Real C's token-counting disambiguation (tape-drive.c:105-145):
+            // [length,][mode,]filename -- length and mode are both optional,
+            // and a 2-token string's first token is interpreted as mode if
+            // it's not a valid positive integer, otherwise as length.
+            string[] parts = line.Split(',');
+            long lengthFt = 2400;
+            string mode = "rw";
+            string filename;
+            if (parts.Length == 1)
+            {
+                filename = parts[0].Trim();
+            }
+            else if (parts.Length == 2)
+            {
+                if (long.TryParse(parts[0].Trim(), out long parsedLength) && parsedLength != 0)
+                {
+                    lengthFt = parsedLength;
+                    filename = parts[1].Trim();
+                }
+                else
+                {
+                    mode = parts[0].Trim();
+                    filename = parts[1].Trim();
+                }
+            }
+            else
+            {
+                lengthFt = long.Parse(parts[0].Trim());
+                mode = parts[1].Trim();
+                filename = parts[2].Trim();
+            }
+
+            tapeUnits.Add((i, lengthFt, mode, filename));
+        }
+        UsimState.TapeUnits = tapeUnits.ToArray();
     }
     
     /// <summary>
@@ -793,6 +847,16 @@ public class Program
 
         Console.WriteLine("Running Boot Milestone Tests...\n");
         BootMilestoneTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run TapeDrive tests
+        Console.WriteLine("Running TapeDrive Tests...\n");
+        TapeDriveTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run TapeController tests
+        Console.WriteLine("Running TapeController Tests...\n");
+        TapeControllerTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");
