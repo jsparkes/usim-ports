@@ -424,11 +424,10 @@ public class TapeController
         p.WriteRecordLength((uint)recordLength);
         _busInterface.ResetBusErrorStatus();
 
-        bool promDisabled = false;
-
         while (_mtbrc < 0)
         {
-            // read from memory
+            // read from memory -- ReadUnibus takes no promDisabled parameter
+            // (only WriteUnibus does, used by Read(TapeDrive) above instead)
             uint data32 = _busAdaptor.ReadUnibus(_mtcma);
             ushort data = (ushort)data32;
 
