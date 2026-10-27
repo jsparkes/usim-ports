@@ -75,7 +75,7 @@ public class TapeDrive
         {
             _file = new FileStream(filename, FileMode.Open, ReadOnly ? FileAccess.Read : FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             TraceLog.Instance.Warning(TraceCategory.Tape, $"tape-drive {Unit}: offline (cannot open tape file: {filename})");
             return;

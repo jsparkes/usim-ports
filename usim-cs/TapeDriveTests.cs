@@ -15,6 +15,7 @@ public static class TapeDriveTests
         if (TestConfigureMissingFileLeavesOffline()) passed++; else failed++;
         if (TestConfigureUndersizedFileLeavesOffline()) passed++; else failed++;
         if (TestConfigureValidFileComesOnline()) passed++; else failed++;
+        if (TestConfigureUnopenableFileLeavesOffline()) passed++; else failed++;
         if (TestUnitIndexOverflowThrows()) passed++; else failed++;
         if (TestReadWriteByteRoundTrip()) passed++; else failed++;
         if (TestReadUInt32LittleEndian()) passed++; else failed++;
@@ -85,6 +86,23 @@ public static class TapeDriveTests
         }
         catch (Exception ex) { Console.WriteLine($"  Valid-file-comes-online test failed: {ex.Message}\n"); return false; }
         finally { File.Delete(path); }
+    }
+
+    private static bool TestConfigureUnopenableFileLeavesOffline()
+    {
+        Console.WriteLine("Test: Configure on a file that cannot be opened read-write (permission denied) leaves the unit offline, does not throw");
+        string path = MakeValidTapeImage();
+        File.SetAttributes(path, FileAttributes.ReadOnly); // opening ReadWrite now throws UnauthorizedAccessException on Windows
+        try
+        {
+            var td = new TapeDrive(0);
+            td.Configure(10, "rw", path);
+            Assert(!td.Online, "unit stays offline when the file cannot be opened read-write");
+            Console.WriteLine("  Unopenable-file-leaves-offline test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  Unopenable-file-leaves-offline test failed: {ex.Message}\n"); return false; }
+        finally { File.SetAttributes(path, FileAttributes.Normal); File.Delete(path); }
     }
 
     private static bool TestUnitIndexOverflowThrows()
