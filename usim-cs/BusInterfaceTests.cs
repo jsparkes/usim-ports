@@ -24,6 +24,8 @@ public static class BusInterfaceTests
         if (TestLashupOnlyRegistersNoOp()) passed++; else failed++;
         if (TestBusResetClearsState()) passed++; else failed++;
         if (TestDefaultCaseSetsUnibusNxm()) passed++; else failed++;
+        if (TestBusResetClearsWiredTapeControllerError()) passed++; else failed++;
+        if (TestBusResetWithoutWiringDoesNotThrow()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -260,6 +262,60 @@ public static class BusInterfaceTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Default-case test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestBusResetClearsWiredTapeControllerError()
+    {
+        Console.WriteLine("Test: BusInterface.BusReset(), after WireTapeController, actually reaches and clears the wired TapeController's error state (usim/bus-interface.c's bus_interface_bus_reset calling tape_controller_bus_reset)");
+        try
+        {
+            const uint Mts = 0, Mtc = 2;
+
+            var mem = new MainMemory();
+            var ucode = new UCode(mem);
+            var busInterface = new BusInterface(ucode);
+            var busAdaptor = new BusAdaptor(busInterface, mem, ucode);
+            var tc = new TapeController(ucode, busInterface, busAdaptor);
+
+            // Drive an MTC.ERR-setting command: select unit 1 (never
+            // configured -- offline) via SLT (bits 10-8), function=Read (1),
+            // GO (bit 0). This sets ILC, which folds into the MTS error
+            // summary bit (bit 15).
+            tc.Write(Mtc, (ushort)((1 << 8) | (1 << 1) | 1));
+            tc.Read(Mts, out ushort statusBefore);
+            Assert((statusBefore & 0x8000) != 0, $"error summary bit set before reset, got 0x{statusBefore:X}");
+
+            busInterface.WireTapeController(tc);
+            busInterface.BusReset();
+
+            tc.Read(Mts, out ushort statusAfter);
+            Assert((statusAfter & 0x8000) == 0, $"error summary bit cleared after BusInterface.BusReset() reaches the wired TapeController, got 0x{statusAfter:X}");
+
+            Console.WriteLine("  Bus-reset-clears-wired-tape-controller-error test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Bus-reset-clears-wired-tape-controller-error test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestBusResetWithoutWiringDoesNotThrow()
+    {
+        Console.WriteLine("Test: BusInterface.BusReset() on a bare, unwired BusInterface (no TapeController wired) still does not throw");
+        try
+        {
+            var bi = new BusInterface(new UCode(new MainMemory()));
+            bi.BusReset(); // must not throw
+            Console.WriteLine("  Bus-reset-without-wiring-does-not-throw test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Bus-reset-without-wiring-does-not-throw test failed: {ex.Message}\n");
             return false;
         }
     }

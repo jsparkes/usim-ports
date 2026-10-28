@@ -30,6 +30,7 @@ public static class ConfigTests
         if (TestSectionOperations()) passed++; else failed++;
         if (TestConfigManager()) passed++; else failed++;
         if (TestApplyConfigurationParsesDiskUnits()) passed++; else failed++;
+        if (TestApplyConfigurationParsesTapeUnits()) passed++; else failed++;
         if (TestApplyConfigurationParsesMonitorType()) passed++; else failed++;
         
         Console.WriteLine($"\n=== Test Summary ===");
@@ -347,6 +348,73 @@ public static class ConfigTests
         {
             UsimState.DiskUnits = savedDiskUnits;
         }
+    }
+
+    private static bool TestApplyConfigurationParsesTapeUnits()
+    {
+        Console.WriteLine("Test: ApplyConfiguration parses the [tape] section's 4 real-C grammar shapes into UsimState.TapeUnits");
+        // Same save/restore-static-state discipline as TestApplyConfigurationParsesDiskUnits.
+        var savedTapeUnits = UsimState.TapeUnits;
+        try
+        {
+            var parser = new ConfigParser();
+            parser.SetString("tape", "tape0", "/path/to/bare.img");           // bare filename -> defaults 2400ft, rw
+            parser.SetString("tape", "tape1", "ro,/path/to/readonly.img");    // mode,filename
+            parser.SetString("tape", "tape2", "10,/path/to/short.img");       // length,filename
+            parser.SetString("tape", "tape3", "10,ro,/path/to/short-ro.img"); // length,mode,filename
+            parser.SetString("tape", "tape4", "abc,ro,/path/to/bad-length.img"); // length,mode,filename with non-numeric length
+            parser.SetString("tape", "tape5", "2400,,/path/to/empty-token.img"); // empty mode token -- real C's strtok collapses it; must parse the same as if it weren't there
+
+            Program.ApplyConfiguration(parser);
+
+            Assert(UsimState.TapeUnits.Length == 6, $"exactly 6 units configured, got {UsimState.TapeUnits.Length}");
+
+            var unit0 = Array.Find(UsimState.TapeUnits, u => u.Unit == 0);
+            Assert(unit0.LengthFeet == 2400, $"unit 0 (bare filename) defaults to 2400ft, got {unit0.LengthFeet}");
+            Assert(unit0.Mode == "rw", $"unit 0 (bare filename) defaults to rw, got {unit0.Mode}");
+            Assert(unit0.Filename == "/path/to/bare.img", $"unit 0 filename correct, got {unit0.Filename}");
+
+            var unit1 = Array.Find(UsimState.TapeUnits, u => u.Unit == 1);
+            Assert(unit1.LengthFeet == 2400, $"unit 1 (mode,filename) defaults to 2400ft, got {unit1.LengthFeet}");
+            Assert(unit1.Mode == "ro", $"unit 1 mode is ro, got {unit1.Mode}");
+
+            var unit2 = Array.Find(UsimState.TapeUnits, u => u.Unit == 2);
+            Assert(unit2.LengthFeet == 10, $"unit 2 (length,filename) length is 10, got {unit2.LengthFeet}");
+            Assert(unit2.Mode == "rw", $"unit 2 (length,filename) defaults to rw, got {unit2.Mode}");
+
+            var unit3 = Array.Find(UsimState.TapeUnits, u => u.Unit == 3);
+            Assert(unit3.LengthFeet == 10, $"unit 3 (length,mode,filename) length is 10, got {unit3.LengthFeet}");
+            Assert(unit3.Mode == "ro", $"unit 3 mode is ro, got {unit3.Mode}");
+            Assert(unit3.Filename == "/path/to/short-ro.img", $"unit 3 filename correct, got {unit3.Filename}");
+
+            // Real C (usim/tape-drive.c:132-136) never validates the length token at
+            // parse time in the length,mode,filename branch -- it just assigns the raw
+            // string, and atoll() of a non-numeric string yields 0 (same as atoi/atoll's
+            // standard C behavior). Validation happens later, non-fatally, downstream in
+            // TapeDrive.Configure (usim-cs/TapeDrive.cs:47-57) -- not here. So a non-numeric
+            // length token here must not throw, and must parse to LengthFeet == 0.
+            var unit4 = Array.Find(UsimState.TapeUnits, u => u.Unit == 4);
+            Assert(unit4.LengthFeet == 0, $"unit 4 (non-numeric length) parses to 0 like atoll, got {unit4.LengthFeet}");
+            Assert(unit4.Mode == "ro", $"unit 4 mode is ro, got {unit4.Mode}");
+            Assert(unit4.Filename == "/path/to/bad-length.img", $"unit 4 filename correct, got {unit4.Filename}");
+
+            // "2400,,/path/to/empty-token.img" -- RemoveEmptyEntries collapses the empty
+            // middle token so this parses as the 2-token length,filename shape (same as
+            // if the empty token weren't there), not the 3-token length,mode,filename shape.
+            var unit5 = Array.Find(UsimState.TapeUnits, u => u.Unit == 5);
+            Assert(unit5.LengthFeet == 2400, $"unit 5 (empty token collapsed) length is 2400, got {unit5.LengthFeet}");
+            Assert(unit5.Mode == "rw", $"unit 5 (empty token collapsed) defaults to rw, got {unit5.Mode}");
+            Assert(unit5.Filename == "/path/to/empty-token.img", $"unit 5 filename correct, got {unit5.Filename}");
+
+            Console.WriteLine("  Apply-configuration-parses-tape-units test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Apply-configuration-parses-tape-units test failed: {ex.Message}\n");
+            return false;
+        }
+        finally { UsimState.TapeUnits = savedTapeUnits; }
     }
 
     private static bool TestApplyConfigurationParsesMonitorType()

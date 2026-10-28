@@ -50,6 +50,7 @@ public class MachineControl
     // Components
     public MainMemory Memory { get; private set; }
     public DiskController DiskController { get; private set; }
+    public TapeController TapeController { get; private set; }
     public Keyboard Keyboard { get; private set; }
     public Idle Idle { get; private set; }
     public Mouse Mouse { get; private set; }
@@ -79,6 +80,9 @@ public class MachineControl
         UCode = new UCode(Memory);
         DiskController = new DiskController(Memory, UCode);
         UCode.BusAdaptor.WireDiskController(DiskController);
+        TapeController = new TapeController(UCode, UCode.BusInterface, UCode.BusAdaptor);
+        UCode.BusAdaptor.WireTapeController(TapeController);
+        UCode.BusInterface.WireTapeController(TapeController);
         Idle = new Idle(UCode)
         {
             Cycles = UsimState.IdleCycles,
@@ -299,6 +303,21 @@ public class MachineControl
             {
                 Console.WriteLine($"Configuring disk unit {unit}: {typeName},{filename}");
                 DiskController.ConfigureUnit(unit, typeName, filename);
+            }
+        }
+
+        // Configure tape units from [tape] config (UsimState.TapeUnits,
+        // populated by Program.ApplyConfiguration)
+        if (UsimState.TapeUnits.Length == 0)
+        {
+            Console.WriteLine("No tape units configured");
+        }
+        else
+        {
+            foreach (var (unit, lengthFeet, mode, filename) in UsimState.TapeUnits)
+            {
+                Console.WriteLine($"Configuring tape unit {unit}: {lengthFeet}ft,{mode},{filename}");
+                TapeController.ConfigureUnit(unit, lengthFeet, mode, filename);
             }
         }
 

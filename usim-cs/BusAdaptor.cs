@@ -25,6 +25,7 @@ public class BusAdaptor
     private Tv? _tv;
     private ColorTv? _colorTv;
     private Iob? _iob;
+    private TapeController? _tapeController;
 
     public BusAdaptor(BusInterface busInterface, MainMemory mainMemory, UCode ucode)
     {
@@ -53,6 +54,11 @@ public class BusAdaptor
     public void WireIob(Iob iob)
     {
         _iob = iob;
+    }
+
+    public void WireTapeController(TapeController tapeController)
+    {
+        _tapeController = tapeController;
     }
 
     // XBus I/O absolute physical-address ranges (usim/bus-adaptor.c's
@@ -402,7 +408,7 @@ public class BusAdaptor
         _busInterface.SetXbusNxm();
     }
 
-    private uint ReadUnibus(uint uaddr)
+    internal uint ReadUnibus(uint uaddr)
     {
         if (uaddr >= DiagnosticLo && uaddr <= DiagnosticHi)
         {
@@ -431,13 +437,25 @@ public class BusAdaptor
             }
             return _iob.Read(offset);
         }
+        if (uaddr >= TapeControllerLo && uaddr <= TapeControllerHi)
+        {
+            uint offset = uaddr - TapeControllerLo;
+            if (_tapeController == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: tape-controller read at offset {offset} with no TapeController wired");
+                return 0;
+            }
+            _tapeController.Read(offset, out ushort v);
+            return v;
+        }
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: read un-ported Unibus uaddr 0x{uaddr:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
         _busInterface.SetUnibusNxm();
         return 0;
     }
 
-    private void WriteUnibus(uint uaddr, uint v, ref bool promDisabled)
+    internal void WriteUnibus(uint uaddr, uint v, ref bool promDisabled)
     {
         if (uaddr >= DiagnosticLo && uaddr <= DiagnosticHi)
         {
@@ -469,6 +487,18 @@ public class BusAdaptor
                 return;
             }
             _iob.Write(offset, (ushort)v);
+            return;
+        }
+        if (uaddr >= TapeControllerLo && uaddr <= TapeControllerHi)
+        {
+            uint offset = uaddr - TapeControllerLo;
+            if (_tapeController == null)
+            {
+                TraceLog.Instance.Warning(TraceCategory.Memory,
+                    $"BusAdaptor: tape-controller write at offset {offset} with no TapeController wired");
+                return;
+            }
+            _tapeController.Write(offset, (ushort)v);
             return;
         }
         TraceLog.Instance.Warning(TraceCategory.Memory,

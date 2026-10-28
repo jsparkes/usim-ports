@@ -287,6 +287,16 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-tape-drive":
+                    TapeDriveTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-tape-controller":
+                    TapeControllerTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--debug-microcode":
                 case "--debug-ucode":
                     var debugger = new MicrocodeDebugger(new UCode());
@@ -397,6 +407,8 @@ public class Program
         Console.WriteLine("  --test-disk-unit        Run DiskUnit tests only");
         Console.WriteLine("  --test-disk-controller  Run DiskController tests only");
         Console.WriteLine("  --test-boot-milestone   Run end-to-end boot milestone tests only");
+        Console.WriteLine("  --test-tape-drive       Run TapeDrive tests only");
+        Console.WriteLine("  --test-tape-controller  Run TapeController tests only");
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
@@ -517,6 +529,59 @@ public class Program
             diskUnits.Add((i, typeName, filename));
         }
         UsimState.DiskUnits = diskUnits.ToArray();
+
+        var tapeUnits = new List<(uint, long, string, string)>();
+        for (uint i = 0; i < TapeDrive.NUMBER_OF_TAPE_DRIVES; i++)
+        {
+            string line = config.GetString("tape", $"tape{i}", "");
+            if (string.IsNullOrEmpty(line)) continue;
+
+            // Real C's token-counting disambiguation (tape-drive.c:105-145):
+            // [length,][mode,]filename -- length and mode are both optional,
+            // and a 2-token string's first token is interpreted as mode if
+            // it's not a valid positive integer, otherwise as length. Real
+            // C's strtok-based tokenizer collapses consecutive/trailing
+            // delimiters (so e.g. "2400,,file.img" or "rw,file.img," still
+            // tokenize sensibly there); RemoveEmptyEntries mirrors that
+            // empty-token collapsing (but NOT strtok/atoi's separate
+            // partial-numeric-prefix parsing -- that's a different,
+            // out-of-scope divergence; TryParse below stays all-or-nothing).
+            string[] parts = line.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            long lengthFt = 2400;
+            string mode = "rw";
+            string filename;
+            if (parts.Length == 1)
+            {
+                filename = parts[0].Trim();
+            }
+            else if (parts.Length == 2)
+            {
+                if (long.TryParse(parts[0].Trim(), out long parsedLength) && parsedLength != 0)
+                {
+                    lengthFt = parsedLength;
+                    filename = parts[1].Trim();
+                }
+                else
+                {
+                    mode = parts[0].Trim();
+                    filename = parts[1].Trim();
+                }
+            }
+            else
+            {
+                // Real C (tape-drive.c:132-136) never validates the length token at
+                // parse time here -- it just assigns the raw string, and later validates
+                // via atoll(length_ft) == 0, which is non-fatal (the unit is simply left
+                // unconfigured). atoll/atoi return 0 for a non-numeric string, so mirror
+                // that with TryParse instead of throwing on a bad token.
+                lengthFt = long.TryParse(parts[0].Trim(), out long parsedLength3) ? parsedLength3 : 0;
+                mode = parts[1].Trim();
+                filename = parts[2].Trim();
+            }
+
+            tapeUnits.Add((i, lengthFt, mode, filename));
+        }
+        UsimState.TapeUnits = tapeUnits.ToArray();
     }
     
     /// <summary>
@@ -793,6 +858,16 @@ public class Program
 
         Console.WriteLine("Running Boot Milestone Tests...\n");
         BootMilestoneTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run TapeDrive tests
+        Console.WriteLine("Running TapeDrive Tests...\n");
+        TapeDriveTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run TapeController tests
+        Console.WriteLine("Running TapeController Tests...\n");
+        TapeControllerTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");
