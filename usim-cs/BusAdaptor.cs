@@ -178,6 +178,7 @@ public class BusAdaptor
         if (paddr == KnownBenignOverrunPaddr) return 0; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: read un-ported XBus-I/O paddr 0x{paddr:X} ({DescribeXbusIo(paddr)} -- not implemented, Phase 5B scope)");
+        _busInterface.SetXbusNxm();
         return 0;
     }
 
@@ -246,6 +247,7 @@ public class BusAdaptor
         if (paddr == KnownBenignOverrunPaddr) return; // see the constant's comment
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: write un-ported XBus-I/O paddr 0x{paddr:X} v=0x{v:X} ({DescribeXbusIo(paddr)} -- not implemented, Phase 5B scope)");
+        _busInterface.SetXbusNxm();
     }
 
     private static string DescribeXbusIo(uint paddr)
@@ -431,6 +433,7 @@ public class BusAdaptor
         }
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: read un-ported Unibus uaddr 0x{uaddr:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
+        _busInterface.SetUnibusNxm();
         return 0;
     }
 
@@ -470,6 +473,7 @@ public class BusAdaptor
         }
         TraceLog.Instance.Warning(TraceCategory.Memory,
             $"BusAdaptor: write un-ported Unibus uaddr 0x{uaddr:X} v=0x{v:X} ({DescribeUnibus(uaddr)} -- not implemented, Phase 5B scope)");
+        _busInterface.SetUnibusNxm();
     }
 
     private static string DescribeUnibus(uint uaddr)
