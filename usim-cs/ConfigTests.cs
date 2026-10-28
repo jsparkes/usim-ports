@@ -28,6 +28,7 @@ public static class ConfigTests
         if (TestArrayValues()) passed++; else failed++;
         if (TestPathExpansion()) passed++; else failed++;
         if (TestSectionOperations()) passed++; else failed++;
+        if (TestCaseInsensitiveSectionAndKeyLookup()) passed++; else failed++;
         if (TestConfigManager()) passed++; else failed++;
         if (TestApplyConfigurationParsesDiskUnits()) passed++; else failed++;
         if (TestApplyConfigurationParsesTapeUnits()) passed++; else failed++;
@@ -267,6 +268,46 @@ public static class ConfigTests
         }
     }
     
+    private static bool TestCaseInsensitiveSectionAndKeyLookup()
+    {
+        Console.WriteLine("Test: section/key lookup is case-insensitive (deliberate divergence from real usim's case-sensitive streq() matching -- config files are hand-edited, so this is a usability improvement, not a faithfulness regression)");
+        try
+        {
+            var config = new ConfigParser();
+
+            // Written with one casing, read back with several others.
+            config.SetString("Disk", "Disk0", "value1");
+            Assert(config.GetString("disk", "disk0") == "value1", "lowercase section+key finds value written with mixed case");
+            Assert(config.GetString("DISK", "DISK0") == "value1", "uppercase section+key finds the same value");
+            Assert(config.HasKey("dIsK", "dIsK0"), "HasKey is case-insensitive");
+
+            // Setting the same logical section/key under a different casing
+            // must update the SAME entry, not create a second one.
+            config.SetString("disk", "disk0", "value2");
+            Assert(config.SectionCount == 1, $"still exactly 1 section after re-setting under different casing, got {config.SectionCount}");
+            Assert(config.GetKeyCount("DISK") == 1, $"still exactly 1 key after re-setting under different casing, got {config.GetKeyCount("DISK")}");
+            Assert(config.GetString("Disk", "Disk0") == "value2", "re-set value visible under the original casing too");
+
+            // Remove and section-count operations are case-insensitive too.
+            Assert(config.RemoveKey("DISK", "disk0"), "RemoveKey finds the key under a different casing");
+            Assert(!config.HasKey("Disk", "Disk0"), "key gone after case-insensitive remove");
+
+            config.SetString("Tape", "tape0", "tapevalue");
+            int countBeforeRemove = config.SectionCount;
+            Assert(config.RemoveSection("tape"), "RemoveSection finds the section under a different casing");
+            Assert(config.SectionCount == countBeforeRemove - 1, "section count drops by exactly one after case-insensitive remove");
+            Assert(!config.HasKey("TAPE", "tape0"), "section's key gone after case-insensitive remove");
+
+            Console.WriteLine("  Case-insensitive lookup tests passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Case-insensitive lookup tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
     private static bool TestConfigManager()
     {
         Console.WriteLine("Test: Config Manager");
