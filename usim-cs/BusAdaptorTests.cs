@@ -21,6 +21,8 @@ public static class BusAdaptorTests
         if (TestDiagnosticModeRegisterWrite()) passed++; else failed++;
         if (TestDiagnosticOtherRegistersAcceptWritesInvalidClockControlThrows()) passed++; else failed++;
         if (TestPlaceholderPathsDoNotThrow()) passed++; else failed++;
+        if (TestUnmappedUnibusFallbackSetsUnibusNxm()) passed++; else failed++;
+        if (TestUnmappedXbusIoFallbackSetsXbusNxm()) passed++; else failed++;
         if (TestBusInterfaceRangeDispatchesForReal()) passed++; else failed++;
         if (TestDiskControlDispatchesToRealController()) passed++; else failed++;
         if (TestUnibusMapUnconfiguredPageSetsMapError()) passed++; else failed++;
@@ -195,6 +197,66 @@ public static class BusAdaptorTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Placeholder-paths tests failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestUnmappedUnibusFallbackSetsUnibusNxm()
+    {
+        Console.WriteLine("Test: genuinely unmapped Unibus uaddr sets Unibus NXM (matches real C's bus_adaptor_unibus_rw else branch, bus-adaptor.c:416)");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var busAdaptor = new BusAdaptor(ucode.BusInterface, mainMemory, ucode);
+            bool promDisabled = false;
+
+            Assert(!ucode.BusInterface.IsUnibusNxm(), "no NXM yet");
+            uint value = busAdaptor.Read(UaddrToPaddr(0x3F550)); // tape-controller range, unported
+            Assert(value == 0, $"unmapped Unibus read is still a safe default (0), got 0x{value:X}");
+            Assert(ucode.BusInterface.IsUnibusNxm(), "unmapped Unibus read sets Unibus NXM");
+
+            ucode.BusInterface.ResetBusErrorStatus();
+            busAdaptor.Write(UaddrToPaddr(0x3F550), 0x1234, ref promDisabled);
+            Assert(ucode.BusInterface.IsUnibusNxm(), "unmapped Unibus write sets Unibus NXM");
+            Assert(promDisabled == false, "unmapped Unibus write never touches promDisabled");
+
+            Console.WriteLine("  Unmapped-Unibus NXM test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Unmapped-Unibus NXM test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestUnmappedXbusIoFallbackSetsXbusNxm()
+    {
+        Console.WriteLine("Test: genuinely unmapped XBus-I/O paddr sets Xbus NXM (matches real C's bus_adaptor_xbusio_rw else branch, bus-adaptor.c:150)");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var busAdaptor = new BusAdaptor(ucode.BusInterface, mainMemory, ucode);
+            bool promDisabled = false;
+
+            Assert(!ucode.BusInterface.IsXbusNxm(), "no NXM yet");
+            uint value = busAdaptor.Read(0x3C8000);
+            Assert(value == 0, $"unmapped XBus-I/O read is still a safe default (0), got 0x{value:X}");
+            Assert(ucode.BusInterface.IsXbusNxm(), "unmapped XBus-I/O read sets Xbus NXM");
+
+            ucode.BusInterface.ResetBusErrorStatus();
+            busAdaptor.Write(0x3C8000, 0x1234, ref promDisabled);
+            Assert(ucode.BusInterface.IsXbusNxm(), "unmapped XBus-I/O write sets Xbus NXM");
+            Assert(promDisabled == false, "unmapped XBus-I/O write never touches promDisabled");
+
+            Console.WriteLine("  Unmapped-XBus-I/O NXM test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Unmapped-XBus-I/O NXM test failed: {ex.Message}\n");
             return false;
         }
     }
