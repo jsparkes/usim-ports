@@ -12,9 +12,19 @@ namespace Usim;
 /// <summary>
 /// INI-style configuration file parser
 /// </summary>
+/// <remarks>
+/// Section and key lookup is deliberately case-insensitive -- a divergence
+/// from real usim's own config handler (usim/ucfg.c's ucfg_handler, which
+/// matches section/name via streq()/strcmp(), case-sensitively). Config
+/// files are hand-edited, so tolerating casing differences (e.g. "[Disk]"
+/// vs "[disk]") is a usability improvement here, not a faithfulness
+/// regression; it was deliberately chosen after checking that the real C
+/// has no equivalent tolerance to diverge from.
+/// </remarks>
 public class ConfigParser
 {
-    private readonly Dictionary<string, Dictionary<string, string>> _sections = new();
+    private readonly Dictionary<string, Dictionary<string, string>> _sections =
+        new(StringComparer.OrdinalIgnoreCase);
     
     /// <summary>
     /// Load configuration from file
@@ -34,9 +44,9 @@ public class ConfigParser
             
             if (!_sections.ContainsKey(currentSection))
             {
-                _sections[currentSection] = new Dictionary<string, string>();
+                _sections[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             }
-            
+
             foreach (var line in lines)
             {
                 string trimmed = line.Trim();
@@ -51,7 +61,7 @@ public class ConfigParser
                     currentSection = trimmed.Substring(1, trimmed.Length - 2).Trim();
                     if (!_sections.ContainsKey(currentSection))
                     {
-                        _sections[currentSection] = new Dictionary<string, string>();
+                        _sections[currentSection] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     }
                     continue;
                 }
@@ -133,7 +143,7 @@ public class ConfigParser
     {
         if (!_sections.ContainsKey(section))
         {
-            _sections[section] = new Dictionary<string, string>();
+            _sections[section] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
         _sections[section][key] = value;
     }
