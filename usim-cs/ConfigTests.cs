@@ -363,10 +363,11 @@ public static class ConfigTests
             parser.SetString("tape", "tape2", "10,/path/to/short.img");       // length,filename
             parser.SetString("tape", "tape3", "10,ro,/path/to/short-ro.img"); // length,mode,filename
             parser.SetString("tape", "tape4", "abc,ro,/path/to/bad-length.img"); // length,mode,filename with non-numeric length
+            parser.SetString("tape", "tape5", "2400,,/path/to/empty-token.img"); // empty mode token -- real C's strtok collapses it; must parse the same as if it weren't there
 
             Program.ApplyConfiguration(parser);
 
-            Assert(UsimState.TapeUnits.Length == 5, $"exactly 5 units configured, got {UsimState.TapeUnits.Length}");
+            Assert(UsimState.TapeUnits.Length == 6, $"exactly 6 units configured, got {UsimState.TapeUnits.Length}");
 
             var unit0 = Array.Find(UsimState.TapeUnits, u => u.Unit == 0);
             Assert(unit0.LengthFeet == 2400, $"unit 0 (bare filename) defaults to 2400ft, got {unit0.LengthFeet}");
@@ -396,6 +397,14 @@ public static class ConfigTests
             Assert(unit4.LengthFeet == 0, $"unit 4 (non-numeric length) parses to 0 like atoll, got {unit4.LengthFeet}");
             Assert(unit4.Mode == "ro", $"unit 4 mode is ro, got {unit4.Mode}");
             Assert(unit4.Filename == "/path/to/bad-length.img", $"unit 4 filename correct, got {unit4.Filename}");
+
+            // "2400,,/path/to/empty-token.img" -- RemoveEmptyEntries collapses the empty
+            // middle token so this parses as the 2-token length,filename shape (same as
+            // if the empty token weren't there), not the 3-token length,mode,filename shape.
+            var unit5 = Array.Find(UsimState.TapeUnits, u => u.Unit == 5);
+            Assert(unit5.LengthFeet == 2400, $"unit 5 (empty token collapsed) length is 2400, got {unit5.LengthFeet}");
+            Assert(unit5.Mode == "rw", $"unit 5 (empty token collapsed) defaults to rw, got {unit5.Mode}");
+            Assert(unit5.Filename == "/path/to/empty-token.img", $"unit 5 filename correct, got {unit5.Filename}");
 
             Console.WriteLine("  Apply-configuration-parses-tape-units test passed\n");
             return true;

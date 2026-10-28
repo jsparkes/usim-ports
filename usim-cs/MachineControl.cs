@@ -82,6 +82,7 @@ public class MachineControl
         UCode.BusAdaptor.WireDiskController(DiskController);
         TapeController = new TapeController(UCode, UCode.BusInterface, UCode.BusAdaptor);
         UCode.BusAdaptor.WireTapeController(TapeController);
+        UCode.BusInterface.WireTapeController(TapeController);
         Idle = new Idle(UCode)
         {
             Cycles = UsimState.IdleCycles,

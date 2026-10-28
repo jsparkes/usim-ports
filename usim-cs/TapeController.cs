@@ -153,7 +153,7 @@ public class TapeController
     /// (usim/tape-controller.c:827-835). Does not touch mtcma/mtd/mtrd,
     /// matching the real C exactly (those aren't part of the mts/mtc
     /// structs it memsets).</summary>
-    private void BusReset()
+    internal void BusReset()
     {
         _ilc = false; _eof = false; _eot = false; _rle = false; _bte = false; _nxm = false; _selr = false;
         _den8 = false; _den5 = false; _pevn = false; _slt = 0; _intEnb = false; _fun = 0;
@@ -630,7 +630,13 @@ public class TapeController
     private void Rewind(TapeDrive p)
     {
         p.SeekAbsolute(0);
-        _eot = p.Eot;
+        // Real C's tape_drive_rewind_ex unconditionally calls
+        // reset_mts_eot() after the seek -- Rewind always clears EOT on
+        // real hardware, full stop. This matters for a very short
+        // configured lengthFt (1-4): there, eotpos <= 0, so p.Eot computes
+        // true even at Pos=0 right after rewinding to BOT; without this,
+        // MTS.EOT would stay incorrectly set after a Rewind.
+        _eot = false;
 
         // "an interrupt occurs whenever a rewinding tape unit arrives at BOT"
         if (p.Bot) AssertInterruptIfEnabled();

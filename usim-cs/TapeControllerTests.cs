@@ -52,6 +52,10 @@ public static class TapeControllerTests
         if (TestReadRecordLongerThanMtbrcSetsRle()) passed++; else failed++;
         if (TestSpaceForwardOverFileMarkSetsEof()) passed++; else failed++;
         if (TestReadCrossingEotMidTransferSetsEot()) passed++; else failed++;
+        if (TestWriteThenWriteEofFlushesToDisk()) passed++; else failed++;
+        if (TestSpaceReverseOverRecordsAndFilemark()) passed++; else failed++;
+        if (TestOfflineSetsUnitOffline()) passed++; else failed++;
+        if (TestPostambleMismatchIgnoredOnRead()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -262,7 +266,7 @@ public static class TapeControllerTests
             // loop starts, but the very first Unibus word fails before any
             // tape byte is written -- so Pos should reflect only the
             // preamble, never the full intended transfer.
-            Assert(tc.GetUnitForTest(0).Pos < 8, $"tape position left wherever the error occurred, not advanced to the full intended transfer length, got {tc.GetUnitForTest(0).Pos}");
+            Assert(tc.GetUnitForTest(0).Pos == 4, $"tape position left exactly at the preamble-only point where the error occurred (4 bytes), not advanced to the full intended transfer length, got {tc.GetUnitForTest(0).Pos}");
             Console.WriteLine("  Nxm-during-transfer-leaves-position test passed\n");
             return true;
         }
@@ -293,9 +297,10 @@ public static class TapeControllerTests
             var busAdaptor = new BusAdaptor(busInterface, mem, ucode);
             var tc = new TapeController(ucode, busInterface, busAdaptor);
             tc.ConfigureUnit(0, 10, "rw", path);
+            ConfigureUnibusMapPage(busAdaptor, pageNo: 0, xbusPageNumber: 0);
 
             tc.Write(Mtbrc, unchecked((ushort)(-4))); // only 4 bytes allocated for an 8-byte real record
-            tc.Write(Mtcma, 0);
+            tc.Write(Mtcma, 0xC000); // real, mapped Unibus DMA target (page 0), not the unmapped-Unibus fallback
             tc.Write(Mtc, (ushort)((0 << 8) | (1 << 1) | 1)); // read, GO
 
             tc.Read(Mts, out ushort status);
@@ -322,12 +327,12 @@ public static class TapeControllerTests
             // it -- it does NOT detect EOF on the first call in that case.
             // Realistic tape software never issues Space-Forward sitting
             // directly on a file mark with no preceding record for exactly
-            // this reason, so this test writes a real record first (mtcma=0
-            // is the unmapped-Unibus fallback -- silently reads 0s, which is
-            // fine here since only a real, correctly-sized record matters,
-            // not its content).
+            // this reason, so this test writes a real record first, via a
+            // real mapped Unibus-Map DMA target (page 0) -- only a real,
+            // correctly-sized record matters here, not its content.
+            ConfigureUnibusMapPage(busAdaptor, pageNo: 0, xbusPageNumber: 0);
             tc.Write(Mtbrc, unchecked((ushort)(-4)));
-            tc.Write(Mtcma, 0);
+            tc.Write(Mtcma, 0xC000);
             tc.Write(Mtc, (ushort)((0 << 8) | (2 << 1) | 1)); // write, GO -- a real 4-byte record at BOT
             tc.Write(Mtc, (ushort)((0 << 8) | (3 << 1) | 1)); // write EOF, GO -- file mark right after it
             tc.Write(Mtc, (ushort)((0 << 8) | (7 << 1) | 1)); // rewind, GO -- back to BOT
@@ -395,9 +400,18 @@ public static class TapeControllerTests
             var busAdaptor = new BusAdaptor(busInterface, mem, ucode);
             var tc = new TapeController(ucode, busInterface, busAdaptor);
             tc.ConfigureUnit(0, 5, "rw", path); // lengthFt=5
+            // This transfer is long enough (TransferBytes/2 Unibus words) to
+            // walk mtcma across multiple 0x400-byte Unibus Map pages starting
+            // at 0xC000 -- map every page in the whole range so the DMA loop
+            // never wanders into an unconfigured page (which would set a
+            // genuine Unibus Map Error/NXM instead of exercising the RLE/EOT
+            // branch this test targets). Content is irrelevant, so every
+            // page points at the same Xbus page.
+            for (uint pageNo = 0; pageNo < 16; pageNo++)
+                ConfigureUnibusMapPage(busAdaptor, pageNo, xbusPageNumber: 0);
 
             tc.Write(Mtbrc, unchecked((ushort)(-TransferBytes)));
-            tc.Write(Mtcma, 0);
+            tc.Write(Mtcma, 0xC000);
             // unit 0 (slt bits 10-8 = 0), DEN8 (bit 14, selects 800 bpi), function=Read (bits 3-1 = 1), GO (bit 0)
             tc.Write(Mtc, (ushort)((1 << 14) | (0 << 8) | (1 << 1) | 1));
 
@@ -409,6 +423,174 @@ public static class TapeControllerTests
             return true;
         }
         catch (Exception ex) { Console.WriteLine($"  Read-crossing-eot-mid-transfer-sets-eot test failed: {ex.Message}\n"); return false; }
+        finally { File.Delete(path); }
+    }
+
+    private static bool TestWriteThenWriteEofFlushesToDisk()
+    {
+        Console.WriteLine("Test: a controller Write followed by Write EOF actually reaches disk -- TapeDrive.WriteByte now flushes after every byte (regression for the real bug: a separate reader of the file previously saw FF FF FF 00 instead of FF FF FF FF for the trailing file mark)");
+        var (tc, mem, ucode, busAdaptor, path) = MakeController();
+        try
+        {
+            ConfigureUnibusMapPage(busAdaptor, pageNo: 0, xbusPageNumber: 0);
+
+            tc.Write(Mtbrc, unchecked((ushort)(-4))); // 4-byte record
+            tc.Write(Mtcma, 0xC000);
+            tc.Write(Mtc, (ushort)((0 << 8) | (2 << 1) | 1)); // write, GO
+
+            tc.Write(Mtc, (ushort)((0 << 8) | (3 << 1) | 1)); // write EOF, GO
+
+            // Read the raw bytes back through a brand-new FileStream -- NOT
+            // through TapeDrive/TapeController at all -- to prove the bytes
+            // actually landed on disk, not merely that they're readable back
+            // through the same still-open handle.
+            byte[] raw;
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                raw = new byte[16];
+                int totalRead = 0;
+                while (totalRead < raw.Length)
+                {
+                    int n = fs.Read(raw, totalRead, raw.Length - totalRead);
+                    Assert(n > 0, "independent reader can read the expected 16 bytes");
+                    totalRead += n;
+                }
+            }
+
+            uint preamble = BitConverter.ToUInt32(raw, 0);
+            uint postamble = BitConverter.ToUInt32(raw, 8);
+            uint fileMark = BitConverter.ToUInt32(raw, 12);
+
+            Assert(preamble == 4, $"on-disk preamble == 4, got {preamble}");
+            Assert(postamble == 4, $"on-disk postamble == 4, got {postamble}");
+            Assert(fileMark == 0xFFFFFFFFu, $"on-disk trailing file mark is the real FFFFFFFF sentinel, got 0x{fileMark:X} (would be 0xFFFFFF00 on the unflushed-last-byte bug)");
+            Console.WriteLine("  Write-then-write-eof-flushes-to-disk test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  Write-then-write-eof-flushes-to-disk test failed: {ex.Message}\n"); return false; }
+        finally { File.Delete(path); }
+    }
+
+    private static bool TestSpaceReverseOverRecordsAndFilemark()
+    {
+        Console.WriteLine("Test: Space Reverse (function 5) over 2 real records, skipping a trailing file mark via the -8 skip-over-filemark path, stops at BOT without setting EOF -- verified directly against tape_controller_space_reverse/tape_drive_space_reverse (usim/tape-controller.c, usim/tape-drive.c) before writing this test");
+        string path = MakeValidTapeImage();
+        try
+        {
+            // Fixture, built directly (independent of TapeController/TapeDrive):
+            // record1 [0,12): preamble(4)=4, data(4), postamble(4)=4
+            // record2 [12,24): preamble(4)=4, data(4), postamble(4)=4
+            // file mark [24,28): FFFFFFFF
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+            {
+                void WriteU32(uint v) => fs.Write(BitConverter.GetBytes(v), 0, 4);
+                WriteU32(4); fs.Write(new byte[] { 0, 1, 2, 3 }, 0, 4); WriteU32(4);
+                WriteU32(4); fs.Write(new byte[] { 4, 5, 6, 7 }, 0, 4); WriteU32(4);
+                WriteU32(TapeDrive.FILE_MARK);
+            }
+
+            var mem = new MainMemory();
+            var ucode = new UCode(mem);
+            var busInterface = new BusInterface(ucode);
+            var busAdaptor = new BusAdaptor(busInterface, mem, ucode);
+            var tc = new TapeController(ucode, busInterface, busAdaptor);
+            tc.ConfigureUnit(0, 10, "rw", path);
+
+            // Space forward the whole file (mtbrc=0 -- "the program can simply
+            // give a zero (maximum) byte count") to land right after the file
+            // mark, at the true end of written data (pos 28).
+            tc.Write(Mtc, (ushort)((0 << 8) | (4 << 1) | 1)); // space forward, GO
+            Assert(tc.GetUnitForTest(0).Pos == 28, $"space-forward over both records + filemark lands at pos 28, got {tc.GetUnitForTest(0).Pos}");
+
+            // Space Reverse over 2 records (mtbrc = -2). The first
+            // SpaceReverseOneRecord(stopAtFilemark:false) call skips the
+            // trailing file mark via the -8 skip-over-filemark path and lands
+            // at the start of record2 (pos 12). The second call
+            // (stopAtFilemark:true), driven by the mtbrc<0 loop, reads
+            // record1's own postamble (NOT a file mark) at that position,
+            // so it does not set EOF -- it walks back over record1 and hits
+            // BOT (pos 0), which stops the loop immediately per "the
+            // controller spaces reverse ... but it stops the tape
+            // automatically upon encountering a file mark or the load point."
+            tc.Write(Mtbrc, unchecked((ushort)(-2)));
+            tc.Write(Mtc, (ushort)((0 << 8) | (5 << 1) | 1)); // space reverse, GO
+
+            Assert(tc.GetUnitForTest(0).Pos == 0, $"space-reverse over 2 records lands back at BOT (pos 0), got {tc.GetUnitForTest(0).Pos}");
+            Assert(tc.GetUnitForTest(0).Bot, "drive reports BOT after space-reverse");
+
+            tc.Read(Mts, out ushort status);
+            Assert((status & 0x4000) == 0, $"EOF is NOT set -- space-reverse stopped because it hit BOT, not because it encountered a file mark, got 0x{status:X}");
+            Console.WriteLine("  Space-reverse-over-records-and-filemark test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  Space-reverse-over-records-and-filemark test failed: {ex.Message}\n"); return false; }
+        finally { File.Delete(path); }
+    }
+
+    private static bool TestOfflineSetsUnitOffline()
+    {
+        Console.WriteLine("Test: Off-Line (function 0) takes the selected unit offline; SELR stays true until the next MTC write, then reflects the now-offline unit");
+        var (tc, mem, ucode, busAdaptor, path) = MakeController();
+        try
+        {
+            tc.Write(Mtc, (ushort)((0 << 8) | (0 << 1) | 1)); // unit 0, off-line, GO
+
+            tc.Read(Mts, out ushort statusRightAfter);
+            Assert((statusRightAfter & 0x40) != 0, $"SELR still reads true right after Off-Line -- it was computed before the command ran and is not re-evaluated until the next MTC write, got 0x{statusRightAfter:X}");
+            Assert(!tc.GetUnitForTest(0).Online, "unit is offline after Off-Line");
+
+            // Any further MTC write re-evaluates SELR from the (now offline) selected drive.
+            tc.Write(Mtc, (ushort)(0 << 8)); // re-select unit 0, no GO
+            tc.Read(Mts, out ushort statusAfterNextWrite);
+            Assert((statusAfterNextWrite & 0x40) == 0, $"SELR reads false on the next MTC write, since the selected unit is now offline, got 0x{statusAfterNextWrite:X}");
+
+            Console.WriteLine("  Offline-sets-unit-offline test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  Offline-sets-unit-offline test failed: {ex.Message}\n"); return false; }
+        finally { File.Delete(path); }
+    }
+
+    private static bool TestPostambleMismatchIgnoredOnRead()
+    {
+        Console.WriteLine("Test: a record's postamble is read but never compared against the preamble on read -- even when it disagrees -- matching real C's tape_drive_read_uint8 (postamble is read, nothing compares it)");
+        string path = MakeValidTapeImage();
+        try
+        {
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.ReadWrite))
+            {
+                void WriteU32(uint v) => fs.Write(BitConverter.GetBytes(v), 0, 4);
+                WriteU32(4);                               // preamble: length 4
+                fs.Write(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }, 0, 4); // 4 bytes of data
+                WriteU32(999);                             // postamble deliberately disagrees with the preamble
+            }
+
+            var mem = new MainMemory();
+            var ucode = new UCode(mem);
+            var busInterface = new BusInterface(ucode);
+            var busAdaptor = new BusAdaptor(busInterface, mem, ucode);
+            var tc = new TapeController(ucode, busInterface, busAdaptor);
+            tc.ConfigureUnit(0, 10, "rw", path);
+            ConfigureUnibusMapPage(busAdaptor, pageNo: 0, xbusPageNumber: 0);
+
+            tc.Write(Mtbrc, unchecked((ushort)(-4))); // exactly the preamble's own record length
+            tc.Write(Mtcma, 0xC000);
+            tc.Write(Mtc, (ushort)((0 << 8) | (1 << 1) | 1)); // read, GO
+
+            tc.Read(Mts, out ushort status);
+            Assert((status & 0x0200) == 0, $"RLE NOT set -- the transfer is governed by the preamble's length (4), which exactly matches MTBRC, got 0x{status:X}");
+            Assert((status & 0x0080) == 0, $"NXM NOT set, got 0x{status:X}");
+            Assert((status & 0x4000) == 0, $"EOF NOT set, got 0x{status:X}");
+            Assert((status & 0x8000) == 0, $"no error summary bit set at all despite the postamble mismatch, got 0x{status:X}");
+
+            tc.Read(Mtbrc, out ushort mtbrcAfter);
+            Assert(mtbrcAfter == 0, $"MTBRC exhausted to exactly 0 -- the full 4 bytes governed by the preamble were transferred, got {unchecked((short)mtbrcAfter)}");
+            Assert(tc.GetUnitForTest(0).Pos == 12, $"tape position after the read reflects preamble(4)+data(4)+postamble(4) all consumed (the mismatched postamble is read and skipped, never validated), got {tc.GetUnitForTest(0).Pos}");
+
+            Console.WriteLine("  Postamble-mismatch-ignored-on-read test passed\n");
+            return true;
+        }
+        catch (Exception ex) { Console.WriteLine($"  Postamble-mismatch-ignored-on-read test failed: {ex.Message}\n"); return false; }
         finally { File.Delete(path); }
     }
 

@@ -539,8 +539,14 @@ public class Program
             // Real C's token-counting disambiguation (tape-drive.c:105-145):
             // [length,][mode,]filename -- length and mode are both optional,
             // and a 2-token string's first token is interpreted as mode if
-            // it's not a valid positive integer, otherwise as length.
-            string[] parts = line.Split(',');
+            // it's not a valid positive integer, otherwise as length. Real
+            // C's strtok-based tokenizer collapses consecutive/trailing
+            // delimiters (so e.g. "2400,,file.img" or "rw,file.img," still
+            // tokenize sensibly there); RemoveEmptyEntries mirrors that
+            // empty-token collapsing (but NOT strtok/atoi's separate
+            // partial-numeric-prefix parsing -- that's a different,
+            // out-of-scope divergence; TryParse below stays all-or-nothing).
+            string[] parts = line.Split(',', StringSplitOptions.RemoveEmptyEntries);
             long lengthFt = 2400;
             string mode = "rw";
             string filename;

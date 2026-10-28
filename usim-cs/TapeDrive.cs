@@ -128,6 +128,13 @@ public class TapeDrive
         if (_file == null || ReadOnly || Pos >= _fileSize) return false;
         _file.Seek(Pos, SeekOrigin.Begin);
         _file.WriteByte(value);
+        // .NET Core does not run finalizers at process exit, so without an
+        // explicit flush the last byte(s) written (e.g. a file mark written
+        // via WriteFileMark -> WriteUInt32) can be lost if the emulator
+        // exits without an explicit close. DiskUnit.Write already flushes
+        // after every write for the same reason -- this brings TapeDrive in
+        // line with that existing precedent.
+        _file.Flush();
         // See ReadByte's comment above -- real C's tape_drive_write_uint8
         // (usim/tape-drive.c:343-353) likewise advances via
         // tape_drive_seek(p, 1, SEEK_CUR), not a bare pos++.
@@ -135,6 +142,11 @@ public class TapeDrive
         return true;
     }
 
+    // On a failed ReadByte partway through, `value` ends up partially
+    // constructed (some bytes already shifted in, the rest left as 0)
+    // rather than fully zeroed -- an acceptable stand-in for the real C's
+    // uninitialized value in this case, but worth flagging explicitly since
+    // other failure paths in this file substitute a documented 0 byte.
     public bool ReadUInt32(out uint value)
     {
         value = 0;
