@@ -147,6 +147,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-sdl3smoke":
+                    Sdl3SmokeTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-microcode-decode":
                     UCodeFetchDecodeTests.RunAllTests();
                     Environment.Exit(0);
@@ -369,6 +374,7 @@ public class Program
         Console.WriteLine("  --test, --test-all      Run all tests");
         Console.WriteLine("  --test-config           Run configuration tests only");
         Console.WriteLine("  --test-wpf              Run WPF backend tests only");
+        Console.WriteLine("  --test-sdl3smoke        Run SDL3-CS smoke test only");
         Console.WriteLine("  --test-microcode-decode Run microcode fetch/decode tests only");
         Console.WriteLine("  --test-microcode-alu    Run microcode ALU tests only");
         Console.WriteLine("  --test-microcode-jump   Run microcode jump tests only");
@@ -679,6 +685,11 @@ public class Program
         // Run WPF backend tests
         Console.WriteLine("Running WPF Backend Tests...\n");
         WpfBackendTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run SDL3-CS smoke test
+        Console.WriteLine("Running SDL3 Smoke Tests...\n");
+        Sdl3SmokeTests.RunAllTests();
         Console.WriteLine();
 
         // Run virtual memory (Uvmem) tests
