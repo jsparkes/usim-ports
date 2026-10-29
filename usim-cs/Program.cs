@@ -222,6 +222,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-sdl3keytranslator":
+                    Sdl3KeyTranslatorTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-keyboard":
                     KeyboardTests.RunAllTests();
                     Environment.Exit(0);
@@ -389,6 +394,7 @@ public class Program
         Console.WriteLine("  --test-diagnostic       Run diagnostic interface tests only");
         Console.WriteLine("  --test-idle             Run idle tests only");
         Console.WriteLine("  --test-keytranslator    Run WpfKeyTranslator tests only");
+        Console.WriteLine("  --test-sdl3keytranslator Run Sdl3KeyTranslator tests only");
         Console.WriteLine("  --test-keyboard         Run Keyboard tests only");
         Console.WriteLine("  --test-mouse            Run Mouse tests only");
         Console.WriteLine("  --test-unibus-mapping   Run Unibus mapping register tests only");
@@ -740,6 +746,11 @@ public class Program
         // Run WpfKeyTranslator tests
         Console.WriteLine("Running WpfKeyTranslator Tests...\n");
         WpfKeyTranslatorTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Sdl3KeyTranslator tests
+        Console.WriteLine("Running Sdl3KeyTranslator Tests...\n");
+        Sdl3KeyTranslatorTests.RunAllTests();
         Console.WriteLine();
 
         // Run Keyboard tests
