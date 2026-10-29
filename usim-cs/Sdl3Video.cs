@@ -224,6 +224,29 @@ public class Sdl3Video : IDisposable
             SDL.SetWindowTitle(_mainWindow, windowTitle);
         }
 
+        // --- CHECK IF VSYNC IS REALLY ON (sdl3-video.c:315-328) ---
+        // main renderer only -- real C never repeats this check for the
+        // color-TV renderer.
+
+        if (SDL.GetRenderVSync(_mainRenderer, out int vsync))
+        {
+            if (vsync == 1)
+            {
+                TraceLog.Instance.Info(TraceCategory.Display, "sdl3: vsync is on");
+            }
+            else
+            {
+                TraceLog.Instance.Warning(TraceCategory.Display,
+                    "sdl3: vsync is off, 60Hz updates will have unknown timings.");
+            }
+        }
+        else
+        {
+            TraceLog.Instance.Error(TraceCategory.Display,
+                $"sdl3: failed to get render vsync: {SDL.GetError()}");
+            return false;
+        }
+
         // --- SET RENDER LOGICAL PRESENTATION (sdl3-video.c:330-358) ---
 
         if (!SDL.SetRenderLogicalPresentation(
