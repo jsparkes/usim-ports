@@ -39,10 +39,11 @@ public class Sdl3Audio : IDisposable
     /// <summary>
     /// Opens the default playback device as an SDL3 audio stream (mono,
     /// 16-bit signed, 8000 Hz requested) and resumes it. Matches real C's
-    /// sdl3_audio_init: failure to find/open/validate a device is logged as
-    /// a warning and degraded out of (not thrown, not fatal) -- audio is
-    /// simply unavailable afterwards and Beep() becomes a no-op, which is
-    /// why this always returns true.
+    /// sdl3_audio_init: failure to open or validate a device is logged as a
+    /// warning (not thrown) and returns false, matching real C's three
+    /// "return false" sites exactly -- callers are expected to treat false
+    /// as non-fatal and continue without audio (see usim.c:567-570), but
+    /// this function itself reports the failure via its return value.
     /// </summary>
     public bool Init()
     {
@@ -66,7 +67,7 @@ public class Sdl3Audio : IDisposable
             // this is a warning because it is not so much critical for usim to function
             TraceLog.Instance.Warning(TraceCategory.Keyboard,
                 $"sdl3: failed to open audio device stream: {SDL.GetError()}");
-            return true;
+            return false;
         }
 
         if (!SDL.GetAudioStreamFormat(_stream, out var spec, out _))
@@ -74,7 +75,7 @@ public class Sdl3Audio : IDisposable
             TraceLog.Instance.Warning(TraceCategory.Keyboard,
                 $"sdl3: failed to get audio stream format: {SDL.GetError()}");
             DestroyStream();
-            return true;
+            return false;
         }
 
         // different spec.freq does not matter -- the audio functions below
@@ -83,7 +84,7 @@ public class Sdl3Audio : IDisposable
         {
             TraceLog.Instance.Warning(TraceCategory.Keyboard, "sdl3: failed to use required audio specs");
             DestroyStream();
-            return true;
+            return false;
         }
 
         _maxAmplitude = 32767.0 * BeepAmplitudeFraction;
