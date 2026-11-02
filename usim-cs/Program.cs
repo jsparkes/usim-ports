@@ -162,6 +162,11 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-sdl3backend":
+                    Sdl3BackendTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--test-microcode-decode":
                     UCodeFetchDecodeTests.RunAllTests();
                     Environment.Exit(0);
@@ -392,6 +397,7 @@ public class Program
         Console.WriteLine("  --test-sdl3smoke        Run SDL3-CS smoke test only");
         Console.WriteLine("  --test-sdl3audio        Run Sdl3Audio tests only");
         Console.WriteLine("  --test-sdl3video        Run Sdl3Video tests only");
+        Console.WriteLine("  --test-sdl3backend      Run Sdl3Backend tests only");
         Console.WriteLine("  --test-microcode-decode Run microcode fetch/decode tests only");
         Console.WriteLine("  --test-microcode-alu    Run microcode ALU tests only");
         Console.WriteLine("  --test-microcode-jump   Run microcode jump tests only");
@@ -718,6 +724,11 @@ public class Program
         // Run Sdl3Video tests
         Console.WriteLine("Running Sdl3Video Tests...\n");
         Sdl3VideoTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Sdl3Backend tests
+        Console.WriteLine("Running Sdl3Backend Tests...\n");
+        Sdl3BackendTests.RunAllTests();
         Console.WriteLine();
 
         // Run virtual memory (Uvmem) tests
