@@ -170,6 +170,13 @@ public static class Sdl3BackendTests
             var (x1, y1) = Sdl3Backend.UnscaleMotion(rawX: 100, rawY: 200, scale: 1.0);
             Assert(x1 == 100 && y1 == 200, "motion coordinates at scale=1.0 (the default) pass through unchanged");
 
+            // scale == 0 is usim.ini's "use native scaling" sentinel
+            // (ConfigManager's [Display] scale default); it must normalize
+            // to 1.0 (matching Sdl3Video.Init's own treatment), not divide
+            // by zero and produce NaN/garbage coordinates.
+            var (x2, y2) = Sdl3Backend.UnscaleMotion(rawX: 100, rawY: 200, scale: 0.0);
+            Assert(x2 == 100 && y2 == 200, "motion coordinates at scale=0.0 (native-scaling sentinel) pass through unchanged, same as scale=1.0");
+
             Console.WriteLine("  UnscaleMotion test passed\n");
             return true;
         }

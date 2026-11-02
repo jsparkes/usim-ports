@@ -388,10 +388,16 @@ public class Sdl3Backend : IDisposable
     /// scaled (Scale != 1.0), mouse_x/mouse_y arrive in scaled window
     /// coordinates, but the CADR expects unscaled guest pixel coordinates.
     /// Pure and directly unit-testable without a live window/event loop.
+    ///
+    /// scale == 0 is usim.ini's "use native scaling" sentinel
+    /// (ConfigManager's [Display] scale default), normalized to 1.0 here the
+    /// same way Sdl3Video.Init normalizes it for its own rendering math
+    /// (sdl3-video.c:124-127) -- otherwise this would divide by zero.
     /// </summary>
     internal static (int X, int Y) UnscaleMotion(int rawX, int rawY, double scale)
     {
-        return ((int)(rawX / scale), (int)(rawY / scale));
+        double effectiveScale = scale == 0 ? 1.0 : scale;
+        return ((int)(rawX / effectiveScale), (int)(rawY / effectiveScale));
     }
 
     public void SetWindowTitle(string title)
