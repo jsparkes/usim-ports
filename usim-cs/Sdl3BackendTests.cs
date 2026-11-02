@@ -23,6 +23,7 @@ public static class Sdl3BackendTests
         int failed = 0;
 
         if (TestBootScancodeConstants()) passed++; else failed++;
+        if (TestBootScancodeOrdering()) passed++; else failed++;
         if (TestConstructionAndDefaults()) passed++; else failed++;
         if (TestUnscaleMotion()) passed++; else failed++;
         if (TestAreAllCtrlAndMetaDownForBoot()) passed++; else failed++;
@@ -54,6 +55,75 @@ public static class Sdl3BackendTests
             Console.WriteLine($"  Boot scancode constants test failed: {ex.Message}\n");
             return false;
         }
+    }
+
+    private static bool TestBootScancodeOrdering()
+    {
+        Console.WriteLine("Test: Keyboard.EnqueueScancode lands the boot scancode directly behind its");
+        Console.WriteLine("      triggering key, strictly before a later-arriving key event (sdl3-keyboard.c:377-389)");
+        try
+        {
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var iob = new Iob(ucode);
+            var keyboard = new Keyboard();
+            keyboard.WireIob(iob);
+
+            // The chord-completing key's own scancode (e.g. rubout/backspace,
+            // cadet scancode 0x13). Queue is empty and IOB is free, so this
+            // delivers immediately, claiming the IOB's ready bit.
+            keyboard.KeyDown(0x13, modifiers: 0);
+            Assert(iob.IsKeyboardReadySet, "the triggering key's own scancode was delivered immediately");
+            Assert(keyboard.QueuedCount == 0, "nothing queued yet -- the triggering key's scancode went straight through");
+
+            // Immediately after (same call order Sdl3Backend.HandleKeyDown
+            // uses), the boot scancode is pushed onto the SAME real FIFO.
+            // The IOB is currently busy (not yet read), so this queues
+            // behind nothing -- it is the only thing in the queue so far.
+            keyboard.EnqueueScancode(Sdl3Backend.ColdBootScancode);
+            Assert(keyboard.QueuedCount == 1, "boot scancode is queued while the IOB is still busy with the triggering key's scancode");
+
+            // A later-arriving key event (e.g. the next keystroke) must not
+            // be able to jump ahead of the already-queued boot scancode.
+            keyboard.KeyDown(0x53, modifiers: 0); // cadet scancode for 'a'
+            Assert(keyboard.QueuedCount == 2, "the later key queues behind the boot scancode, not ahead of it");
+
+            // "Lisp" reads the triggering key's own scancode off the IOB,
+            // freeing it for the next delivery.
+            uint delivered1 = ReadIobScancode(iob);
+            uint expectedTriggerScancode = ((0b11111u << 19) | (0b001u << 16)) | 0x13u;
+            Assert(delivered1 == expectedTriggerScancode, "first delivery is the triggering key's own up-down scancode");
+
+            // The next Tick() must deliver the boot scancode next, not the
+            // later key -- this is the ordering guarantee itself.
+            keyboard.Tick();
+            Assert(iob.IsKeyboardReadySet, "boot scancode was delivered once the IOB freed up");
+            uint delivered2 = ReadIobScancode(iob);
+            Assert(delivered2 == Sdl3Backend.ColdBootScancode,
+                "second delivery is the boot scancode, strictly before the later-arriving key event");
+
+            // Finally, the later key's own scancode is delivered last.
+            keyboard.Tick();
+            Assert(iob.IsKeyboardReadySet, "later key's scancode was delivered last");
+            uint delivered3 = ReadIobScancode(iob);
+            uint expectedLaterKeyScancode = ((0b11111u << 19) | (0b001u << 16)) | 0x53u;
+            Assert(delivered3 == expectedLaterKeyScancode, "third delivery is the later key's own scancode");
+
+            Console.WriteLine("  Boot scancode ordering test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Boot scancode ordering test failed: {ex}\n");
+            return false;
+        }
+    }
+
+    private static uint ReadIobScancode(Iob iob)
+    {
+        uint low = iob.Read(0x40);
+        uint high = iob.Read(0x42);
+        return low | (high << 16);
     }
 
     private static bool TestConstructionAndDefaults()

@@ -75,16 +75,6 @@ public class Sdl3Backend : IDisposable
     // boot is signalled, key-up codes are suppressed until the next key-down.
     private bool _disableUpCodesForBoot;
 
-    // A boot scancode goes directly to the IOB (bypassing Keyboard's own
-    // private queue, since it is a distinct hardware scancode pattern, not a
-    // software-key up/down code -- see the NKB<18:16> header difference
-    // between sdl3_keyboard_new_scancode() and cold_boot_scancode/
-    // warm_boot_scancode). Single-slot, drained on Tick() once the IOB
-    // keyboard is free, the same busy check Keyboard.Tick() uses for its own
-    // queue; a second boot request before the first is delivered is dropped
-    // with a warning, matching real C's queue-full warning in spirit.
-    private uint? _pendingBootScancode;
-
     public Sdl3Backend(Tv tv, ColorTv colorTv, Iob iob, Keyboard keyboard, Mouse mouse, Idle idle, Action onTick)
     {
         _tv = tv ?? throw new ArgumentNullException(nameof(tv));
@@ -221,7 +211,6 @@ public class Sdl3Backend : IDisposable
         _colorTv.Tick();
         _iob.Tick();
         _keyboard.Tick();
-        DrainPendingBootScancode();
         _video.PresentMain(_tv.FrameBuffer);
         if (_colorTvEnabled)
         {
@@ -268,17 +257,25 @@ public class Sdl3Backend : IDisposable
             }
         }
 
+        // Port of sdl3-keyboard.c:359-389: enqueue the chord-completing
+        // key's own scancode first, then -- in the exact same call, same
+        // thread, no gap -- the boot scancode into the same real FIFO
+        // (Keyboard.EnqueueScancode), so it is guaranteed to land directly
+        // behind its triggering key, strictly before any later-arriving key
+        // event. KeyDown builds and enqueues the key's own NKB up/down-code
+        // scancode; EnqueueScancode below pushes the distinct boot scancode
+        // immediately after, onto that same private queue.
         _keyboard.KeyDown((uint)cadetScancode, modifiers);
 
         if (sendColdBoot)
         {
             _disableUpCodesForBoot = true;
-            EnqueueBootScancode(ColdBootScancode);
+            _keyboard.EnqueueScancode(ColdBootScancode);
         }
         else if (sendWarmBoot)
         {
             _disableUpCodesForBoot = true;
-            EnqueueBootScancode(WarmBootScancode);
+            _keyboard.EnqueueScancode(WarmBootScancode);
         }
         else
         {
@@ -340,27 +337,6 @@ public class Sdl3Backend : IDisposable
             }
         }
         return nctrl >= 2 && nmeta >= 2;
-    }
-
-    private void EnqueueBootScancode(uint scancode)
-    {
-        if (_pendingBootScancode.HasValue)
-        {
-            TraceLog.Instance.Trace(TraceCategory.Keyboard, TraceLevel.Warning,
-                $"sdl3: boot scancode {scancode} is missed, previous boot scancode still pending");
-            return;
-        }
-        _pendingBootScancode = scancode;
-    }
-
-    private void DrainPendingBootScancode()
-    {
-        if (!_pendingBootScancode.HasValue)
-            return;
-        if (_iob.IsKeyboardReadySet)
-            return; // retried next tick, like Keyboard.Tick()'s own pump
-        _iob.SetKeyboardReady(_pendingBootScancode.Value);
-        _pendingBootScancode = null;
     }
 
     /// <summary>
