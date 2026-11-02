@@ -142,11 +142,6 @@ public class Program
                     Environment.Exit(0);
                     break;
 
-                case "--test-wpf":
-                    WpfBackendTests.RunAllTests();
-                    Environment.Exit(0);
-                    break;
-
                 case "--test-sdl3smoke":
                     Sdl3SmokeTests.RunAllTests();
                     Environment.Exit(0);
@@ -229,11 +224,6 @@ public class Program
 
                 case "--test-iob":
                     IobTests.RunAllTests();
-                    Environment.Exit(0);
-                    break;
-
-                case "--test-keytranslator":
-                    WpfKeyTranslatorTests.RunAllTests();
                     Environment.Exit(0);
                     break;
 
@@ -393,7 +383,6 @@ public class Program
         Console.WriteLine("Testing & Demos:");
         Console.WriteLine("  --test, --test-all      Run all tests");
         Console.WriteLine("  --test-config           Run configuration tests only");
-        Console.WriteLine("  --test-wpf              Run WPF backend tests only");
         Console.WriteLine("  --test-sdl3smoke        Run SDL3-CS smoke test only");
         Console.WriteLine("  --test-sdl3audio        Run Sdl3Audio tests only");
         Console.WriteLine("  --test-sdl3video        Run Sdl3Video tests only");
@@ -411,7 +400,6 @@ public class Program
         Console.WriteLine("  --test-iob              Run IOB tests only");
         Console.WriteLine("  --test-diagnostic       Run diagnostic interface tests only");
         Console.WriteLine("  --test-idle             Run idle tests only");
-        Console.WriteLine("  --test-keytranslator    Run WpfKeyTranslator tests only");
         Console.WriteLine("  --test-sdl3keytranslator Run Sdl3KeyTranslator tests only");
         Console.WriteLine("  --test-keyboard         Run Keyboard tests only");
         Console.WriteLine("  --test-mouse            Run Mouse tests only");
@@ -562,11 +550,18 @@ public class Program
         
         Console.WriteLine("Starting CADR simulation...");
 
-        // Initialize WPF display backend unless headless
+        // Initialize SDL3 display backend unless headless
         if (!UsimState.Headless)
         {
-            Console.WriteLine("Initializing WPF display backend...");
-            _machine.InitializeDisplay(allowResize: false, scale: 1.0);
+            Console.WriteLine("Initializing SDL3 display backend...");
+            var configManager = new ConfigManager();
+            configManager.Load(_configFilename);
+            var displayConfig = configManager.GetDisplayConfig();
+            _machine.InitializeDisplay(allowResize: false, scale: 1.0,
+                windowDisplay: displayConfig.WindowDisplay,
+                windowPositionX: displayConfig.WindowPositionX,
+                windowPositionY: displayConfig.WindowPositionY,
+                windowAlwaysOnTop: displayConfig.WindowAlwaysOnTop);
 
             if (_machine.DisplayBackend != null)
             {
@@ -706,11 +701,6 @@ public class Program
         ConfigTests.RunAllTests();
         Console.WriteLine();
 
-        // Run WPF backend tests
-        Console.WriteLine("Running WPF Backend Tests...\n");
-        WpfBackendTests.RunAllTests();
-        Console.WriteLine();
-
         // Run SDL3-CS smoke test
         Console.WriteLine("Running SDL3 Smoke Tests...\n");
         Sdl3SmokeTests.RunAllTests();
@@ -774,11 +764,6 @@ public class Program
         // Run idle tests
         Console.WriteLine("Running Idle Tests...\n");
         IdleTests.RunAllTests();
-        Console.WriteLine();
-
-        // Run WpfKeyTranslator tests
-        Console.WriteLine("Running WpfKeyTranslator Tests...\n");
-        WpfKeyTranslatorTests.RunAllTests();
         Console.WriteLine();
 
         // Run Sdl3KeyTranslator tests

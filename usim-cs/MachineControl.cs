@@ -59,7 +59,7 @@ public class MachineControl
     public UCode UCode { get; private set; }
     
     // Display backend (optional)
-    public WpfBackend? DisplayBackend { get; private set; }
+    public Sdl3Backend? DisplayBackend { get; private set; }
     
     // Timing
     public DateTime StartTime { get; private set; }
@@ -105,9 +105,9 @@ public class MachineControl
     }
     
     /// <summary>
-    /// Initialize WPF backend for video/input
+    /// Initialize SDL3 backend for video/input
     /// </summary>
-    public void InitializeDisplay(bool allowResize = false, double scale = 1.0)
+    public void InitializeDisplay(bool allowResize = false, double scale = 1.0, int windowDisplay = -1, int windowPositionX = -1, int windowPositionY = -1, bool windowAlwaysOnTop = false)
     {
         if (DisplayBackend != null)
         {
@@ -115,11 +115,15 @@ public class MachineControl
             return;
         }
 
-        DisplayBackend = new WpfBackend(Tv, ColorTv, Iob, Keyboard, Mouse, Idle, onTick: RunMicrocodeBatch)
+        DisplayBackend = new Sdl3Backend(Tv, ColorTv, Iob, Keyboard, Mouse, Idle, onTick: RunMicrocodeBatch)
         {
             AllowResize = allowResize,
             Scale = scale,
-            UseLinearFiltering = true
+            UseLinearFiltering = true,
+            WindowDisplay = windowDisplay,
+            WindowPositionX = windowPositionX,
+            WindowPositionY = windowPositionY,
+            WindowAlwaysOnTop = windowAlwaysOnTop
         };
 
         DisplayBackend.Initialize();
@@ -365,7 +369,7 @@ public class MachineControl
     /// <summary>
     /// Runs one batch of microcycles and routes through Halt() if
     /// UCode.Halted becomes true. This is the real "Halted consumer":
-    /// both the GUI path (via WpfBackend's onTick) and the headless
+    /// both the GUI path (via Sdl3Backend's onTick) and the headless
     /// Run() loop call this, instead of each duplicating Halt()'s side
     /// effects (StopTime, the Halted event, UsimState.AutoPowerOff)
     /// inline and inconsistently.
