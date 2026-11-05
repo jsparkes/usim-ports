@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using SDL3;
 
 namespace Usim;
 
@@ -14,7 +15,12 @@ public static class Sdl3AudioTests
 
         // Run headlessly on any machine, including CI with no real audio
         // device -- "dummy" is a real SDL audio driver that discards audio.
-        Environment.SetEnvironmentVariable("SDL_AUDIODRIVER", "dummy");
+        // SDL.SetHint (not Environment.SetEnvironmentVariable) is required
+        // here: the latter only changes .NET's own copy of the environment
+        // and never reaches native SDL via setenv, especially on Unix, so
+        // on Linux/macOS these tests would otherwise run against whatever
+        // real audio driver is present instead of the dummy one.
+        SDL.SetHint(SDL.Hints.AudioDriver, "dummy");
 
         int passed = 0;
         int failed = 0;

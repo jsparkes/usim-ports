@@ -16,8 +16,13 @@ public static class Sdl3BackendTests
         // Run headlessly on any machine, including CI with no real
         // display/audio device -- "dummy" is a real SDL driver that
         // discards all drawing/audio.
-        Environment.SetEnvironmentVariable("SDL_VIDEODRIVER", "dummy");
-        Environment.SetEnvironmentVariable("SDL_AUDIODRIVER", "dummy");
+        // SDL.SetHint (not Environment.SetEnvironmentVariable) is required
+        // here: the latter only changes .NET's own copy of the environment
+        // and never reaches native SDL via setenv, especially on Unix, so
+        // on Linux/macOS these tests would otherwise run against whatever
+        // real display/audio driver is present instead of the dummy one.
+        SDL.SetHint(SDL.Hints.VideoDriver, "dummy");
+        SDL.SetHint(SDL.Hints.AudioDriver, "dummy");
 
         int passed = 0;
         int failed = 0;
@@ -28,6 +33,7 @@ public static class Sdl3BackendTests
         if (TestUnscaleMotion()) passed++; else failed++;
         if (TestAreAllCtrlAndMetaDownForBoot()) passed++; else failed++;
         if (TestInitializeAndDispose()) passed++; else failed++;
+        if (TestDispatchEventFiltersByWindowId()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -253,6 +259,97 @@ public static class Sdl3BackendTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Initialize/Dispose test failed: {ex}\n");
+            return false;
+        }
+    }
+
+    private static bool TestDispatchEventFiltersByWindowId()
+    {
+        Console.WriteLine("Test: DispatchEvent drops key/mouse events whose windowID doesn't match");
+        Console.WriteLine("      the main window (usim.c's SDL_AppEvent, usim.c:624,630,636,642,648)");
+        try
+        {
+            Assert(!Sdl3Backend.IsEventForMainWindow(eventWindowId: 42, mainWindowId: 7),
+                "mismatched window IDs are not treated as the main window");
+            Assert(Sdl3Backend.IsEventForMainWindow(eventWindowId: 7, mainWindowId: 7),
+                "matching window IDs are treated as the main window");
+
+            var mainMemory = new MainMemory();
+            var ucode = new UCode(mainMemory);
+            var tv = new Tv(ucode, 768, 963);
+            var colorTv = new ColorTv(ucode);
+            var iob = new Iob(ucode);
+            var keyboard = new Keyboard();
+            var mouse = new Mouse();
+            var idle = new Idle(ucode);
+
+            using var backend = new Sdl3Backend(tv, colorTv, iob, keyboard, mouse, idle, onTick: () => { });
+            backend.Initialize();
+            Assert(backend.IsRunning, "Initialize() succeeded under the dummy driver");
+
+            uint mainWindowId = backend.MainWindowId;
+            Assert(mainWindowId != 0, "main window ID is non-zero once Initialize() succeeds");
+
+            // Some other, arbitrary nonzero window ID -- stands in for the
+            // color-TV window (or any other window) real C's filter rejects.
+            uint otherWindowId = mainWindowId + 12345;
+
+            int xBefore = mouse.X;
+            int yBefore = mouse.Y;
+
+            var motionFromOtherWindow = new SDL.Event
+            {
+                Motion = new SDL.MouseMotionEvent
+                {
+                    Type = SDL.EventType.MouseMotion,
+                    WindowID = otherWindowId,
+                    X = xBefore + 50,
+                    Y = yBefore + 50
+                }
+            };
+            backend.DispatchEvent(motionFromOtherWindow);
+            Assert(mouse.X == xBefore && mouse.Y == yBefore,
+                "a motion event from another window (e.g. the color-TV window) never reaches Mouse.UpdatePosition");
+
+            var keyFromOtherWindow = new SDL.Event
+            {
+                Key = new SDL.KeyboardEvent
+                {
+                    Type = SDL.EventType.KeyDown,
+                    WindowID = otherWindowId,
+                    Scancode = SDL.Scancode.A,
+                    Down = true
+                }
+            };
+            backend.DispatchEvent(keyFromOtherWindow);
+            Assert(keyboard.QueuedCount == 0 && !iob.IsKeyboardReadySet,
+                "a key event from another window never reaches Keyboard.KeyDown");
+
+            // Sanity check: the same kind of event DOES reach the handler
+            // when the window ID matches the main window -- proving the
+            // filter itself, not some other reason, dropped the events above.
+            var motionFromMainWindow = new SDL.Event
+            {
+                Motion = new SDL.MouseMotionEvent
+                {
+                    Type = SDL.EventType.MouseMotion,
+                    WindowID = mainWindowId,
+                    X = xBefore + 50,
+                    Y = yBefore + 50
+                }
+            };
+            backend.DispatchEvent(motionFromMainWindow);
+            Assert(mouse.X == xBefore + 50 && mouse.Y == yBefore + 50,
+                "a motion event from the main window does reach Mouse.UpdatePosition");
+
+            backend.RequestExit();
+
+            Console.WriteLine("  DispatchEvent window-ID filter test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  DispatchEvent window-ID filter test failed: {ex}\n");
             return false;
         }
     }

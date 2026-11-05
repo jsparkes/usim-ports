@@ -48,6 +48,13 @@ public class Sdl3Backend : IDisposable
     public bool WindowAlwaysOnTop { get; set; } = false;
     public bool IsRunning { get; private set; }
 
+    /// <summary>
+    /// The main window's SDL window ID, exposed for Sdl3BackendTests to
+    /// construct synthetic events against (see IsEventForMainWindow below).
+    /// Zero until Initialize() succeeds.
+    /// </summary>
+    internal uint MainWindowId => _video.MainWindowId;
+
     // --- Boot-chord constants (usim/sdl3-keyboard.c:20-21) ---
     //
     // Documented divergence #1 (see the plan's Global Constraints): real C
@@ -123,6 +130,15 @@ public class Sdl3Backend : IDisposable
         {
             TraceLog.Instance.Trace(TraceCategory.Display, TraceLevel.Error,
                 "sdl3: video init failed, backend not started");
+
+            // TraceLog.Trace is gated by EnabledCategories, which defaults
+            // to TraceCategory.None, so the message above never reaches the
+            // user by default. Write directly to Console.Error as well, in
+            // the spirit of real C's own unconditional "sdl3-video init
+            // failed, quitting" (usim.c:561) -- adapted here since quitting
+            // the whole process is a layering decision for Program.cs/
+            // MachineControl, not something Sdl3Backend itself should do.
+            Console.Error.WriteLine("sdl3: video init failed, backend not started");
             return;
         }
 
@@ -178,31 +194,53 @@ public class Sdl3Backend : IDisposable
         _exitRequested = true;
     }
 
-    private void DispatchEvent(in SDL.Event ev)
+    // internal (not private) so Sdl3BackendTests can drive it directly with
+    // synthetic events to exercise the window-ID filter below.
+    internal void DispatchEvent(in SDL.Event ev)
     {
         switch ((SDL.EventType)ev.Type)
         {
             case SDL.EventType.KeyDown:
+                if (!IsEventForMainWindow(ev.Key.WindowID, _video.MainWindowId)) break;
                 HandleKeyDown(ev.Key);
                 break;
             case SDL.EventType.KeyUp:
+                if (!IsEventForMainWindow(ev.Key.WindowID, _video.MainWindowId)) break;
                 HandleKeyUp(ev.Key);
                 break;
             case SDL.EventType.MouseMotion:
+                if (!IsEventForMainWindow(ev.Motion.WindowID, _video.MainWindowId)) break;
                 HandleMouseMotion(ev.Motion);
                 break;
             case SDL.EventType.MouseButtonDown:
+                if (!IsEventForMainWindow(ev.Button.WindowID, _video.MainWindowId)) break;
                 HandleMouseButton(ev.Button, down: true);
                 break;
             case SDL.EventType.MouseButtonUp:
+                if (!IsEventForMainWindow(ev.Button.WindowID, _video.MainWindowId)) break;
                 HandleMouseButton(ev.Button, down: false);
                 break;
             case SDL.EventType.Quit:
             case SDL.EventType.WindowCloseRequested:
+                // Real C drops this filter for quit/close (sdl3_app_event's
+                // own switch only guards the key/mouse cases above,
+                // usim.c:624,630,636,642,648) -- window-level events are
+                // handled regardless of which window they came from.
                 IsRunning = false;
                 break;
         }
     }
+
+    /// <summary>
+    /// Port of usim.c's SDL_AppEvent window-ID filter (usim.c:624,630,636,
+    /// 642,648): real C drops every key/mouse event whose windowID doesn't
+    /// match main_window_id -- e.g. so moving the mouse over the color-TV
+    /// window doesn't send that window's local coordinates to the guest.
+    /// Pure and directly unit-testable without a live window/event loop,
+    /// same pattern as UnscaleMotion above.
+    /// </summary>
+    internal static bool IsEventForMainWindow(uint eventWindowId, uint mainWindowId) =>
+        eventWindowId == mainWindowId;
 
     private void Tick()
     {

@@ -2,6 +2,7 @@
 // sdl3-video.c's window/renderer/texture/present path.
 
 using System;
+using SDL3;
 
 namespace Usim;
 
@@ -13,7 +14,12 @@ public static class Sdl3VideoTests
 
         // Run headlessly on any machine, including CI with no real display --
         // "dummy" is a real SDL video driver that discards all drawing.
-        Environment.SetEnvironmentVariable("SDL_VIDEODRIVER", "dummy");
+        // SDL.SetHint (not Environment.SetEnvironmentVariable) is required
+        // here: the latter only changes .NET's own copy of the environment
+        // and never reaches native SDL via setenv, especially on Unix, so
+        // on Linux/macOS these tests would otherwise run against whatever
+        // real display driver is present instead of the dummy one.
+        SDL.SetHint(SDL.Hints.VideoDriver, "dummy");
 
         int passed = 0;
         int failed = 0;

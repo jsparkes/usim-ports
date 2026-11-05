@@ -557,11 +557,12 @@ public class Program
             var configManager = new ConfigManager();
             configManager.Load(_configFilename);
             var displayConfig = configManager.GetDisplayConfig();
-            _machine.InitializeDisplay(allowResize: false, scale: 1.0,
+            _machine.InitializeDisplay(allowResize: displayConfig.AllowResize, scale: displayConfig.Scale,
                 windowDisplay: displayConfig.WindowDisplay,
                 windowPositionX: displayConfig.WindowPositionX,
                 windowPositionY: displayConfig.WindowPositionY,
-                windowAlwaysOnTop: displayConfig.WindowAlwaysOnTop);
+                windowAlwaysOnTop: displayConfig.WindowAlwaysOnTop,
+                useLinearFiltering: displayConfig.UseLinearFiltering);
 
             if (_machine.DisplayBackend != null)
             {
@@ -586,7 +587,14 @@ public class Program
 
         if (_machine.DisplayBackend != null)
         {
-            Console.WriteLine("WPF window opened. Close window or press Ctrl+C to exit.");
+            if (_machine.DisplayBackend.IsRunning)
+            {
+                Console.WriteLine("SDL3 window opened. Close window or press Ctrl+C to exit.");
+            }
+            else
+            {
+                Console.Error.WriteLine("Error: SDL3 display backend failed to initialize; continuing without a window.");
+            }
             Console.WriteLine("Type commands in terminal for interactive debugging.\n");
 
             // Start background thread for console input if we have a display

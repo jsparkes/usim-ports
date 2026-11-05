@@ -107,7 +107,7 @@ public class MachineControl
     /// <summary>
     /// Initialize SDL3 backend for video/input
     /// </summary>
-    public void InitializeDisplay(bool allowResize = false, double scale = 1.0, int windowDisplay = -1, int windowPositionX = -1, int windowPositionY = -1, bool windowAlwaysOnTop = false)
+    public void InitializeDisplay(bool allowResize = false, double scale = 1.0, int windowDisplay = -1, int windowPositionX = -1, int windowPositionY = -1, bool windowAlwaysOnTop = false, bool useLinearFiltering = true)
     {
         if (DisplayBackend != null)
         {
@@ -119,7 +119,7 @@ public class MachineControl
         {
             AllowResize = allowResize,
             Scale = scale,
-            UseLinearFiltering = true,
+            UseLinearFiltering = useLinearFiltering,
             WindowDisplay = windowDisplay,
             WindowPositionX = windowPositionX,
             WindowPositionY = windowPositionY,

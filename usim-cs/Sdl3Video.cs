@@ -46,12 +46,21 @@ public class Sdl3Video : IDisposable
     private uint _colorTvWidth;
     private uint _colorTvHeight;
     private bool _colorTvEnabled;
+    private uint _mainWindowId;
 
     /// <summary>
     /// The real SDL main-window pointer/handle, for Sdl3Backend's mouse-warp
     /// call (SDL_WarpMouseInWindow-equivalent). Zero until Init succeeds.
     /// </summary>
     public nint MainWindowHandle => _mainWindow;
+
+    /// <summary>
+    /// The main window's SDL window ID, for Sdl3Backend's event-dispatch
+    /// window filter (usim.c's SDL_AppEvent: every key/mouse event whose
+    /// windowID doesn't match main_window_id is dropped -- usim.c:624,630,
+    /// 636,642,648). Zero until Init succeeds.
+    /// </summary>
+    public uint MainWindowId => _mainWindowId;
 
     /// <summary>
     /// True once the color window/renderer/texture were actually created
@@ -163,6 +172,7 @@ public class Sdl3Video : IDisposable
                 $"sdl3: failed to get main window ID: {SDL.GetError()}");
             return false;
         }
+        _mainWindowId = mainWindowId;
 
         // --- CREATE COLOR WINDOW AND RENDERER (sdl3-video.c:208-233) ---
 
@@ -430,6 +440,7 @@ public class Sdl3Video : IDisposable
         if (_mainTexture != IntPtr.Zero) { SDL.DestroyTexture(_mainTexture); _mainTexture = IntPtr.Zero; }
         if (_mainRenderer != IntPtr.Zero) { SDL.DestroyRenderer(_mainRenderer); _mainRenderer = IntPtr.Zero; }
         if (_mainWindow != IntPtr.Zero) { SDL.DestroyWindow(_mainWindow); _mainWindow = IntPtr.Zero; }
+        _mainWindowId = 0;
 
         if (_colorTexture != IntPtr.Zero) { SDL.DestroyTexture(_colorTexture); _colorTexture = IntPtr.Zero; }
         if (_colorRenderer != IntPtr.Zero) { SDL.DestroyRenderer(_colorRenderer); _colorRenderer = IntPtr.Zero; }
