@@ -51,14 +51,14 @@ public class Program
         try
         {
             Initialize();
-            
+
             // Run the simulator
-            Run();
-            
+            bool ok = Run();
+
             // Cleanup
             Shutdown();
-            
-            return 0;
+
+            return ok ? 0 : 1;
         }
         catch (Exception ex)
         {
@@ -540,12 +540,12 @@ public class Program
     /// <summary>
     /// Main simulator run loop
     /// </summary>
-    private static void Run()
+    private static bool Run()
     {
         if (_machine == null || _debugCommands == null)
         {
             Console.WriteLine("Error: Machine not initialized");
-            return;
+            return false;
         }
         
         Console.WriteLine("Starting CADR simulation...");
@@ -568,6 +568,17 @@ public class Program
             {
                 _machine.DisplayBackend.SetWindowTitle(UsimState.WindowTitle);
             }
+
+            // Real C quits immediately on this condition, before ever
+            // starting the machine (usim.c:559-562, "sdl3-video init
+            // failed, quitting", returning SDL_APP_FAILURE). Match that
+            // here rather than proceeding to PowerOn()/Run() as if a
+            // window were available.
+            if (_machine.DisplayInitFailed)
+            {
+                Console.Error.WriteLine("Error: SDL3 display backend failed to initialize; exiting.");
+                return false;
+            }
         }
         else
         {
@@ -587,14 +598,9 @@ public class Program
 
         if (_machine.DisplayBackend != null)
         {
-            if (_machine.DisplayBackend.IsRunning)
-            {
-                Console.WriteLine("SDL3 window opened. Close window or press Ctrl+C to exit.");
-            }
-            else
-            {
-                Console.Error.WriteLine("Error: SDL3 display backend failed to initialize; continuing without a window.");
-            }
+            // DisplayInitFailed already returned above, so DisplayBackend is
+            // guaranteed to be running here.
+            Console.WriteLine("SDL3 window opened. Close window or press Ctrl+C to exit.");
             Console.WriteLine("Type commands in terminal for interactive debugging.\n");
 
             // Start background thread for console input if we have a display
@@ -650,6 +656,8 @@ public class Program
                 }
             }
         }
+
+        return true;
     }
     
     /// <summary>

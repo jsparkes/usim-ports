@@ -60,6 +60,15 @@ public class MachineControl
     
     // Display backend (optional)
     public Sdl3Backend? DisplayBackend { get; private set; }
+
+    /// <summary>
+    /// True once InitializeDisplay() has run and the underlying SDL3 video
+    /// init failed. Real C quits immediately on this condition (usim.c:559-562,
+    /// "sdl3-video init failed, quitting", returning SDL_APP_FAILURE before
+    /// ever starting the machine) -- callers should check this and stop
+    /// rather than proceed to PowerOn()/Run() as if a window were available.
+    /// </summary>
+    public bool DisplayInitFailed => DisplayBackend != null && !DisplayBackend.IsRunning;
     
     // Timing
     public DateTime StartTime { get; private set; }
