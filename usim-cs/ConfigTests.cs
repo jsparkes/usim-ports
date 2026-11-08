@@ -327,7 +327,13 @@ public static class ConfigTests
             Assert(displayConfig.Height == 808, "Display height");
             Assert(Math.Abs(displayConfig.Scale - 2.0) < 0.001, "Display scale");
             Assert(displayConfig.ColorTv == true, "Color TV");
-            
+
+            // Window-placement defaults match real C (usim/tv.c:90-93).
+            Assert(displayConfig.WindowDisplay == -1, "window_display defaults to -1 (unset)");
+            Assert(displayConfig.WindowPositionX == -1, "window_position_x defaults to -1 (unset)");
+            Assert(displayConfig.WindowPositionY == -1, "window_position_y defaults to -1 (unset)");
+            Assert(displayConfig.WindowAlwaysOnTop == false, "window_always_on_top defaults to false");
+
             // Test memory config
             manager.Config.SetString("Memory", "main_memory_size", "0x2000000");
             var memoryConfig = manager.GetMemoryConfig();

@@ -117,7 +117,11 @@ public class ConfigManager
             UseLinearFiltering = _config.GetBool("Display", "use_linear_filtering", true),
             AllowResize = _config.GetBool("Display", "allow_resize", false),
             ColorTv = _config.GetBool("Display", "color_tv", true),
-            FrameRate = _config.GetInt("Display", "frame_rate", 60)
+            FrameRate = _config.GetInt("Display", "frame_rate", 60),
+            WindowDisplay = _config.GetInt("Display", "window_display", -1),
+            WindowPositionX = _config.GetInt("Display", "window_position_x", -1),
+            WindowPositionY = _config.GetInt("Display", "window_position_y", -1),
+            WindowAlwaysOnTop = _config.GetBool("Display", "window_always_on_top", false)
         };
     }
     
@@ -282,6 +286,10 @@ public class DisplayConfig
     public bool AllowResize { get; set; }
     public bool ColorTv { get; set; }
     public int FrameRate { get; set; }
+    public int WindowDisplay { get; set; }
+    public int WindowPositionX { get; set; }
+    public int WindowPositionY { get; set; }
+    public bool WindowAlwaysOnTop { get; set; }
 }
 
 public class MemoryConfig

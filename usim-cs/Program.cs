@@ -142,8 +142,23 @@ public class Program
                     Environment.Exit(0);
                     break;
 
-                case "--test-wpf":
-                    WpfBackendTests.RunAllTests();
+                case "--test-sdl3smoke":
+                    Sdl3SmokeTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-sdl3audio":
+                    Sdl3AudioTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-sdl3video":
+                    Sdl3VideoTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-sdl3backend":
+                    Sdl3BackendTests.RunAllTests();
                     Environment.Exit(0);
                     break;
 
@@ -212,8 +227,8 @@ public class Program
                     Environment.Exit(0);
                     break;
 
-                case "--test-keytranslator":
-                    WpfKeyTranslatorTests.RunAllTests();
+                case "--test-sdl3keytranslator":
+                    Sdl3KeyTranslatorTests.RunAllTests();
                     Environment.Exit(0);
                     break;
 
@@ -378,7 +393,10 @@ public class Program
         Console.WriteLine("Testing & Demos:");
         Console.WriteLine("  --test, --test-all      Run all tests");
         Console.WriteLine("  --test-config           Run configuration tests only");
-        Console.WriteLine("  --test-wpf              Run WPF backend tests only");
+        Console.WriteLine("  --test-sdl3smoke        Run SDL3-CS smoke test only");
+        Console.WriteLine("  --test-sdl3audio        Run Sdl3Audio tests only");
+        Console.WriteLine("  --test-sdl3video        Run Sdl3Video tests only");
+        Console.WriteLine("  --test-sdl3backend      Run Sdl3Backend tests only");
         Console.WriteLine("  --test-microcode-decode Run microcode fetch/decode tests only");
         Console.WriteLine("  --test-microcode-alu    Run microcode ALU tests only");
         Console.WriteLine("  --test-microcode-jump   Run microcode jump tests only");
@@ -392,7 +410,7 @@ public class Program
         Console.WriteLine("  --test-iob              Run IOB tests only");
         Console.WriteLine("  --test-diagnostic       Run diagnostic interface tests only");
         Console.WriteLine("  --test-idle             Run idle tests only");
-        Console.WriteLine("  --test-keytranslator    Run WpfKeyTranslator tests only");
+        Console.WriteLine("  --test-sdl3keytranslator Run Sdl3KeyTranslator tests only");
         Console.WriteLine("  --test-keyboard         Run Keyboard tests only");
         Console.WriteLine("  --test-mouse            Run Mouse tests only");
         Console.WriteLine("  --test-unibus-mapping   Run Unibus mapping register tests only");
@@ -597,11 +615,19 @@ public class Program
         
         Console.WriteLine("Starting CADR simulation...");
 
-        // Initialize WPF display backend unless headless
+        // Initialize SDL3 display backend unless headless
         if (!UsimState.Headless)
         {
-            Console.WriteLine("Initializing WPF display backend...");
-            _machine.InitializeDisplay(allowResize: false, scale: 1.0);
+            Console.WriteLine("Initializing SDL3 display backend...");
+            var configManager = new ConfigManager();
+            configManager.Load(_configFilename);
+            var displayConfig = configManager.GetDisplayConfig();
+            _machine.InitializeDisplay(allowResize: displayConfig.AllowResize, scale: displayConfig.Scale,
+                windowDisplay: displayConfig.WindowDisplay,
+                windowPositionX: displayConfig.WindowPositionX,
+                windowPositionY: displayConfig.WindowPositionY,
+                windowAlwaysOnTop: displayConfig.WindowAlwaysOnTop,
+                useLinearFiltering: displayConfig.UseLinearFiltering);
 
             if (_machine.DisplayBackend != null)
             {
@@ -626,7 +652,14 @@ public class Program
 
         if (_machine.DisplayBackend != null)
         {
-            Console.WriteLine("WPF window opened. Close window or press Ctrl+C to exit.");
+            if (_machine.DisplayBackend.IsRunning)
+            {
+                Console.WriteLine("SDL3 window opened. Close window or press Ctrl+C to exit.");
+            }
+            else
+            {
+                Console.Error.WriteLine("Error: SDL3 display backend failed to initialize; continuing without a window.");
+            }
             Console.WriteLine("Type commands in terminal for interactive debugging.\n");
 
             // Start background thread for console input if we have a display
@@ -741,9 +774,24 @@ public class Program
         ConfigTests.RunAllTests();
         Console.WriteLine();
 
-        // Run WPF backend tests
-        Console.WriteLine("Running WPF Backend Tests...\n");
-        WpfBackendTests.RunAllTests();
+        // Run SDL3-CS smoke test
+        Console.WriteLine("Running SDL3 Smoke Tests...\n");
+        Sdl3SmokeTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Sdl3Audio tests
+        Console.WriteLine("Running Sdl3Audio Tests...\n");
+        Sdl3AudioTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Sdl3Video tests
+        Console.WriteLine("Running Sdl3Video Tests...\n");
+        Sdl3VideoTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Sdl3Backend tests
+        Console.WriteLine("Running Sdl3Backend Tests...\n");
+        Sdl3BackendTests.RunAllTests();
         Console.WriteLine();
 
         // Run virtual memory (Uvmem) tests
@@ -791,9 +839,9 @@ public class Program
         IdleTests.RunAllTests();
         Console.WriteLine();
 
-        // Run WpfKeyTranslator tests
-        Console.WriteLine("Running WpfKeyTranslator Tests...\n");
-        WpfKeyTranslatorTests.RunAllTests();
+        // Run Sdl3KeyTranslator tests
+        Console.WriteLine("Running Sdl3KeyTranslator Tests...\n");
+        Sdl3KeyTranslatorTests.RunAllTests();
         Console.WriteLine();
 
         // Run Keyboard tests

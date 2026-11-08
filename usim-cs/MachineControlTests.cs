@@ -18,6 +18,7 @@ public static class MachineControlTests
         if (TestRunLoopStopsOnHalted()) passed++; else failed++;
         if (TestSingleStepTransitionsToHaltedState()) passed++; else failed++;
         if (TestPowerOnCallsBusReset()) passed++; else failed++;
+        if (TestDisplayBackendIsSdl3Backend()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -140,6 +141,33 @@ public static class MachineControlTests
         catch (Exception ex)
         {
             Console.WriteLine($"  PowerOn-calls-BusReset test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestDisplayBackendIsSdl3Backend()
+    {
+        Console.WriteLine("Test: MachineControl.DisplayBackend is the Sdl3Backend type after InitializeDisplay()");
+        try
+        {
+            var mc = new MachineControl();
+
+            Assert(mc.DisplayBackend == null || mc.DisplayBackend is Sdl3Backend,
+                "DisplayBackend, before initialization, is null or Sdl3Backend");
+
+            mc.InitializeDisplay(allowResize: false, scale: 1.0);
+
+            Assert(mc.DisplayBackend == null || mc.DisplayBackend is Sdl3Backend,
+                "DisplayBackend, once initialized, is the Sdl3Backend type");
+
+            mc.DisplayBackend?.Dispose();
+
+            Console.WriteLine("  DisplayBackend-is-Sdl3Backend test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  DisplayBackend-is-Sdl3Backend test failed: {ex.Message}\n");
             return false;
         }
     }

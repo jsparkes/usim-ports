@@ -59,6 +59,18 @@ public class Keyboard
     public int QueuedCount => _queue.Count;
 
     /// <summary>
+    /// Exposes the real sdl3_keyboard_enqueue FIFO directly, for scancodes
+    /// that are not built from a cadet keysym via KeyDown/KeyUp's NKB
+    /// up/down-code header -- namely Sdl3Backend's cold/warm-boot scancodes
+    /// (sdl3-keyboard.c:377-389 calls sdl3_keyboard_enqueue back-to-back for
+    /// the chord-completing key's own scancode and then the boot scancode,
+    /// into this same queue, so the boot scancode is guaranteed to land
+    /// directly behind its triggering key and strictly before any
+    /// later-arriving key event).
+    /// </summary>
+    internal void EnqueueScancode(uint scancode) => Enqueue(scancode);
+
+    /// <summary>
     /// Port of sdl3_keyboard_enqueue: drops the scancode (with a warning) if
     /// the queue is full, otherwise queues it and tries to deliver.
     /// </summary>
