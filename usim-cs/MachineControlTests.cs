@@ -2,6 +2,7 @@
 // wiring and Halted-driven run loop (Phase 8 of the microcode engine port).
 
 using System;
+using SDL3;
 
 namespace Usim;
 
@@ -11,6 +12,11 @@ public static class MachineControlTests
     {
         Console.WriteLine("=== MachineControl Test Suite ===\n");
 
+        // Run headlessly on any machine, including CI with no real display --
+        // SDL.SetHint (not Environment.SetEnvironmentVariable) is required:
+        // see Sdl3VideoTests.RunAllTests() for why.
+        SDL.SetHint(SDL.Hints.VideoDriver, "dummy");
+
         int passed = 0;
         int failed = 0;
 
@@ -19,6 +25,7 @@ public static class MachineControlTests
         if (TestSingleStepTransitionsToHaltedState()) passed++; else failed++;
         if (TestPowerOnCallsBusReset()) passed++; else failed++;
         if (TestDisplayBackendIsSdl3Backend()) passed++; else failed++;
+        if (TestDisplayInitFailedReflectsVideoInitOutcome()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -168,6 +175,44 @@ public static class MachineControlTests
         catch (Exception ex)
         {
             Console.WriteLine($"  DisplayBackend-is-Sdl3Backend test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestDisplayInitFailedReflectsVideoInitOutcome()
+    {
+        Console.WriteLine("Test: MachineControl.DisplayInitFailed reflects whether video init actually succeeded");
+        try
+        {
+            var mc = new MachineControl();
+
+            Assert(!mc.DisplayInitFailed, "DisplayInitFailed is false before any display is initialized");
+
+            mc.InitializeDisplay(allowResize: false, scale: 1.0);
+
+            Assert(!mc.DisplayInitFailed, "DisplayInitFailed is false after a successful InitializeDisplay() under the dummy driver");
+
+            mc.DisplayBackend?.Dispose();
+
+            // windowDisplay: 99 forces Sdl3Video.Init to fail deterministically
+            // (Sdl3Video.cs's "windowDisplay >= ndisplays" check -- the dummy
+            // driver reports exactly one display, index 0).
+            var mcFailed = new MachineControl();
+            mcFailed.InitializeDisplay(allowResize: false, scale: 1.0, windowDisplay: 99);
+
+            Assert(mcFailed.DisplayInitFailed, "DisplayInitFailed is true when the underlying video init fails");
+            Assert(mcFailed.DisplayBackend != null, "DisplayBackend is still non-null even when its own init failed");
+            Assert(mcFailed.DisplayBackend != null && !mcFailed.DisplayBackend.IsRunning,
+                "DisplayBackend.IsRunning is false when its own init failed");
+
+            mcFailed.DisplayBackend?.Dispose();
+
+            Console.WriteLine("  DisplayInitFailed test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  DisplayInitFailed test failed: {ex.Message}\n");
             return false;
         }
     }
