@@ -281,17 +281,19 @@ public static class BusInterfaceTests
 
             // Drive an MTC.ERR-setting command: select unit 1 (never
             // configured -- offline) via SLT (bits 10-8), function=Read (1),
-            // GO (bit 0). This sets ILC, which folds into the MTS error
-            // summary bit (bit 15).
+            // GO (bit 0). This sets ILC, which MTS reports directly on bit 15
+            // (tape_controller_encode_mts) -- the real cross-field error
+            // summary bit lives on MTC, not MTS, but ILC alone is enough to
+            // prove BusReset reaches and clears TapeController's state.
             tc.Write(Mtc, (ushort)((1 << 8) | (1 << 1) | 1));
             tc.Read(Mts, out ushort statusBefore);
-            Assert((statusBefore & 0x8000) != 0, $"error summary bit set before reset, got 0x{statusBefore:X}");
+            Assert((statusBefore & 0x8000) != 0, $"ILC bit set before reset, got 0x{statusBefore:X}");
 
             busInterface.WireTapeController(tc);
             busInterface.BusReset();
 
             tc.Read(Mts, out ushort statusAfter);
-            Assert((statusAfter & 0x8000) == 0, $"error summary bit cleared after BusInterface.BusReset() reaches the wired TapeController, got 0x{statusAfter:X}");
+            Assert((statusAfter & 0x8000) == 0, $"ILC bit cleared after BusInterface.BusReset() reaches the wired TapeController, got 0x{statusAfter:X}");
 
             Console.WriteLine("  Bus-reset-clears-wired-tape-controller-error test passed\n");
             return true;

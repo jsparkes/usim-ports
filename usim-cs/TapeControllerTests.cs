@@ -581,7 +581,7 @@ public static class TapeControllerTests
             Assert((status & 0x0200) == 0, $"RLE NOT set -- the transfer is governed by the preamble's length (4), which exactly matches MTBRC, got 0x{status:X}");
             Assert((status & 0x0080) == 0, $"NXM NOT set, got 0x{status:X}");
             Assert((status & 0x4000) == 0, $"EOF NOT set, got 0x{status:X}");
-            Assert((status & 0x8000) == 0, $"no error summary bit set at all despite the postamble mismatch, got 0x{status:X}");
+            Assert((status & 0x8000) == 0, $"ILC bit not set despite the postamble mismatch, got 0x{status:X}");
 
             tc.Read(Mtbrc, out ushort mtbrcAfter);
             Assert(mtbrcAfter == 0, $"MTBRC exhausted to exactly 0 -- the full 4 bytes governed by the preamble were transferred, got {unchecked((short)mtbrcAfter)}");
