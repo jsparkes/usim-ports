@@ -401,6 +401,30 @@ public class Program
     }
     
     /// <summary>
+    /// strtol(value, NULL, 0): "0x" prefix = hex, leading "0" = octal, else decimal.
+    /// Returns defaultValue for empty or unparsable input.
+    /// </summary>
+    internal static long ParseStrtolBase0(string value, long defaultValue)
+    {
+        string s = value.Trim();
+        bool negative = s.StartsWith('-');
+        if (negative || s.StartsWith('+')) s = s.Substring(1);
+        int radix = 10;
+        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) { radix = 16; s = s.Substring(2); }
+        else if (s.Length > 1 && s[0] == '0') { radix = 8; s = s.Substring(1); }
+        if (s.Length == 0) return defaultValue;
+        try
+        {
+            long v = Convert.ToInt64(s, radix);
+            return negative ? -v : v;
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException or OverflowException)
+        {
+            return defaultValue;
+        }
+    }
+
+    /// <summary>
     /// Apply configuration settings
     /// </summary>
     internal static void ApplyConfiguration(ConfigParser config)
@@ -417,7 +441,9 @@ public class Program
 
         // [idle] cycles/quantum/timeout (usim/ucfg.c). A negative cycles value
         // disables idle, which is already the default (see Idle.cs).
-        long idleCycles = config.GetLong("idle", "cycles", (long)Idle.DefaultCycles);
+        // cycles is read like the C's strtol(value, NULL, 0): 0x... is hex and a
+        // leading 0 is octal.
+        long idleCycles = ParseStrtolBase0(config.GetString("idle", "cycles"), (long)Idle.DefaultCycles);
         if (idleCycles >= 0) UsimState.IdleCycles = (ulong)idleCycles;
         UsimState.IdleQuantum = (ulong)config.GetLong("idle", "quantum", (long)Idle.DefaultQuantum);
         UsimState.IdleTimeoutMicros = (ulong)config.GetLong("idle", "timeout", (long)Idle.DefaultTimeoutMicros);

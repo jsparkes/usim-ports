@@ -106,8 +106,7 @@ public class BusAdaptor
     /// <summary>
     /// Faithful port of bus_adaptor_write (usim/bus-adaptor.c), same scope note as
     /// Read. promDisabled is UCode's own PromDisabled field, threaded through
-    /// because the diagnostic-
-    /// interface mode register sets it directly, matching the real C's
+    /// because the diagnostic-interface mode register sets it directly, matching the real C's
     /// machine_state.promdisabled = (v &amp; (1&lt;&lt;5)) != 0.
     /// </summary>
     public void Write(uint paddr, uint v, ref bool promDisabled)

@@ -19,6 +19,7 @@ public static class IdleTests
         if (TestSleepsOnlyOnQuantumBoundary()) passed++; else failed++;
         if (TestActivityResetsTheIdleTimer()) passed++; else failed++;
         if (TestDiskStartCountsAsActivity()) passed++; else failed++;
+        if (TestCyclesConfigIsParsedLikeStrtolBase0()) passed++; else failed++;
 
         Console.WriteLine($"\n=== Test Summary ===");
         Console.WriteLine($"Passed: {passed}");
@@ -150,6 +151,30 @@ public static class IdleTests
         catch (Exception ex)
         {
             Console.WriteLine($"  Disk-activity test failed: {ex.Message}\n");
+            return false;
+        }
+    }
+
+    private static bool TestCyclesConfigIsParsedLikeStrtolBase0()
+    {
+        Console.WriteLine("Test: [idle] cycles is parsed like the C's strtol(value, NULL, 0): 0x hex, leading-0 octal, else decimal");
+        try
+        {
+            // Python: int('0100', 8) == 64, int('0x10', 16) == 16.
+            Assert(Program.ParseStrtolBase0("655350", -7) == 655350, "decimal");
+            Assert(Program.ParseStrtolBase0("0100", -7) == 64, "0100 is octal 64");
+            Assert(Program.ParseStrtolBase0("0x10", -7) == 16, "0x10 is hex 16");
+            Assert(Program.ParseStrtolBase0("-1", -7) == -1, "negative stays negative (disables idle in the C)");
+            Assert(Program.ParseStrtolBase0("0", -7) == 0, "zero");
+            Assert(Program.ParseStrtolBase0("", -7) == -7, "empty -> default");
+            Assert(Program.ParseStrtolBase0("abc", -7) == -7, "garbage -> default");
+
+            Console.WriteLine("  strtol-base-0 test passed\n");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  strtol-base-0 test failed: {ex.Message}\n");
             return false;
         }
     }
