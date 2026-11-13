@@ -213,12 +213,12 @@ public static class BusAdaptorTests
             bool promDisabled = false;
 
             Assert(!ucode.BusInterface.IsUnibusNxm(), "no NXM yet");
-            uint value = busAdaptor.Read(UaddrToPaddr(0x3F550)); // tape-controller range, unported
+            uint value = busAdaptor.Read(UaddrToPaddr(0x3F560)); // just past the tape controller range (0x3F550-0x3F55A): no handler claims it
             Assert(value == 0, $"unmapped Unibus read is still a safe default (0), got 0x{value:X}");
             Assert(ucode.BusInterface.IsUnibusNxm(), "unmapped Unibus read sets Unibus NXM");
 
             ucode.BusInterface.ResetBusErrorStatus();
-            busAdaptor.Write(UaddrToPaddr(0x3F550), 0x1234, ref promDisabled);
+            busAdaptor.Write(UaddrToPaddr(0x3F560), 0x1234, ref promDisabled);
             Assert(ucode.BusInterface.IsUnibusNxm(), "unmapped Unibus write sets Unibus NXM");
             Assert(promDisabled == false, "unmapped Unibus write never touches promDisabled");
 
