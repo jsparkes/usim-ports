@@ -51,14 +51,14 @@ public class Program
         try
         {
             Initialize();
-            
+
             // Run the simulator
-            Run();
-            
+            bool ok = Run();
+
             // Cleanup
             Shutdown();
-            
-            return 0;
+
+            return ok ? 0 : 1;
         }
         catch (Exception ex)
         {
@@ -142,8 +142,23 @@ public class Program
                     Environment.Exit(0);
                     break;
 
-                case "--test-wpf":
-                    WpfBackendTests.RunAllTests();
+                case "--test-sdl3smoke":
+                    Sdl3SmokeTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-sdl3audio":
+                    Sdl3AudioTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-sdl3video":
+                    Sdl3VideoTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-sdl3backend":
+                    Sdl3BackendTests.RunAllTests();
                     Environment.Exit(0);
                     break;
 
@@ -212,8 +227,8 @@ public class Program
                     Environment.Exit(0);
                     break;
 
-                case "--test-keytranslator":
-                    WpfKeyTranslatorTests.RunAllTests();
+                case "--test-sdl3keytranslator":
+                    Sdl3KeyTranslatorTests.RunAllTests();
                     Environment.Exit(0);
                     break;
 
@@ -282,12 +297,72 @@ public class Program
                     Environment.Exit(0);
                     break;
 
+                case "--test-boot-milestone":
+                    BootMilestoneTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-tape-drive":
+                    TapeDriveTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
+                case "--test-tape-controller":
+                    TapeControllerTests.RunAllTests();
+                    Environment.Exit(0);
+                    break;
+
                 case "--debug-microcode":
                 case "--debug-ucode":
                     var debugger = new MicrocodeDebugger(new UCode());
                     debugger.StartDebugSession();
                     Environment.Exit(0);
                     break;
+
+                case "--debug-boot":
+                {
+                    const string promPath = "sys/ubin/promh.mcr";
+                    const string realDiskImagePath = "usim/disk.img";
+                    if (!File.Exists(promPath) || !File.Exists(realDiskImagePath))
+                    {
+                        Console.Error.WriteLine($"Error: --debug-boot requires {promPath} and {realDiskImagePath}");
+                        Environment.Exit(1);
+                    }
+
+                    // Operate on a temp copy so debugger writes never touch the real disk.img.
+                    string diskImagePath = Path.GetTempFileName();
+                    try
+                    {
+                        File.Copy(realDiskImagePath, diskImagePath, overwrite: true);
+
+                        var bootMem = new MainMemory();
+                        var bootUcode = new UCode(bootMem);
+                        bootUcode.Init();
+                        bootUcode.LoadPromFromFile(promPath);
+                        var bootDc = new DiskController(bootMem, bootUcode);
+                        bootUcode.BusAdaptor.WireDiskController(bootDc);
+                        bootDc.ConfigureUnit(0, "T-300", diskImagePath);
+
+                        // Ctrl+C terminates the process without running finally blocks, so
+                        // clean up the temp copy from the handler too. Do not set e.Cancel:
+                        // the process should still exit on Ctrl+C as before.
+                        ConsoleCancelEventHandler cleanupOnCancel = (sender, e) =>
+                        {
+                            try { File.Delete(diskImagePath); }
+                            catch (Exception) { /* already deleted by the finally block, or inaccessible */ }
+                        };
+                        Console.CancelKeyPress += cleanupOnCancel;
+
+                        var bootDebugger = new MicrocodeDebugger(bootUcode);
+                        bootDebugger.StartDebugSession();
+                    }
+                    finally
+                    {
+                        File.Delete(diskImagePath);
+                    }
+                    Environment.Exit(0);
+                    break;
+                }
 
                 default:
                     Console.Error.WriteLine($"Unknown option: {args[i]}");
@@ -318,7 +393,10 @@ public class Program
         Console.WriteLine("Testing & Demos:");
         Console.WriteLine("  --test, --test-all      Run all tests");
         Console.WriteLine("  --test-config           Run configuration tests only");
-        Console.WriteLine("  --test-wpf              Run WPF backend tests only");
+        Console.WriteLine("  --test-sdl3smoke        Run SDL3-CS smoke test only");
+        Console.WriteLine("  --test-sdl3audio        Run Sdl3Audio tests only");
+        Console.WriteLine("  --test-sdl3video        Run Sdl3Video tests only");
+        Console.WriteLine("  --test-sdl3backend      Run Sdl3Backend tests only");
         Console.WriteLine("  --test-microcode-decode Run microcode fetch/decode tests only");
         Console.WriteLine("  --test-microcode-alu    Run microcode ALU tests only");
         Console.WriteLine("  --test-microcode-jump   Run microcode jump tests only");
@@ -332,7 +410,7 @@ public class Program
         Console.WriteLine("  --test-iob              Run IOB tests only");
         Console.WriteLine("  --test-diagnostic       Run diagnostic interface tests only");
         Console.WriteLine("  --test-idle             Run idle tests only");
-        Console.WriteLine("  --test-keytranslator    Run WpfKeyTranslator tests only");
+        Console.WriteLine("  --test-sdl3keytranslator Run Sdl3KeyTranslator tests only");
         Console.WriteLine("  --test-keyboard         Run Keyboard tests only");
         Console.WriteLine("  --test-mouse            Run Mouse tests only");
         Console.WriteLine("  --test-unibus-mapping   Run Unibus mapping register tests only");
@@ -346,9 +424,13 @@ public class Program
         Console.WriteLine("  --test-symbol-table     Run SymbolTable tests only");
         Console.WriteLine("  --test-disk-unit        Run DiskUnit tests only");
         Console.WriteLine("  --test-disk-controller  Run DiskController tests only");
+        Console.WriteLine("  --test-boot-milestone   Run end-to-end boot milestone tests only");
+        Console.WriteLine("  --test-tape-drive       Run TapeDrive tests only");
+        Console.WriteLine("  --test-tape-controller  Run TapeController tests only");
         Console.WriteLine();
         Console.WriteLine("Debugging:");
         Console.WriteLine("  --debug-microcode       Interactive microcode debugger");
+        Console.WriteLine("  --debug-boot            Interactive debugger pre-wired with real promh.mcr+disk.img");
     }
     
     private static MachineControl? _machine;
@@ -491,30 +573,102 @@ public class Program
             diskUnits.Add((i, typeName, filename));
         }
         UsimState.DiskUnits = diskUnits.ToArray();
+
+        var tapeUnits = new List<(uint, long, string, string)>();
+        for (uint i = 0; i < TapeDrive.NUMBER_OF_TAPE_DRIVES; i++)
+        {
+            string line = config.GetString("tape", $"tape{i}", "");
+            if (string.IsNullOrEmpty(line)) continue;
+
+            // Real C's token-counting disambiguation (tape-drive.c:105-145):
+            // [length,][mode,]filename -- length and mode are both optional,
+            // and a 2-token string's first token is interpreted as mode if
+            // it's not a valid positive integer, otherwise as length. Real
+            // C's strtok-based tokenizer collapses consecutive/trailing
+            // delimiters (so e.g. "2400,,file.img" or "rw,file.img," still
+            // tokenize sensibly there); RemoveEmptyEntries mirrors that
+            // empty-token collapsing (but NOT strtok/atoi's separate
+            // partial-numeric-prefix parsing -- that's a different,
+            // out-of-scope divergence; TryParse below stays all-or-nothing).
+            string[] parts = line.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            long lengthFt = 2400;
+            string mode = "rw";
+            string filename;
+            if (parts.Length == 1)
+            {
+                filename = parts[0].Trim();
+            }
+            else if (parts.Length == 2)
+            {
+                if (long.TryParse(parts[0].Trim(), out long parsedLength) && parsedLength != 0)
+                {
+                    lengthFt = parsedLength;
+                    filename = parts[1].Trim();
+                }
+                else
+                {
+                    mode = parts[0].Trim();
+                    filename = parts[1].Trim();
+                }
+            }
+            else
+            {
+                // Real C (tape-drive.c:132-136) never validates the length token at
+                // parse time here -- it just assigns the raw string, and later validates
+                // via atoll(length_ft) == 0, which is non-fatal (the unit is simply left
+                // unconfigured). atoll/atoi return 0 for a non-numeric string, so mirror
+                // that with TryParse instead of throwing on a bad token.
+                lengthFt = long.TryParse(parts[0].Trim(), out long parsedLength3) ? parsedLength3 : 0;
+                mode = parts[1].Trim();
+                filename = parts[2].Trim();
+            }
+
+            tapeUnits.Add((i, lengthFt, mode, filename));
+        }
+        UsimState.TapeUnits = tapeUnits.ToArray();
     }
     
     /// <summary>
     /// Main simulator run loop
     /// </summary>
-    private static void Run()
+    private static bool Run()
     {
         if (_machine == null || _debugCommands == null)
         {
             Console.WriteLine("Error: Machine not initialized");
-            return;
+            return false;
         }
         
         Console.WriteLine("Starting CADR simulation...");
 
-        // Initialize WPF display backend unless headless
+        // Initialize SDL3 display backend unless headless
         if (!UsimState.Headless)
         {
-            Console.WriteLine("Initializing WPF display backend...");
-            _machine.InitializeDisplay(allowResize: false, scale: 1.0);
+            Console.WriteLine("Initializing SDL3 display backend...");
+            var configManager = new ConfigManager();
+            configManager.Load(_configFilename);
+            var displayConfig = configManager.GetDisplayConfig();
+            _machine.InitializeDisplay(allowResize: displayConfig.AllowResize, scale: displayConfig.Scale,
+                windowDisplay: displayConfig.WindowDisplay,
+                windowPositionX: displayConfig.WindowPositionX,
+                windowPositionY: displayConfig.WindowPositionY,
+                windowAlwaysOnTop: displayConfig.WindowAlwaysOnTop,
+                useLinearFiltering: displayConfig.UseLinearFiltering);
 
             if (_machine.DisplayBackend != null)
             {
                 _machine.DisplayBackend.SetWindowTitle(UsimState.WindowTitle);
+            }
+
+            // Real C quits immediately on this condition, before ever
+            // starting the machine (usim.c:559-562, "sdl3-video init
+            // failed, quitting", returning SDL_APP_FAILURE). Match that
+            // here rather than proceeding to PowerOn()/Run() as if a
+            // window were available.
+            if (_machine.DisplayInitFailed)
+            {
+                Console.Error.WriteLine("Error: SDL3 display backend failed to initialize; exiting.");
+                return false;
             }
         }
         else
@@ -535,7 +689,9 @@ public class Program
 
         if (_machine.DisplayBackend != null)
         {
-            Console.WriteLine("WPF window opened. Close window or press Ctrl+C to exit.");
+            // DisplayInitFailed already returned above, so DisplayBackend is
+            // guaranteed to be running here.
+            Console.WriteLine("SDL3 window opened. Close window or press Ctrl+C to exit.");
             Console.WriteLine("Type commands in terminal for interactive debugging.\n");
 
             // Start background thread for console input if we have a display
@@ -591,6 +747,8 @@ public class Program
                 }
             }
         }
+
+        return true;
     }
     
     /// <summary>
@@ -650,9 +808,24 @@ public class Program
         ConfigTests.RunAllTests();
         Console.WriteLine();
 
-        // Run WPF backend tests
-        Console.WriteLine("Running WPF Backend Tests...\n");
-        WpfBackendTests.RunAllTests();
+        // Run SDL3-CS smoke test
+        Console.WriteLine("Running SDL3 Smoke Tests...\n");
+        Sdl3SmokeTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Sdl3Audio tests
+        Console.WriteLine("Running Sdl3Audio Tests...\n");
+        Sdl3AudioTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Sdl3Video tests
+        Console.WriteLine("Running Sdl3Video Tests...\n");
+        Sdl3VideoTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run Sdl3Backend tests
+        Console.WriteLine("Running Sdl3Backend Tests...\n");
+        Sdl3BackendTests.RunAllTests();
         Console.WriteLine();
 
         // Run virtual memory (Uvmem) tests
@@ -700,9 +873,9 @@ public class Program
         IdleTests.RunAllTests();
         Console.WriteLine();
 
-        // Run WpfKeyTranslator tests
-        Console.WriteLine("Running WpfKeyTranslator Tests...\n");
-        WpfKeyTranslatorTests.RunAllTests();
+        // Run Sdl3KeyTranslator tests
+        Console.WriteLine("Running Sdl3KeyTranslator Tests...\n");
+        Sdl3KeyTranslatorTests.RunAllTests();
         Console.WriteLine();
 
         // Run Keyboard tests
@@ -763,6 +936,20 @@ public class Program
         // Run DiskController tests
         Console.WriteLine("Running DiskController Tests...\n");
         DiskControllerTests.RunAllTests();
+        Console.WriteLine();
+
+        Console.WriteLine("Running Boot Milestone Tests...\n");
+        BootMilestoneTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run TapeDrive tests
+        Console.WriteLine("Running TapeDrive Tests...\n");
+        TapeDriveTests.RunAllTests();
+        Console.WriteLine();
+
+        // Run TapeController tests
+        Console.WriteLine("Running TapeController Tests...\n");
+        TapeControllerTests.RunAllTests();
         Console.WriteLine();
 
         Console.WriteLine("=== All Tests Complete ===");

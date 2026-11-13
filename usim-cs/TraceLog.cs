@@ -25,6 +25,7 @@ public enum TraceCategory
     IOBus = 128,
     Spy = 256,
     Idle = 512,
+    Tape = 1024,
     All = 0xFFFF
 }
 

@@ -24,10 +24,16 @@ public class BusInterface
     private bool _nxmInhibited;
     private bool _addr17;
     private ushort _addr;
+    private TapeController? _tapeController;
 
     public BusInterface(UCode ucode)
     {
         _ucode = ucode;
+    }
+
+    public void WireTapeController(TapeController tapeController)
+    {
+        _tapeController = tapeController;
     }
 
     // usim/bus-interface.c:53-57
@@ -186,10 +192,11 @@ public class BusInterface
     /// minus lashup state. The real C's fan-out to iob_bus_reset()/
     /// main_memory_bus_reset()/disk_controller_bus_reset() is a genuine no-op
     /// even there (all three are empty function bodies) -- nothing to call.
-    /// tape_controller_bus_reset()/tv_bus_reset() would do something (clear a
-    /// status struct; the latter is empty too) but neither TapeController nor
-    /// TV exist in C# yet -- logged as a placeholder note, not silently
-    /// dropped.
+    /// tape_controller_bus_reset() now runs via WireTapeController when a
+    /// TapeController is wired (matching DiskController/BusAdaptor's own
+    /// null-guarded wiring convention); TV still doesn't exist in C#, so
+    /// tv_bus_reset() (itself an empty function body in the real C too)
+    /// still has nothing to call.
     /// </summary>
     public void BusReset()
     {
@@ -197,8 +204,9 @@ public class BusInterface
         _nxmInhibited = false;
         _addr17 = false;
         _addr = 0;
+        _tapeController?.BusReset();
 
         TraceLog.Instance.Info(TraceCategory.Memory,
-            "bus-interface: bus reset (tape-controller/tv bus_reset not yet ported -- no-op)");
+            "bus-interface: bus reset (tape-controller's bus_reset runs when wired; tv_bus_reset still not ported -- no-op)");
     }
 }

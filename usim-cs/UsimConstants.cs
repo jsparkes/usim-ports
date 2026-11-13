@@ -50,6 +50,7 @@ public static class UsimState
     public static bool AutoPowerOff { get; set; }
 
     public static (uint Unit, string TypeName, string Filename)[] DiskUnits { get; set; } = Array.Empty<(uint, string, string)>();
+    public static (uint Unit, long LengthFeet, string Mode, string Filename)[] TapeUnits { get; set; } = Array.Empty<(uint, long, string, string)>();
 
     public static ulong IdleCycles { get; set; } = Idle.DefaultCycles;
     public static ulong IdleQuantum { get; set; } = Idle.DefaultQuantum;

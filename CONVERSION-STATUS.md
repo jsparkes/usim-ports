@@ -46,7 +46,7 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 - [x] Disk controller (8 units, CHS addressing)
 - [x] Disk units (file-backed storage)
 - [x] I/O bus (device registration, routing)
-- [x] WPF integration (window creation, rendering, input, beep audio)
+- [x] SDL3 integration (window creation, rendering, input, beep audio)
 - [ ] Tape controller
 - [ ] Tape drives
 
@@ -144,7 +144,7 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 - Keyboard.cs - Input handling (100% done)
 - Mouse.cs - Input handling (100% done)
 - Display.cs - Video output (90% done)
-- WpfBackend.cs - Graphics/input/audio backend (100% done)
+- Sdl3Backend.cs - Graphics/input/audio backend (100% done)
 - IOBus.cs - Device bus (100% done)
 - MachineControl.cs - Lifecycle management (100% done)
 - ConfigParser.cs - Configuration (100% done)
@@ -209,11 +209,11 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 3. Implement memory management unit
 4. Add microcode execution tests
 
-### Phase 2: WPF Integration (Complete)
-1. ✅ Create WPF window
+### Phase 2: SDL3 Integration (Complete)
+1. ✅ Create SDL3 window (faithful port of usim's sdl3-video.c)
 2. ✅ Implement keyboard/mouse event handlers
 3. ✅ Render display frame buffer
-4. ✅ Add display refresh timer (DispatcherTimer)
+4. ✅ Add display refresh via the SDL3 event/render loop
 
 ### Phase 3: Network Transmission (Priority: MEDIUM)
 1. Implement UDP backend for Chaos
@@ -263,15 +263,15 @@ This document tracks the status of the C# conversion of the MIT CADR simulator (
 
 ### Dependencies
 - .NET 8.0 SDK
-- WPF (Microsoft.WindowsDesktop.App) — Windows-only
+- SDL3-CS (3.4.18.1), with native runtime packages for Windows, Linux, and macOS
 - System.CommandLine (2.0.0-beta4)
 
 ### Deployment
 - ❌ No installer yet
 - ❌ No packages published
 - ✅ Manual deployment works
-- ⚠️ Windows-only (WPF backend; the SDL2-based backend that supported
-  Linux/macOS was replaced)
+- ✅ Cross-platform again (SDL3 backend; manual verification on non-Windows
+  pending as of this writing)
 
 ## Conclusion
 
@@ -289,4 +289,4 @@ The remaining work focuses on:
 
 Overall completion: **~75%** (by functionality), **~85%** (by framework)
 
-The conversion demonstrates successful translation of complex C code to modern C#, maintaining the architecture while leveraging .NET features for improved safety and maintainability. The graphics/input/audio backend was later converted from SDL2 to WPF, making the emulator Windows-only.
+The conversion demonstrates successful translation of complex C code to modern C#, maintaining the architecture while leveraging .NET features for improved safety and maintainability. The graphics/input/audio backend went SDL2 → WPF → SDL3; the current SDL3 backend is a faithful port of usim's own `sdl3-*.c` files and restores cross-platform support.
