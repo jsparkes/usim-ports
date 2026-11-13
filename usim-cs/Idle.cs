@@ -79,7 +79,7 @@ public class Idle
             if ((cycles & Quantum) == 0)
             {
                 IdleCount++;
-                _sleepMs((int)((TimeoutMicros + 999) / 1000));
+                _sleepMs((int)Math.Min((TimeoutMicros + 999) / 1000, int.MaxValue));
             }
         }
         else

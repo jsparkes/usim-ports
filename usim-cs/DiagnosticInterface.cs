@@ -118,8 +118,15 @@ public class DiagnosticInterface
 
     private static string Oct(ulong v) => Convert.ToString((long)v, 8);
 
-    private static void Spy(string message) =>
-        TraceLog.Instance.Trace(TraceCategory.Spy, TraceLevel.Info, "spy: " + message);
+    // FormattableString defers the formatting until tracing is known to be on
+    // (the C's INFO() only evaluates its arguments when enabled).
+    private static void Spy(FormattableString message)
+    {
+        if (TraceLog.Instance.IsEnabled(TraceCategory.Spy, TraceLevel.Info))
+        {
+            TraceLog.Instance.Trace(TraceCategory.Spy, TraceLevel.Info, "spy: " + message);
+        }
+    }
 
     /// <summary>
     /// Port of diagnostic_interface_read. An address in the range that is not
@@ -225,7 +232,10 @@ public class DiagnosticInterface
             case IrHigh:
                 Spy($"write DEBUG-IR<47-32>: {Oct(v)}");
                 DebugIr = (DebugIr & 0xFFFF0000FFFFFFFFUL) | ((ulong)v << 32);
-                Spy($"DEBUG-IR<47-0>: {Oct(DebugIr)} {Disassembler.DisassembleInst(DebugIr)}");
+                if (TraceLog.Instance.IsEnabled(TraceCategory.Spy, TraceLevel.Info))
+                {
+                    Spy($"DEBUG-IR<47-0>: {Oct(DebugIr)} {Disassembler.DisassembleInst(DebugIr)}");
+                }
                 break;
             case ClockControl:
                 Spy($"write clock control register: 0{Oct(v)}");

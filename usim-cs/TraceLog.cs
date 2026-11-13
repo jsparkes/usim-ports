@@ -73,6 +73,10 @@ public class TraceLog
         }
     }
     
+    /// <summary>True if a message of this category and level would be logged.</summary>
+    public bool IsEnabled(TraceCategory category, TraceLevel level)
+        => (EnabledCategories & category) != 0 && level >= MinimumLevel;
+
     /// <summary>
     /// Log a trace message
     /// </summary>

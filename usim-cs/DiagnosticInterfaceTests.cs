@@ -230,7 +230,7 @@ public static class DiagnosticInterfaceTests
             Assert(ucode.BusInterface.IsUnibusNxm(), "write to 0766020 sets Unibus NXM");
 
             ucode.BusInterface.ResetBusErrorStatus();
-            Assert(di.Read(0x3EC01) == 0 && ucode.BusInterface.IsUnibusNxm(), "an odd address read sets NXM and reads 0");
+            Assert(di.Read(0x3EC20) == 0 && ucode.BusInterface.IsUnibusNxm(), "a read just past the range sets NXM and reads 0");
 
             Console.WriteLine("  Unused/invalid-address test passed\n");
             return true;
